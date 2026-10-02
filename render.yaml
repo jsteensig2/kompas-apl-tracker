@@ -1,0 +1,28 @@
+# Render Blueprint: New > Blueprint > pick this repository.
+# Render asks for ADMIN_EMAIL and ADMIN_PASSWORD (the first Kompas administrator) during setup.
+services:
+  - type: web
+    name: kompas-apl-tracker
+    runtime: node
+    plan: starter            # a persistent disk requires a paid instance
+    region: frankfurt
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: DB_FILE
+        value: /var/data/kompas-apl.db
+      - key: SEED_EXAMPLES
+        value: "false"
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 1

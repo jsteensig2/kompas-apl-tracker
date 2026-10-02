@@ -1,0 +1,25 @@
+{
+  "name": "kompas-apl-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Kompas APL Tracker – registrering og reseller-rapportering af Apple Professional Learning-aktiviteter",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server/index.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch server/index.js",
+    "reset-db": "node --disable-warning=ExperimentalWarning scripts/reset-db.js",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js",
+    "build:preview": "node scripts/build-preview.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "xlsx": "0.18.5"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "sql.js": "^1.10.3"
+  }
+}
