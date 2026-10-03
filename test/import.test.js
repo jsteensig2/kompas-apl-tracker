@@ -29,7 +29,7 @@ const ROWS = [
   { Dato: '31.02.2026', 'Titel/emne': 'Mac – module 1', Reseller: 'Atea', Deltagere: 5 },
   { Dato: '04.03.2025', 'Titel/emne': 'Mac – module 1', Reseller: 'Ukendt Partner', Deltagere: 5 },
   { Dato: '05.03.2025', 'Titel/emne': 'Mac – module 1', Reseller: 'Atea A/S', Deltagere: '' },
-  { Dato: '03.03.2025', Varighed: 'Halv dag', 'Titel/emne': 'Jamf', Skole: 'Torstorp Skole', Kommune: 'Høje-Taastrup', Deltagere: 12, Reseller: 'Atea' },
+  { Dato: '03.03.2025', Varighed: 'Halv dag', 'Titel/emne': 'Jamf', Skole: 'Torstorp Skole', Kommune: 'Høje-Taastrup', Deltagere: 12, Reseller: 'Atea', Konsulent: 'Kim Byrding' },
 ];
 
 test('date and duration parsing', () => {
@@ -148,4 +148,22 @@ test('columns can be re-mapped by hand; unknown reseller falls back to the chose
   const fallback = await post('admin', '/api/import', { table, reseller: atea });
   assert.deepEqual(fallback.rows[0].errors, []);
   assert.ok(fallback.rows[0].warnings.some((w) => w.includes('Atea brugt')));
+});
+
+test('several consultants by initials become one course each; unknown initials are left out', async () => {
+  const table = [
+    ['Dato', 'Titel', 'Reseller', 'Konsulent', 'Deltagere'],
+    ['01.09.2025', 'Initialer-test', 'Atea', 'SR,KB,RT, JS', 4],
+    ['02.09.2025', 'Initialer-test 2', 'Atea', 'kb og XY', 5],
+  ];
+  const res = await post('admin', '/api/import', { table, commit: true });
+  assert.deepEqual(res.rows.map((r) => r.consultant), ['Søren Rasmussen', 'Kim Byrding', 'Rasmus Toft', 'Jacob Schandorf', 'Kim Byrding']);
+  assert.equal(res.summary.imported, 5);
+  assert.ok(res.rows[4].warnings.some((w) => w.includes('XY')));
+  const list = await json('admin', '/api/activities?q=Initialer-test');
+  assert.equal(list.filter((x) => x.title === 'Initialer-test').length, 4);
+  const opts = await json('admin', '/api/options');
+  assert.equal(opts.consultants.find((c) => c.name === 'Rasmus Toft').initials, 'RT');
+  const again = await post('admin', '/api/import', { table });
+  assert.equal(again.summary.duplicates, 5);
 });

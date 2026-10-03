@@ -81,9 +81,17 @@ validerer hver række. Kun en dato er påkrævet. Mangelfulde felter udfyldes og
 deltagere bliver 0, ukendt varighed bliver halv dag, manglende titel bliver APL-typen, og ukendte kommuner udelades.
 Reselleren gættes aldrig, fordi den styrer adgangen: "Atea A/S" genkendes som Atea, og rækker uden reseller får den
 reseller, man vælger på siden. Nye skoler, konsulenter, APL-typer og betalere oprettes, og dubletter (samme dato,
-titel, skole og reseller) springes over. Man ser en forhåndsvisning, før noget gemmes.
+titel, skole, reseller og konsulent) springes over.
+Flere konsulenter i samme felt ("SR, KB" eller fulde navne) giver ét kursus pr. konsulent, fordi hver konsulent tæller
+som et afholdt kursus. Initialer sættes under *Administration › Konsulenter*. Man ser en forhåndsvisning, før noget gemmes.
 
 SheetJS 0.18.5 fra npm bruges til Excel. Til drift anbefales den nyeste version fra cdn.sheetjs.com.
+
+## Flere konsulenter og dublering
+
+Under *Registrér aktivitet* kan man vælge flere konsulenter; der oprettes ét kursus pr. konsulent med samme antal
+deltagere. Et eksisterende kursus kan dubleres med knappen *Dublér kursus*: alle felter kopieres, og man vælger
+konsulent(er) igen.
 
 ## Kalender (Apple Kalender / iCal)
 

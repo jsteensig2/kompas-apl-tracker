@@ -327,3 +327,4 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 .imp-cols { margin: 0 0 14px; }
 .imp-cols-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; margin-top: 10px; }
 .imp-reseller small { display: block; margin-top: 4px; }
+.input-short { max-width: 140px; }

@@ -63,11 +63,12 @@ function toast(msg, kind = 'ok') {
 // --- Navigation ----------------------------------------------------------------------------
 const VIEWS = ['dashboard', 'activities', 'register', 'import', 'calendar', 'admin', 'password'];
 
-function go(view, { editing = null, prefill = null } = {}) {
+function go(view, { editing = null, prefill = null, copyOf = null } = {}) {
   if (!isAdmin() && ['register', 'admin', 'import'].includes(view)) view = 'dashboard';
   state.view = view;
   state.editing = editing;
   state.prefill = prefill;
+  state.copyOf = copyOf;
   if (location.hash.slice(1) !== view) { try { history.replaceState(null, '', `#${view}`); } catch { /* sandboxed frame */ } }
   render();
   window.scrollTo(0, 0);
@@ -460,7 +461,9 @@ function renderRegister(root) {
   const a = state.editing;
   const last = store.get('lastForm', {});
   const pre = !a ? state.prefill : null;
-  const v = a || {
+  const copy = !a ? state.copyOf : null;
+  // A copy keeps everything except the consultant, who is picked again.
+  const v = a || (copy && { ...copy, consultant_id: '' }) || {
     date: todayIso(), duration: 'half', apl_type_id: o.aplTypes[0]?.id, title: '', school_id: '', school: '',
     municipality_id: '', participants: '', consultant_id: last.consultant_id || '', reseller_id: '', paid_by_id: '',
     ...(pre ? Object.fromEntries(Object.entries(pre).filter(([, x]) => x !== '' && x != null)) : {}),
@@ -468,10 +471,11 @@ function renderRegister(root) {
   const quickTitles = o.titles.slice(0, 8);
   root.innerHTML = `
     <div class="pagehead">
-      <div><p class="eyebrow">${a ? 'Redigér aktivitet' : 'Ny aktivitet'}</p><h1>${a ? esc(a.title) : 'Registrér aktivitet'}</h1></div>
-      ${a ? '<button type="button" class="btn" data-go="activities">Tilbage til aktiviteter</button>' : ''}
+      <div><p class="eyebrow">${a ? 'Redigér aktivitet' : copy ? 'Kopi af kursus' : 'Ny aktivitet'}</p><h1>${a ? esc(a.title) : copy ? `Dublér: ${esc(copy.title)}` : 'Registrér aktivitet'}</h1></div>
+      ${a || copy ? '<button type="button" class="btn" data-go="activities">Tilbage til aktiviteter</button>' : ''}
       ${pre ? '<button type="button" class="btn" data-go="calendar">Tilbage til kalender</button>' : ''}
     </div>
+    ${copy ? '<p class="notice">Alle felter er kopieret. Vælg en eller flere konsulenter: der oprettes ét kursus pr. konsulent.</p>' : ''}
     ${pre ? `<p class="notice">Udfyldt fra kalenderaftalen <b>${esc(pre.eventTitle)}</b>. Tjek felterne, og tilføj antal deltagere og reseller.</p>` : ''}
     <form id="act-form" class="card form" novalidate autocomplete="off">
       <div class="form-grid">
@@ -500,7 +504,11 @@ function renderRegister(root) {
         </div>
         <label class="field"><span>Kommune</span><select id="a-muni" name="municipality_id">${selectOptions(o.municipalities, v.municipality_id, 'Vælg kommune')}</select></label>
         <label class="field"><span>Antal deltagere <small class="muted" id="p-hint"></small></span><input id="a-participants" name="participants" type="number" inputmode="numeric" min="0" step="1" required value="${esc(v.participants)}"></label>
-        <label class="field"><span>Konsulent</span><select id="a-consultant" name="consultant_id" required>${selectOptions(o.consultants, v.consultant_id, 'Vælg konsulent')}</select></label>
+        ${a ? `<label class="field"><span>Konsulent</span><select id="a-consultant" name="consultant_id" required>${selectOptions(o.consultants, v.consultant_id, 'Vælg konsulent')}</select></label>`
+          : `<div class="field field-wide"><span id="cons-label">Konsulent <small class="muted">· vælg flere for at oprette ét kursus pr. konsulent</small></span>
+          <div class="seg seg-lg seg-wrap" role="group" aria-labelledby="cons-label">
+            ${o.consultants.map((c) => `<label><input type="checkbox" name="consultant_ids" value="${c.id}" ${String(c.id) === String(v.consultant_id) ? 'checked' : ''}><span>${esc(c.name)}</span></label>`).join('')}
+          </div></div>`}
         <div class="field"><span id="res-label">Reseller / partner <small class="muted">· styrer hvem der kan se den</small></span>
           <div class="seg seg-lg seg-wrap" role="radiogroup" aria-labelledby="res-label">
             ${o.resellers.map((r) => `<label><input type="radio" name="reseller_id" value="${r.id}" ${String(r.id) === String(v.reseller_id) ? 'checked' : ''}><span>${esc(r.name)}</span></label>`).join('')}
@@ -512,7 +520,8 @@ function renderRegister(root) {
       <p class="muted small form-tip">Mangler en konsulent, kommune, APL-type eller betaler i listerne? Tilføj den under <a href="#admin" data-go="admin">Administration</a>. Nye skoler kan skrives direkte i feltet.</p>
       <div class="form-actions">
         <button class="btn btn-primary btn-lg" type="submit">${a ? 'Gem ændringer' : 'Registrér aktivitet'}</button>
-        ${a ? `<span class="spacer"></span>
+        ${a ? `<button type="button" class="btn btn-lg" id="dup">Dublér kursus</button>
+          <span class="spacer"></span>
           <button type="button" class="btn btn-danger-ghost" id="del">Slet aktivitet</button>
           <span id="del-confirm" class="del-confirm" hidden>Slet aktiviteten permanent?
             <button type="button" class="btn btn-danger btn-sm" id="del-yes">Slet</button>
@@ -521,7 +530,18 @@ function renderRegister(root) {
     </form>`;
 
   const form = $('#act-form');
-  const planHint = () => { $('#p-hint').textContent = $('#a-date').value > todayIso() ? '· kan udfyldes senere (planlagt kursus)' : ''; };
+  const chosen = () => (a ? [] : $$('input[name="consultant_ids"]:checked').map((x) => x.value));
+  const planHint = () => {
+    const parts = [];
+    if (chosen().length > 1) parts.push('pr. konsulent');
+    if ($('#a-date').value > todayIso()) parts.push('kan udfyldes senere (planlagt kursus)');
+    $('#p-hint').textContent = parts.length ? `· ${parts.join(', ')}` : '';
+    if (!a) {
+      const n = chosen().length;
+      form.querySelector('[type=submit]').textContent = n > 1 ? `Registrér ${n} kurser` : 'Registrér aktivitet';
+    }
+  };
+  $$('input[name="consultant_ids"]').forEach((x) => x.addEventListener('change', planHint));
   $('#a-date').addEventListener('change', planHint);
   planHint();
   $$('[data-title]').forEach((b) => { b.onclick = () => { $('#a-title').value = b.dataset.title; $('#a-school').focus(); }; });
@@ -592,13 +612,15 @@ function renderRegister(root) {
   form.onsubmit = async (e) => {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(form));
+    const consultantIds = a ? [data.consultant_id].filter(Boolean) : chosen();
+    delete data.consultant_ids;
     if (!data.school_id) data.school_name = input.value.trim();
     const err = $('#form-error');
     const missing = [];
     if (!data.date) missing.push('dato');
     if (!data.title?.trim()) missing.push('titel / emne');
     if (data.participants === '' && data.date <= todayIso()) missing.push('antal deltagere');
-    if (!data.consultant_id) missing.push('konsulent');
+    if (!consultantIds.length) missing.push('konsulent');
     if (!data.reseller_id) missing.push('reseller / partner');
     if (missing.length) { err.textContent = `Udfyld venligst: ${missing.join(', ')}.`; err.hidden = false; return; }
     err.hidden = true;
@@ -606,11 +628,17 @@ function renderRegister(root) {
     btn.disabled = true;
     try {
       if (a) await api.put(`/api/activities/${a.id}`, data);
-      else await api.post('/api/activities', data);
-      store.set('lastForm', { consultant_id: data.consultant_id });
+      else {
+        // One course per consultant. The first call may create a new school; the rest reuse it.
+        const first = await api.post('/api/activities', { ...data, consultant_id: consultantIds[0] });
+        for (const cid of consultantIds.slice(1)) {
+          await api.post('/api/activities', { ...data, school_id: first.school_id || '', school_name: first.school_id ? '' : data.school_name, consultant_id: cid });
+        }
+      }
+      store.set('lastForm', { consultant_id: consultantIds[0] });
       if (data.calendar_uid && state.calEvents) state.calEvents = state.calEvents.filter((ev) => ev.uid !== data.calendar_uid);
       state.options = await api.get('/api/options');
-      toast(a ? 'Ændringer gemt' : 'Aktivitet registreret');
+      toast(a ? 'Ændringer gemt' : consultantIds.length > 1 ? `${consultantIds.length} kurser registreret` : 'Aktivitet registreret');
       if (!a) {
         state.listFilters = { ...state.listFilters, q: '', year: data.date.slice(0, 4), from: '', to: '' };
       }
@@ -623,6 +651,7 @@ function renderRegister(root) {
   };
 
   if (a) {
+    $('#dup').onclick = () => go('register', { copyOf: a });
     $('#del').onclick = () => { $('#del-confirm').hidden = false; $('#del').hidden = true; };
     $('#del-no').onclick = () => { $('#del-confirm').hidden = true; $('#del').hidden = false; };
     $('#del-yes').onclick = async () => {
@@ -928,11 +957,12 @@ async function renderAdmin(root) {
         <select name="reseller_id" aria-label="Reseller">${selectOptions(o.resellers, r.reseller_id, 'Vælg reseller…')}</select>`;
     }
     return `<input name="name" placeholder="Navn" value="${esc(r.name || '')}" aria-label="Navn" required>
-      ${isSchools ? `<select name="municipality_id" aria-label="Kommune">${selectOptions(o.municipalities, r.municipality_id, 'Vælg kommune…')}</select>` : ''}`;
+      ${isSchools ? `<select name="municipality_id" aria-label="Kommune">${selectOptions(o.municipalities, r.municipality_id, 'Vælg kommune…')}</select>` : ''}
+      ${tab === 'consultants' ? `<input name="initials" placeholder="Initialer, fx KB" value="${esc(r.initials || '')}" aria-label="Initialer" maxlength="6" class="input-short">` : ''}`;
   };
   const describe = (r) => {
     if (isUsers) return `<b>${esc(r.name)}</b><span class="muted">${esc(r.email)}</span><span class="tag ${r.role === 'admin' ? 'tag-admin' : ''}">${r.role === 'admin' ? 'Kompas-administrator' : `Ser ${esc(r.reseller)}`}</span>`;
-    return `<b>${esc(r.name)}</b>${isSchools ? `<span class="muted">${esc(r.municipality || 'Ingen kommune')}</span>` : ''}
+    return `<b>${esc(r.name)}</b>${isSchools ? `<span class="muted">${esc(r.municipality || 'Ingen kommune')}</span>` : ''}${tab === 'consultants' && r.initials ? `<span class="muted">${esc(r.initials)}</span>` : ''}
       <span class="muted small">${r.used ? `${r.used} ${r.used === 1 ? 'aktivitet' : 'aktiviteter'}` : 'Ikke brugt'}</span>`;
   };
 

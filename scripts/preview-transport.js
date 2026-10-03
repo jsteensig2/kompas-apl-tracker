@@ -34,7 +34,7 @@ const db = {
 };
 db.exec(SCHEMA);
 migrate(db);
-if (db.get('SELECT COUNT(*) AS n FROM municipalities').n === 0) seed(db);
+if (db.get('SELECT COUNT(*) AS n FROM municipalities').n === 0) { seed(db); migrate(db); }
 
 function persist() {
   try {

@@ -80,6 +80,13 @@ export function migrate(db) {
   if (!cols('users').includes('password_hash')) db.exec('ALTER TABLE users ADD COLUMN password_hash TEXT');
   if (!cols('users').includes('must_change_password')) db.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');
   if (!cols('activities').includes('calendar_uid')) db.exec('ALTER TABLE activities ADD COLUMN calendar_uid TEXT');
+  if (!cols('consultants').includes('initials')) db.exec('ALTER TABLE consultants ADD COLUMN initials TEXT');
+  // Kompas' own initials (Jakob, 2026-10-03); only filled in where none are set.
+  for (const [initials, name] of [['KB', 'kim byrding'], ['TH', 'torben hollensen'], ['SR', 'søren rasmussen'],
+    ['RT', 'rasmus toft'], ['JRS', 'jakob steensig'], ['JS', 'jacob schandor']]) {
+    db.run(`UPDATE consultants SET initials = ? WHERE initials IS NULL AND lower(name) LIKE ?
+              AND NOT EXISTS (SELECT 1 FROM consultants c2 WHERE upper(c2.initials) = ?)`, [initials, `${name}%`, initials]);
+  }
   db.exec(`CREATE TABLE IF NOT EXISTS calendar_ignored (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     uid     TEXT NOT NULL,

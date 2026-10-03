@@ -24,6 +24,7 @@ export function openDatabase(file) {
   if (db.get('SELECT COUNT(*) AS n FROM municipalities').n === 0) {
     // SEED_EXAMPLES=false gives a clean installation: choice lists only, no demo users or activities.
     seed(db, { examples: process.env.SEED_EXAMPLES !== 'false' });
+    migrate(db); // fills in data that depends on the seeded rows
   }
   return db;
 }

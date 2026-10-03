@@ -124,6 +124,8 @@ export function runImport({ db, today, user }, body) {
   }
   const missingColumns = ['date'].filter((f) => !cols[f]);
 
+  const consultantInitials = new Map(db.all('SELECT id, name, initials FROM consultants WHERE initials IS NOT NULL')
+    .map((c) => [String(c.initials).toUpperCase(), c]));
   const lookup = (table) => new Map(db.all(`SELECT id, name FROM ${table}`).map((r) => [norm(r.name), r]));
   const lists = {
     apl_types: lookup('apl_types'), consultants: lookup('consultants'), resellers: lookup('resellers'),
@@ -136,8 +138,9 @@ export function runImport({ db, today, user }, body) {
     const hits = schools.filter((s) => norm(s.name) === norm(name));
     return hits.find((s) => s.municipality_id === municipalityId) || (municipalityId ? null : hits[0]) || null;
   };
-  const existing = new Set(db.all(`SELECT a.date, a.title, a.reseller_id, a.school_id FROM activities a`)
-    .map((r) => `${r.date}|${norm(r.title)}|${r.reseller_id}|${r.school_id ?? ''}`));
+  // Same date, title, reseller, school and consultant = the same course.
+  const existing = new Set(db.all(`SELECT a.date, a.title, a.reseller_id, a.school_id, a.consultant_id FROM activities a`)
+    .map((r) => `${r.date}|${norm(r.title)}|${r.reseller_id}|${r.school_id ?? ''}|${r.consultant_id ?? ''}`));
   const seen = new Set();
   const defaultType = db.get('SELECT id, name FROM apl_types ORDER BY id LIMIT 1');
   const defaultReseller = body.reseller ? db.get('SELECT id, name FROM resellers WHERE id = ?', [Number(body.reseller)]) : null;
@@ -147,7 +150,7 @@ export function runImport({ db, today, user }, body) {
     return lists.resellers.get(n) || [...lists.resellers.values()].find((r) => ` ${n} `.includes(` ${norm(r.name)} `)) || null;
   };
 
-  const rows = input.map((raw, i) => {
+  const rows = input.flatMap((raw, i) => {
     const get = (f) => (cols[f] ? raw?.[cols[f]] : undefined);
     const text = (f) => String(get(f) ?? '').trim();
     const errors = [];
@@ -181,7 +184,15 @@ export function runImport({ db, today, user }, body) {
 
     const typeName = text('type');
     const type = typeName ? pick('type', lists.apl_types, 'APL-type') : defaultType;
-    const consultant = pick('consultant', lists.consultants, 'konsulent');
+    // "SR, KB/RT og JS": several consultants, by name or by initials.
+    const consultants = [];
+    for (const part of text('consultant').split(/\s*(?:[,;/&+\n]|\bog\b|\band\b)\s*/i).map((x) => x.trim()).filter(Boolean)) {
+      const hit = lists.consultants.get(norm(part)) || consultantInitials.get(part.toUpperCase().replace(/[^\p{L}]/gu, ''));
+      if (hit) { if (!consultants.some((c) => c.id === hit.id)) consultants.push({ id: hit.id, name: hit.name }); continue; }
+      if (/^\p{L}{1,4}\.?$/u.test(part)) { warnings.push(`Ukendte initialer "${part}" udeladt (tilføj dem under Administration › Konsulenter)`); continue; }
+      warnings.push(`Ny konsulent: ${part}`);
+      consultants.push({ id: null, name: part });
+    }
     const paidBy = pick('paidBy', lists.paid_by, 'betaler');
 
     const muniName = text('municipality');
@@ -212,20 +223,23 @@ export function runImport({ db, today, user }, body) {
       } else warnings.push(`Deltagere "${rawP}" ikke genkendt, sat til 0`);
     } else if (status === 'held') warnings.push('Ingen deltagere angivet, sat til 0');
 
-    const key = `${date}|${norm(title)}|${reseller?.id}|${school?.id ?? ''}`;
-    let duplicate = false;
-    if (!errors.length && reseller?.id && (existing.has(key) || seen.has(key))) duplicate = true;
-    seen.add(key);
-
-    return {
-      line: raw?._line ?? i + 2, // row number in the spreadsheet
-      date, duration, title, status, participants,
-      type: type?.name || '', consultant: consultant?.name || '', reseller: reseller?.name || '', paidBy: paidBy?.name || '',
-      school: school?.name || schoolName, municipality: municipality?.name || (municipalityId ? db.get('SELECT name FROM municipalities WHERE id = ?', [municipalityId])?.name : ''),
-      errors, warnings, duplicate,
-      _ids: { type: type?.id, consultant: consultant?.id, reseller: reseller?.id, paidBy: paidBy?.id, school: school?.id, municipality: municipalityId },
-      _create: create,
-    };
+    // Each consultant counts as one course, so "SR, KB" on one line becomes two courses.
+    if (consultants.length > 1) warnings.push(`Delt i ${consultants.length} kurser, ét pr. konsulent`);
+    return (consultants.length ? consultants : [null]).map((consultant) => {
+      const key = `${date}|${norm(title)}|${reseller?.id}|${school?.id ?? ''}|${consultant ? consultant.id ?? `n:${norm(consultant.name)}` : ''}`;
+      const duplicate = !errors.length && Boolean(reseller?.id) && (existing.has(key) || seen.has(key));
+      seen.add(key);
+      return {
+        line: raw?._line ?? i + 2, // row number in the spreadsheet
+        date, duration, title, status, participants,
+        type: type?.name || '', consultant: consultant?.name || '', reseller: reseller?.name || '', paidBy: paidBy?.name || '',
+        school: school?.name || schoolName, municipality: municipality?.name || (municipalityId ? db.get('SELECT name FROM municipalities WHERE id = ?', [municipalityId])?.name : ''),
+        errors, warnings, duplicate,
+        _consultant: consultant,
+        _ids: { type: type?.id, reseller: reseller?.id, paidBy: paidBy?.id, school: school?.id, municipality: municipalityId },
+        _create: create,
+      };
+    });
   });
 
   const ok = rows.filter((r) => !r.errors.length && !r.duplicate);
@@ -253,7 +267,7 @@ export function runImport({ db, today, user }, body) {
       for (const r of ok) {
         const ids = { ...r._ids };
         if (r._create.type) ids.type = ensure('apl_types', r._create.type);
-        if (r._create.consultant) ids.consultant = ensure('consultants', r._create.consultant);
+        const consultantId = r._consultant ? r._consultant.id ?? ensure('consultants', r._consultant.name) : null;
         if (r._create.paidBy) ids.paidBy = ensure('paid_by', r._create.paidBy);
         if (r._create.school) {
           const k = `${norm(r._create.school)}|${ids.municipality ?? ''}`;
@@ -262,7 +276,7 @@ export function runImport({ db, today, user }, body) {
         db.run(`INSERT INTO activities (date, duration, apl_type_id, title, school_id, municipality_id, participants,
                   consultant_id, reseller_id, paid_by_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [r.date, r.duration, ids.type, r.title, ids.school ?? null, ids.municipality, r.participants,
-            ids.consultant ?? null, ids.reseller, ids.paidBy ?? null, user.id]);
+            consultantId, ids.reseller, ids.paidBy ?? null, user.id]);
       }
       db.exec('COMMIT');
     } catch (e) {
@@ -273,5 +287,5 @@ export function runImport({ db, today, user }, body) {
   }
 
   const columns = Object.fromEntries(Object.entries(cols));
-  return { columns, headers, missingColumns, summary, rows: rows.map(({ _ids, _create, ...r }) => r) };
+  return { columns, headers, missingColumns, summary, rows: rows.map(({ _ids, _create, _consultant, ...r }) => r) };
 }

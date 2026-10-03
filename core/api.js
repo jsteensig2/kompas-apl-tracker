@@ -73,8 +73,8 @@ function buildWhere(user, f = {}) {
   if (int(f.type)) { where.push('a.apl_type_id = ?'); params.push(int(f.type)); }
   const q = String(f.q || '').trim();
   if (q) {
-    where.push(`(a.title LIKE ? OR s.name LIKE ? OR m.name LIKE ? OR c.name LIKE ? OR p.name LIKE ? OR r.name LIKE ? OR t.name LIKE ?)`);
-    params.push(...Array(7).fill(`%${q}%`));
+    where.push(`(a.title LIKE ? OR s.name LIKE ? OR m.name LIKE ? OR c.name LIKE ? OR c.initials LIKE ? OR p.name LIKE ? OR r.name LIKE ? OR t.name LIKE ?)`);
+    params.push(...Array(8).fill(`%${q}%`));
   }
   return { sql: where.length ? ` WHERE ${where.join(' AND ')}` : '', params };
 }
@@ -180,7 +180,7 @@ export function createApi(db, { XLSX } = {}) {
         years,
         resellers: db.all('SELECT id, name FROM resellers ORDER BY name'),
         municipalities: db.all('SELECT id, name FROM municipalities ORDER BY name'),
-        consultants: db.all('SELECT id, name FROM consultants ORDER BY name'),
+        consultants: db.all('SELECT id, name, initials FROM consultants ORDER BY name'),
         aplTypes: db.all('SELECT id, name FROM apl_types ORDER BY id'),
         paidBy: db.all('SELECT id, name FROM paid_by ORDER BY id'),
         schools: db.all(`SELECT s.id, s.name, s.municipality_id, m.name AS municipality
@@ -306,6 +306,10 @@ export function createApi(db, { XLSX } = {}) {
                        (SELECT COUNT(*) FROM activities a WHERE a.school_id = s.id) AS used
                      FROM schools s LEFT JOIN municipalities m ON m.id = s.municipality_id ORDER BY s.name`);
     }
+    if (list === 'consultants') {
+      return db.all(`SELECT x.id, x.name, x.initials, (SELECT COUNT(*) FROM activities a WHERE a.consultant_id = x.id) AS used
+                     FROM consultants x ORDER BY x.name`);
+    }
     const order = def.table === 'apl_types' || def.table === 'paid_by' ? 'x.id' : 'x.name';
     return db.all(`SELECT x.id, x.name, (SELECT COUNT(*) FROM activities a WHERE a.${def.usedBy} = x.id) AS used
                    FROM ${def.table} x ORDER BY ${order}`);
@@ -354,6 +358,15 @@ export function createApi(db, { XLSX } = {}) {
       return { id };
     }
     if (nameExists(def.table, name, id || 0)) throw new HttpError(409, `${def.label} "${name}" findes allerede.`);
+    if (list === 'consultants') {
+      const initials = String(body?.initials || '').trim().toUpperCase() || null;
+      if (initials && db.get('SELECT id FROM consultants WHERE upper(initials) = ? AND id <> ?', [initials, id || 0])) {
+        throw new HttpError(409, `Initialerne ${initials} bruges allerede af en anden konsulent.`);
+      }
+      if (id) db.run('UPDATE consultants SET name = ?, initials = ? WHERE id = ?', [name, initials, id]);
+      else id = Number(db.run('INSERT INTO consultants (name, initials) VALUES (?, ?)', [name, initials]).lastInsertRowid);
+      return { id };
+    }
     if (id) db.run(`UPDATE ${def.table} SET name = ? WHERE id = ?`, [name, id]);
     else id = Number(db.run(`INSERT INTO ${def.table} (name) VALUES (?)`, [name]).lastInsertRowid);
     return { id };
