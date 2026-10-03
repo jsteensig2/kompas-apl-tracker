@@ -308,6 +308,7 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 .field-status { grid-column: 1 / -1; }
 .field-status .seg { align-self: flex-start; }
 .import-pick { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.imp-reseller { margin-top: 14px; max-width: 340px; }
 .import-table td { font-size: 0.85rem; }
 .import-table tr.imp-err td { background: var(--danger-soft); }
 .import-table tr.imp-dup td { color: var(--muted); }

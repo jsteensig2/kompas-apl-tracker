@@ -658,10 +658,10 @@ async function readSpreadsheet(file) {
   } else {
     wb = window.XLSX.read(await file.arrayBuffer(), { cellDates: true });
   }
+  // The raw grid goes to the server, which finds the header row (it need not be the first).
   const ws = wb.Sheets[wb.SheetNames[0]];
-  return window.XLSX.utils.sheet_to_json(ws, { defval: '', raw: true })
-    .map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [String(k).trim(), cellToValue(v)])))
-    .filter((r) => Object.values(r).some((v) => v !== '' && v != null));
+  return window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true, blankrows: true })
+    .map((cells) => cells.map(cellToValue));
 }
 
 function renderImport(root) {
@@ -676,20 +676,28 @@ function renderImport(root) {
         <label class="btn btn-primary" for="imp-file">Vælg fil</label>
         <input id="imp-file" type="file" accept=".xlsx,.xls,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" hidden>
         <button type="button" class="btn" id="imp-template">Download skabelon</button>
-        <span class="muted small" id="imp-name">Første række skal være kolonneoverskrifter.</span>
+        <span class="muted small" id="imp-name">Excel (.xlsx) eller CSV</span>
       </div>
+      <label class="field field-compact imp-reseller"><span>Reseller til rækker uden reseller</span>
+        <select id="imp-reseller">${selectOptions(state.options.resellers, '', 'Ingen (rækken springes over)')}</select></label>
       <details class="howto"><summary>Kolonner der genkendes</summary>
         <p class="small">Dato · Varighed (Halv dag / Hel dag) · Type · Titel/emne · Skole · Kommune · Deltagere · Konsulent · Reseller · Betalt af.
-        Engelske overskrifter (Date, Duration, Title, School …) virker også. Dato, Titel/emne og Reseller er påkrævet.
-        Deltagere må være tom for planlagte kurser. Datoer kan skrives som 19.02.2026 eller 2026-02-19.</p>
-        <p class="small muted">Nye skoler, konsulenter, APL-typer og betalere oprettes automatisk. Resellere og kommuner skal findes i forvejen, fordi reseller styrer adgangen.</p>
+        Engelske overskrifter (Date, Duration, Title, School …) virker også, og overskriftsrækken må gerne have en titel over sig.
+        Kun Dato er påkrævet. Datoer kan skrives som 19.02.2026, 2026-02-19 eller 19. feb 2026.</p>
+        <p class="small muted">Tomme eller uklare felter udfyldes, så vidt det er muligt, og det står i Bemærkning: manglende deltagere bliver 0, ukendt varighed bliver halv dag, manglende titel bliver APL-typen, og ukendte kommuner udelades.
+        Nye skoler, konsulenter, APL-typer og betalere oprettes automatisk. Reseller gættes aldrig, fordi den styrer adgangen: vælg en reseller ovenfor til rækker uden.</p>
       </details>
       <p class="form-error" id="imp-err" role="alert" hidden></p>
     </section>
     <div id="imp-preview"></div>`;
   const err = $('#imp-err');
   const showErr = (m) => { err.textContent = m; err.hidden = !m; };
-  let rows = null;
+  let table = null;
+  const body = (commit) => ({ table, reseller: Number($('#imp-reseller').value) || null, commit });
+  $('#imp-reseller').onchange = async () => {
+    if (!table) return;
+    try { showPreview(await api.post('/api/import', body(false))); } catch (ex) { showErr(ex.message); }
+  };
 
   $('#imp-template').onclick = async (e) => {
     e.currentTarget.disabled = true;
@@ -704,9 +712,10 @@ function renderImport(root) {
     $('#imp-name').textContent = file.name;
     $('#imp-preview').innerHTML = '<div class="loading">Læser filen…</div>';
     try {
-      rows = await readSpreadsheet(file);
-      if (!rows.length) throw new Error('Filen indeholder ingen rækker.');
-      showPreview(await api.post('/api/import', { rows, commit: false }));
+      table = await readSpreadsheet(file);
+      const res = await api.post('/api/import', body(false));
+      if (!res.rows.length) throw new Error('Filen indeholder ingen rækker.');
+      showPreview(res);
     } catch (ex) { $('#imp-preview').innerHTML = ''; showErr(ex.message); }
   };
 
@@ -714,11 +723,11 @@ function renderImport(root) {
     const sm = res.summary;
     const box = $('#imp-preview');
     if (res.missingColumns.length) {
-      const names = { date: 'Dato', title: 'Titel/emne', reseller: 'Reseller' };
       box.innerHTML = '';
-      showErr(`Filen mangler kolonnen ${res.missingColumns.map((c) => names[c]).join(', ')}. Tjek overskrifterne i første række.`);
+      showErr('Der blev ikke fundet en kolonne med datoer. Giv kolonnen overskriften "Dato", og upload filen igen.');
       return;
     }
+    showErr('');
     const rowState = (r) => (r.errors.length ? 'err' : r.duplicate ? 'dup' : r.warnings.length ? 'warn' : 'ok');
     const note = (r) => (r.errors.length ? r.errors.join('. ') : r.duplicate ? 'Findes allerede, springes over' : r.warnings.join('. '));
     box.innerHTML = `
@@ -730,6 +739,7 @@ function renderImport(root) {
           <div class="${sm.duplicates ? 'is-warn' : ''}"><b>${num(sm.duplicates)}</b><span>dubletter springes over</span></div>
           <div class="${sm.errors ? 'is-err' : ''}"><b>${num(sm.errors)}</b><span>med fejl springes over</span></div>
         </div>
+        ${sm.warnings ? `<p class="small muted">${num(sm.warnings)} ${sm.warnings === 1 ? 'række' : 'rækker'} er udfyldt eller tilpasset automatisk. Se Bemærkning i tabellen.</p>` : ''}
         <div class="form-actions">
           <button type="button" class="btn btn-primary btn-lg" id="imp-go" ${sm.ready ? '' : 'disabled'}>Importér ${num(sm.ready)} ${sm.ready === 1 ? 'kursus' : 'kurser'}</button>
           <span class="muted small">${sm.errors ? 'Ret fejlene i filen og upload den igen, eller importér de gyldige rækker nu.' : ''}</span>
@@ -751,7 +761,7 @@ function renderImport(root) {
     $('#imp-go').onclick = async (e) => {
       e.currentTarget.disabled = true;
       try {
-        const done = await api.post('/api/import', { rows, commit: true });
+        const done = await api.post('/api/import', body(true));
         state.options = await api.get('/api/options');
         toast(`${num(done.summary.imported || 0)} kurser importeret`);
         Object.assign(state.listFilters, { q: '', status: '', year: '', from: '', to: '' });

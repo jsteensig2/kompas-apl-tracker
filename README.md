@@ -76,9 +76,12 @@ Dashboardets nøgletal tæller kun afholdte kurser; ordrebogen vises for sig. De
 ## Bulk-import (Excel/CSV)
 
 Under *Aktiviteter › Importér Excel/CSV* uploader Kompas en .xlsx- eller .csv-fil (skabelon kan downloades).
-Filen læses i browseren, og serveren validerer hver række: ukendte resellere og kommuner afvises, nye skoler,
-konsulenter, APL-typer og betalere oprettes, og dubletter (samme dato, titel, skole og reseller) springes over.
-Man ser en forhåndsvisning, før noget gemmes.
+Filen læses i browseren, og serveren finder selv overskriftsrækken (der må gerne stå en titel over den) og
+validerer hver række. Kun en dato er påkrævet. Mangelfulde felter udfyldes og noteres i forhåndsvisningen: manglende
+deltagere bliver 0, ukendt varighed bliver halv dag, manglende titel bliver APL-typen, og ukendte kommuner udelades.
+Reselleren gættes aldrig, fordi den styrer adgangen: "Atea A/S" genkendes som Atea, og rækker uden reseller får den
+reseller, man vælger på siden. Nye skoler, konsulenter, APL-typer og betalere oprettes, og dubletter (samme dato,
+titel, skole og reseller) springes over. Man ser en forhåndsvisning, før noget gemmes.
 
 SheetJS 0.18.5 fra npm bruges til Excel. Til drift anbefales den nyeste version fra cdn.sheetjs.com.
 

@@ -22,28 +22,71 @@ const norm = (s) => String(s ?? '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' 
 
 export const TEMPLATE_HEADERS = ['Dato', 'Varighed', 'Type', 'Titel/emne', 'Skole', 'Kommune', 'Deltagere', 'Konsulent', 'Reseller', 'Betalt af'];
 
+// Names too vague to match inside a longer header ("Antal timer" is not participants).
+const TOO_VAGUE = new Set(['antal', 'afholdt']);
+
 function mapHeaders(sample) {
   const map = {};
-  for (const key of Object.keys(sample || {})) {
-    const n = norm(key).replace(/^kommune$/, 'kommune');
-    for (const [field, names] of Object.entries(HEADERS)) {
-      if (!map[field] && names.includes(n)) map[field] = key;
+  const keys = Object.keys(sample || {});
+  const taken = new Set();
+  // First exact names, then headers that contain a known name ("Dato for kursus", "Antal deltagere (ca.)").
+  for (const loose of [false, true]) {
+    for (const key of keys) {
+      if (taken.has(key)) continue;
+      const n = norm(key);
+      if (!n) continue;
+      for (const [field, names] of Object.entries(HEADERS)) {
+        if (map[field]) continue;
+        const hit = loose
+          ? names.some((name) => name.length >= 4 && !TOO_VAGUE.has(name) && ` ${n} `.includes(` ${name} `))
+          : names.includes(n);
+        if (hit) { map[field] = key; taken.add(key); break; }
+      }
     }
   }
   return map;
 }
 
+// A raw sheet (array of rows of cells) may have a title or blank lines above the headers.
+// The header row is the first of the top 15 rows where at least two headers are recognised.
+export function tableToRows(table) {
+  const lines = (Array.isArray(table) ? table : []).filter(Array.isArray);
+  let headerAt = 0;
+  for (let i = 0; i < Math.min(lines.length, 15); i++) {
+    const sample = Object.fromEntries(lines[i].map((c, j) => [String(c ?? '').trim() || `_${j}`, '']));
+    if (Object.keys(mapHeaders(sample)).length >= 2) { headerAt = i; break; }
+  }
+  const headers = (lines[headerAt] || []).map((c, j) => String(c ?? '').trim() || `Kolonne ${j + 1}`);
+  const rows = [];
+  for (let i = headerAt + 1; i < lines.length; i++) {
+    const cells = lines[i];
+    if (!cells.some((v) => v !== '' && v != null)) continue;
+    const row = { _line: i + 1 };
+    headers.forEach((h, j) => { if (!(h in row)) row[h] = cells[j] ?? ''; });
+    rows.push(row);
+  }
+  return rows;
+}
+
 // Accepts 2026-02-19, 19.02.2026, 19-02-26, 19/2/2026, Excel serial numbers and ISO timestamps.
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'maj|may', 'jun', 'jul', 'aug', 'sep', 'okt|oct', 'nov', 'dec'];
 export function parseDate(v) {
   if (v == null || v === '') return null;
   if (typeof v === 'number' && v > 20000 && v < 80000) {
     return new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 864e5).toISOString().slice(0, 10);
   }
-  const s = String(v).trim();
+  const s = String(v).trim().toLowerCase().replace(/^(man|tirs|ons|tors|fre|lør|søn)dag\s*(d\.|den)?\s*/, '');
   let m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s);
   if (m) return valid(+m[1], +m[2], +m[3]);
-  m = /^(\d{1,2})[./-](\d{1,2})[./-](\d{2}|\d{4})$/.exec(s);
+  // 19.02.2026, 19-02-26, 19/2/2026, also with a time after it ("19.02.2026 09:00").
+  m = /^(\d{1,2})\s*[./-]\s*(\d{1,2})\s*[./-]\s*(\d{4}|\d{2})(?!\d)/.exec(s);
   if (m) return valid(m[3].length === 2 ? 2000 + +m[3] : +m[3], +m[2], +m[1]);
+  // 19. feb 2026, 19 februar 2026, 19-feb-26
+  m = /^(\d{1,2})\.?[\s-]*([a-zæøå]{3,})\.?[\s-]*(\d{4}|\d{2})(?!\d)/.exec(s);
+  if (m) {
+    const mo = MONTHS.findIndex((names) => names.split('|').some((n) => m[2].startsWith(n)));
+    if (mo >= 0) return valid(m[3].length === 2 ? 2000 + +m[3] : +m[3], mo + 1, +m[1]);
+  }
   return null;
 }
 function valid(y, mo, d) {
@@ -62,13 +105,15 @@ export function parseDuration(v) {
 
 /**
  * @param ctx { db, today, user }
- * @param body { rows: object[], commit: boolean }
+ * @param body { table?: any[][], rows?: object[], reseller?: number, commit: boolean }
+ *   table: the raw sheet (the header row is found automatically); rows: already keyed by header.
+ *   reseller: used for rows that have no reseller of their own.
  */
 export function runImport({ db, today, user }, body) {
-  const input = Array.isArray(body?.rows) ? body.rows.slice(0, 2000) : [];
+  const input = (Array.isArray(body?.table) ? tableToRows(body.table) : Array.isArray(body?.rows) ? body.rows : []).slice(0, 2000);
   if (!input.length) return { columns: {}, rows: [], summary: { total: 0 }, missingColumns: [] };
   const cols = mapHeaders(input.find((r) => r && Object.keys(r).length > 2) || input[0]);
-  const missingColumns = ['date', 'title', 'reseller'].filter((f) => !cols[f]);
+  const missingColumns = ['date'].filter((f) => !cols[f]);
 
   const lookup = (table) => new Map(db.all(`SELECT id, name FROM ${table}`).map((r) => [norm(r.name), r]));
   const lists = {
@@ -86,6 +131,12 @@ export function runImport({ db, today, user }, body) {
     .map((r) => `${r.date}|${norm(r.title)}|${r.reseller_id}|${r.school_id ?? ''}`));
   const seen = new Set();
   const defaultType = db.get('SELECT id, name FROM apl_types ORDER BY id LIMIT 1');
+  const defaultReseller = body.reseller ? db.get('SELECT id, name FROM resellers WHERE id = ?', [Number(body.reseller)]) : null;
+  // "Atea A/S" or "ATEA Danmark" should find Atea.
+  const findReseller = (name) => {
+    const n = norm(name);
+    return lists.resellers.get(n) || [...lists.resellers.values()].find((r) => ` ${n} `.includes(` ${norm(r.name)} `)) || null;
+  };
 
   const rows = input.map((raw, i) => {
     const get = (f) => (cols[f] ? raw?.[cols[f]] : undefined);
@@ -95,23 +146,27 @@ export function runImport({ db, today, user }, body) {
     const create = {};
 
     const date = parseDate(get('date'));
-    if (!date) errors.push(get('date') ? `Ukendt dato "${text('date')}"` : 'Mangler dato');
-    const duration = parseDuration(get('duration'));
-    if (!duration) errors.push(`Ukendt varighed "${text('duration')}"`);
-    const title = text('title');
-    if (!title) errors.push('Mangler titel/emne');
+    if (!date) errors.push(text('date') ? `Ukendt dato "${text('date')}"` : 'Mangler dato');
+    let duration = parseDuration(get('duration'));
+    if (!duration) { warnings.push(`Varighed "${text('duration')}" ikke genkendt, sat til halv dag`); duration = 'half'; }
 
-    const pick = (field, list, label, { required = false, creatable = true } = {}) => {
+    const pick = (field, list, label) => {
       const name = text(field);
-      if (!name) { if (required) errors.push(`Mangler ${label}`); return null; }
+      if (!name) return null;
       const hit = list.get(norm(name));
       if (hit) return { id: hit.id, name: hit.name };
-      if (!creatable) { errors.push(`${label[0].toUpperCase()}${label.slice(1)} "${name}" findes ikke`); return null; }
       warnings.push(`Ny ${label}: ${name}`);
       create[field] = name;
       return { id: null, name };
     };
-    const reseller = pick('reseller', lists.resellers, 'reseller', { required: true, creatable: false });
+
+    // The reseller decides who can see the course, so it is never guessed or created.
+    const resellerName = text('reseller');
+    let reseller = resellerName ? findReseller(resellerName) : defaultReseller;
+    if (resellerName && !reseller) errors.push(`Reselleren "${resellerName}" findes ikke`);
+    else if (!reseller) errors.push('Mangler reseller (vælg en reseller til rækker uden reseller)');
+    reseller = reseller && { id: reseller.id, name: reseller.name };
+
     const typeName = text('type');
     const type = typeName ? pick('type', lists.apl_types, 'APL-type') : defaultType;
     const consultant = pick('consultant', lists.consultants, 'konsulent');
@@ -119,7 +174,7 @@ export function runImport({ db, today, user }, body) {
 
     const muniName = text('municipality');
     const municipality = muniName ? findMunicipality(muniName) : null;
-    if (muniName && !municipality) errors.push(`Kommunen "${muniName}" findes ikke`);
+    if (muniName && !municipality) warnings.push(`Kommunen "${muniName}" blev ikke fundet og er udeladt`);
     const schoolName = text('school');
     let school = null;
     if (schoolName) {
@@ -128,14 +183,22 @@ export function runImport({ db, today, user }, body) {
     }
     const municipalityId = municipality?.id ?? school?.municipality_id ?? null;
 
-    const status = date && date > today ? 'planned' : 'held';
-    const rawP = get('participants');
-    let participants = rawP === '' || rawP == null ? null : Number(String(rawP).replace(/\s/g, '').replace(',', '.'));
-    if (participants !== null && (!Number.isInteger(participants) || participants < 0)) {
-      errors.push(`Ugyldigt antal deltagere "${text('participants')}"`);
-      participants = null;
+    let title = text('title');
+    if (!title) {
+      title = type?.name || schoolName || 'APL-aktivitet';
+      warnings.push(`Ingen titel, sat til "${title}"`);
     }
-    if (participants === null && status === 'held' && !errors.length) errors.push('Mangler antal deltagere');
+
+    const status = date && date > today ? 'planned' : 'held';
+    const rawP = text('participants');
+    let participants = 0;
+    if (rawP) {
+      const n = /\d+/.exec(rawP.replace(/\s/g, ''));
+      if (n) {
+        participants = Number(n[0]);
+        if (n[0] !== rawP.replace(/\s/g, '')) warnings.push(`Deltagere "${rawP}" læst som ${participants}`);
+      } else warnings.push(`Deltagere "${rawP}" ikke genkendt, sat til 0`);
+    } else if (status === 'held') warnings.push('Ingen deltagere angivet, sat til 0');
 
     const key = `${date}|${norm(title)}|${reseller?.id}|${school?.id ?? ''}`;
     let duplicate = false;
@@ -143,8 +206,8 @@ export function runImport({ db, today, user }, body) {
     seen.add(key);
 
     return {
-      line: i + 2, // row number in the spreadsheet (header is row 1)
-      date, duration, title, status, participants: participants ?? 0,
+      line: raw?._line ?? i + 2, // row number in the spreadsheet
+      date, duration, title, status, participants,
       type: type?.name || '', consultant: consultant?.name || '', reseller: reseller?.name || '', paidBy: paidBy?.name || '',
       school: school?.name || schoolName, municipality: municipality?.name || (municipalityId ? db.get('SELECT name FROM municipalities WHERE id = ?', [municipalityId])?.name : ''),
       errors, warnings, duplicate,

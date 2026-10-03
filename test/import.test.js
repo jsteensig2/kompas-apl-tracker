@@ -28,7 +28,7 @@ const ROWS = [
   { Dato: 45700, Varighed: 'half day', 'Titel/emne': 'AI', Skole: '', Kommune: '', Deltagere: 9, Konsulent: 'Kim Byrding', Reseller: 'Atea', 'Betalt af': '' },
   { Dato: '31.02.2026', 'Titel/emne': 'Mac – module 1', Reseller: 'Atea', Deltagere: 5 },
   { Dato: '04.03.2025', 'Titel/emne': 'Mac – module 1', Reseller: 'Ukendt Partner', Deltagere: 5 },
-  { Dato: '05.03.2025', 'Titel/emne': 'Mac – module 1', Reseller: 'Atea', Deltagere: '' },
+  { Dato: '05.03.2025', 'Titel/emne': 'Mac – module 1', Reseller: 'Atea A/S', Deltagere: '' },
   { Dato: '03.03.2025', Varighed: 'Halv dag', 'Titel/emne': 'Jamf', Skole: 'Torstorp Skole', Kommune: 'Høje-Taastrup', Deltagere: 12, Reseller: 'Atea' },
 ];
 
@@ -41,6 +41,10 @@ test('date and duration parsing', () => {
   assert.equal(parseDuration('Hel dag'), 'full');
   assert.equal(parseDuration('Full day'), 'full');
   assert.equal(parseDuration(''), 'half');
+  assert.equal(parseDate('19. feb 2026'), '2026-02-19');
+  assert.equal(parseDate('3 marts 2025'), '2025-03-03');
+  assert.equal(parseDate('19.02.2026 09:00'), '2026-02-19');
+  assert.equal(parseDate('torsdag d. 19.02.2026'), '2026-02-19');
 });
 
 test('preview validates rows and splits held and planned', async () => {
@@ -54,17 +58,20 @@ test('preview validates rows and splits held and planned', async () => {
   assert.equal(serial.date, '2025-02-12');
   assert.ok(badDate.errors.length);
   assert.ok(badReseller.errors.some((e) => e.includes('Ukendt Partner')));
-  assert.ok(noParticipants.errors.some((e) => e.includes('deltagere')));
+  assert.equal(noParticipants.errors.length, 0);
+  assert.equal(noParticipants.reseller, 'Atea');
+  assert.equal(noParticipants.participants, 0);
+  assert.ok(noParticipants.warnings.some((w) => w.includes('deltagere')));
   assert.equal(dup.duplicate, true);
   assert.deepEqual({ ready: res.summary.ready, held: res.summary.held, planned: res.summary.planned, errors: res.summary.errors, duplicates: res.summary.duplicates },
-    { ready: 3, held: 2, planned: 1, errors: 3, duplicates: 1 });
+    { ready: 4, held: 3, planned: 1, errors: 2, duplicates: 1 });
 });
 
 test('commit imports only valid rows; re-import finds duplicates', async () => {
   const before = (await json('admin', '/api/activities')).length;
   const res = await post('admin', '/api/import', { rows: ROWS, commit: true });
-  assert.equal(res.summary.imported, 3);
-  assert.equal((await json('admin', '/api/activities')).length, before + 3);
+  assert.equal(res.summary.imported, 4);
+  assert.equal((await json('admin', '/api/activities')).length, before + 4);
   const again = await post('admin', '/api/import', { rows: ROWS });
   assert.equal(again.summary.ready, 0);
   const c2 = await json('Comm2IG', '/api/activities?status=planned');
@@ -84,7 +91,42 @@ test('resellers cannot import', async () => {
   assert.equal((await call('Atea', '/api/import', { method: 'POST', body: JSON.stringify({ rows: ROWS, commit: true }) })).status, 403);
 });
 
-test('missing required columns are reported', async () => {
+test('missing date column is reported', async () => {
   const res = await post('admin', '/api/import', { rows: [{ Foo: 1, Bar: 2, Baz: 3 }] });
-  assert.deepEqual(res.missingColumns, ['date', 'title', 'reseller']);
+  assert.deepEqual(res.missingColumns, ['date']);
+});
+
+test('messy sheet: title above headers, loose headers, blanks filled in, default reseller', async () => {
+  const opts = await json('admin', '/api/options');
+  const comm2ig = opts.resellers.find((r) => r.name === 'Comm2IG').id;
+  const table = [
+    ['Kurser efterår 2024', '', '', ''],
+    ['', '', '', ''],
+    ['Dato for kurset', 'Skole', 'Antal deltagere (ca.)', 'Kommune', 'Varighed'],
+    ['12. sep 2024', 'Rødovre Skole', 'ca. 20', 'Atlantis', 'formiddag'],
+    ['13.09.2024', '', '', '', ''],
+    ['', '', '', '', ''],
+    ['ikke en dato', 'X', '3', '', ''],
+  ];
+  const noDefault = await post('admin', '/api/import', { table });
+  assert.deepEqual(noDefault.missingColumns, []);
+  assert.ok(noDefault.rows[0].errors.some((e) => e.includes('reseller')));
+  const res = await post('admin', '/api/import', { table, reseller: comm2ig });
+  const [a, b, c] = res.rows;
+  assert.equal(a.line, 4);
+  assert.deepEqual(a.errors, []);
+  assert.equal(a.date, '2024-09-12');
+  assert.equal(a.participants, 20);
+  assert.equal(a.duration, 'half');
+  assert.equal(a.reseller, 'Comm2IG');
+  assert.ok(a.warnings.some((w) => w.includes('Atlantis')));
+  assert.ok(a.title);
+  assert.deepEqual(b.errors, []);
+  assert.equal(b.participants, 0);
+  assert.equal(c.line, 7);
+  assert.ok(c.errors.some((e) => e.includes('dato')));
+  const done = await post('admin', '/api/import', { table, reseller: comm2ig, commit: true });
+  assert.equal(done.summary.imported, 2);
+  const atea = await json('Atea', '/api/activities');
+  assert.ok(!atea.some((x) => x.school === 'Rødovre Skole'));
 });
