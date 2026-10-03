@@ -130,3 +130,22 @@ test('messy sheet: title above headers, loose headers, blanks filled in, default
   const atea = await json('Atea', '/api/activities');
   assert.ok(!atea.some((x) => x.school === 'Rødovre Skole'));
 });
+
+test('columns can be re-mapped by hand; unknown reseller falls back to the chosen one', async () => {
+  const opts = await json('admin', '/api/options');
+  const atea = opts.resellers.find((r) => r.name === 'Atea').id;
+  const table = [
+    ['Dato', 'Kursus', 'Emne', 'Skole', 'Forhandler'],
+    ['05.08.2026', '08:30 - 11:30', 'Jamf grundkursus', 'Læringshuset', '05-08-2026'],
+  ];
+  const auto = await post('admin', '/api/import', { table });
+  assert.ok(auto.headers.includes('Emne'));
+  assert.ok(auto.rows[0].errors.some((e) => e.includes('05-08-2026')));
+  const fixed = await post('admin', '/api/import', { table, reseller: atea, mapping: { title: 'Emne', reseller: '' } });
+  assert.deepEqual(fixed.rows[0].errors, []);
+  assert.equal(fixed.rows[0].title, 'Jamf grundkursus');
+  assert.equal(fixed.rows[0].reseller, 'Atea');
+  const fallback = await post('admin', '/api/import', { table, reseller: atea });
+  assert.deepEqual(fallback.rows[0].errors, []);
+  assert.ok(fallback.rows[0].warnings.some((w) => w.includes('Atea brugt')));
+});

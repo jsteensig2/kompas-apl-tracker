@@ -324,3 +324,6 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 .temp-pw { width: 100%; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border-radius: var(--r-sm); background: var(--accent-soft); }
 .temp-pw code { font-size: 1.05rem; font-weight: 600; letter-spacing: 0.04em; }
 .demobar .spacer { flex: 1; }
+.imp-cols { margin: 0 0 14px; }
+.imp-cols-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; margin-top: 10px; }
+.imp-reseller small { display: block; margin-top: 4px; }

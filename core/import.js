@@ -20,6 +20,7 @@ const HEADERS = {
 
 const norm = (s) => String(s ?? '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 
+export const FIELDS = Object.keys(HEADERS);
 export const TEMPLATE_HEADERS = ['Dato', 'Varighed', 'Type', 'Titel/emne', 'Skole', 'Kommune', 'Deltagere', 'Konsulent', 'Reseller', 'Betalt af'];
 
 // Names too vague to match inside a longer header ("Antal timer" is not participants).
@@ -111,8 +112,16 @@ export function parseDuration(v) {
  */
 export function runImport({ db, today, user }, body) {
   const input = (Array.isArray(body?.table) ? tableToRows(body.table) : Array.isArray(body?.rows) ? body.rows : []).slice(0, 2000);
-  if (!input.length) return { columns: {}, rows: [], summary: { total: 0 }, missingColumns: [] };
-  const cols = mapHeaders(input.find((r) => r && Object.keys(r).length > 2) || input[0]);
+  if (!input.length) return { columns: {}, headers: [], rows: [], summary: { total: 0 }, missingColumns: [] };
+  const sample = input.find((r) => r && Object.keys(r).length > 2) || input[0];
+  const headers = Object.keys(sample).filter((h) => h !== '_line');
+  const cols = mapHeaders(sample);
+  // The user can correct the automatic match: { field: header } or { field: '' } to ignore a field.
+  for (const [field, header] of Object.entries(body.mapping || {})) {
+    if (!(field in HEADERS)) continue;
+    if (header && headers.includes(header)) cols[field] = header;
+    else if (header === '') delete cols[field];
+  }
   const missingColumns = ['date'].filter((f) => !cols[f]);
 
   const lookup = (table) => new Map(db.all(`SELECT id, name FROM ${table}`).map((r) => [norm(r.name), r]));
@@ -163,7 +172,10 @@ export function runImport({ db, today, user }, body) {
     // The reseller decides who can see the course, so it is never guessed or created.
     const resellerName = text('reseller');
     let reseller = resellerName ? findReseller(resellerName) : defaultReseller;
-    if (resellerName && !reseller) errors.push(`Reselleren "${resellerName}" findes ikke`);
+    if (resellerName && !reseller && defaultReseller) {
+      reseller = defaultReseller;
+      warnings.push(`Reselleren "${resellerName}" findes ikke, ${defaultReseller.name} brugt`);
+    } else if (resellerName && !reseller) errors.push(`Reselleren "${resellerName}" findes ikke`);
     else if (!reseller) errors.push('Mangler reseller (vælg en reseller til rækker uden reseller)');
     reseller = reseller && { id: reseller.id, name: reseller.name };
 
@@ -261,5 +273,5 @@ export function runImport({ db, today, user }, body) {
   }
 
   const columns = Object.fromEntries(Object.entries(cols));
-  return { columns, missingColumns, summary, rows: rows.map(({ _ids, _create, ...r }) => r) };
+  return { columns, headers, missingColumns, summary, rows: rows.map(({ _ids, _create, ...r }) => r) };
 }

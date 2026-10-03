@@ -679,7 +679,8 @@ function renderImport(root) {
         <span class="muted small" id="imp-name">Excel (.xlsx) eller CSV</span>
       </div>
       <label class="field field-compact imp-reseller"><span>Reseller til rækker uden reseller</span>
-        <select id="imp-reseller">${selectOptions(state.options.resellers, '', 'Ingen (rækken springes over)')}</select></label>
+        <select id="imp-reseller">${selectOptions(state.options.resellers, '', 'Ingen (rækken springes over)')}</select>
+        <small class="muted">Bruges også, hvis reselleren i filen ikke findes.</small></label>
       <details class="howto"><summary>Kolonner der genkendes</summary>
         <p class="small">Dato · Varighed (Halv dag / Hel dag) · Type · Titel/emne · Skole · Kommune · Deltagere · Konsulent · Reseller · Betalt af.
         Engelske overskrifter (Date, Duration, Title, School …) virker også, og overskriftsrækken må gerne have en titel over sig.
@@ -693,7 +694,8 @@ function renderImport(root) {
   const err = $('#imp-err');
   const showErr = (m) => { err.textContent = m; err.hidden = !m; };
   let table = null;
-  const body = (commit) => ({ table, reseller: Number($('#imp-reseller').value) || null, commit });
+  let mapping = {};
+  const body = (commit) => ({ table, mapping, reseller: Number($('#imp-reseller').value) || null, commit });
   $('#imp-reseller').onchange = async () => {
     if (!table) return;
     try { showPreview(await api.post('/api/import', body(false))); } catch (ex) { showErr(ex.message); }
@@ -713,6 +715,7 @@ function renderImport(root) {
     $('#imp-preview').innerHTML = '<div class="loading">Læser filen…</div>';
     try {
       table = await readSpreadsheet(file);
+      mapping = {};
       const res = await api.post('/api/import', body(false));
       if (!res.rows.length) throw new Error('Filen indeholder ingen rækker.');
       showPreview(res);
@@ -722,12 +725,12 @@ function renderImport(root) {
   function showPreview(res) {
     const sm = res.summary;
     const box = $('#imp-preview');
-    if (res.missingColumns.length) {
-      box.innerHTML = '';
-      showErr('Der blev ikke fundet en kolonne med datoer. Giv kolonnen overskriften "Dato", og upload filen igen.');
-      return;
-    }
-    showErr('');
+    showErr(res.missingColumns.length ? 'Der blev ikke fundet en kolonne med datoer. Vælg under "Hvilken kolonne er hvad?", hvilken kolonne der er Dato.' : '');
+    const FIELD_LABELS = { date: 'Dato', duration: 'Varighed', type: 'APL-type', title: 'Titel/emne', school: 'Skole', municipality: 'Kommune',
+      participants: 'Deltagere', consultant: 'Konsulent', reseller: 'Reseller', paidBy: 'Betalt af' };
+    const colPick = (f) => `<label class="field field-compact"><span>${FIELD_LABELS[f]}</span><select data-field="${f}">
+      <option value="">(ikke i filen)</option>${res.headers.filter((h) => !/^Kolonne \d+$/.test(h) || h === res.columns[f])
+        .map((h) => `<option ${res.columns[f] === h ? 'selected' : ''}>${esc(h)}</option>`).join('')}</select></label>`;
     const rowState = (r) => (r.errors.length ? 'err' : r.duplicate ? 'dup' : r.warnings.length ? 'warn' : 'ok');
     const note = (r) => (r.errors.length ? r.errors.join('. ') : r.duplicate ? 'Findes allerede, springes over' : r.warnings.join('. '));
     box.innerHTML = `
@@ -739,6 +742,8 @@ function renderImport(root) {
           <div class="${sm.duplicates ? 'is-warn' : ''}"><b>${num(sm.duplicates)}</b><span>dubletter springes over</span></div>
           <div class="${sm.errors ? 'is-err' : ''}"><b>${num(sm.errors)}</b><span>med fejl springes over</span></div>
         </div>
+        <details class="howto imp-cols" ${sm.errors || Object.keys(mapping).length ? 'open' : ''}><summary>Hvilken kolonne er hvad? Ret her, hvis noget er koblet forkert</summary>
+          <div class="imp-cols-grid">${Object.keys(FIELD_LABELS).map(colPick).join('')}</div></details>
         ${sm.warnings ? `<p class="small muted">${num(sm.warnings)} ${sm.warnings === 1 ? 'række' : 'rækker'} er udfyldt eller tilpasset automatisk. Se Bemærkning i tabellen.</p>` : ''}
         <div class="form-actions">
           <button type="button" class="btn btn-primary btn-lg" id="imp-go" ${sm.ready ? '' : 'disabled'}>Importér ${num(sm.ready)} ${sm.ready === 1 ? 'kursus' : 'kurser'}</button>
@@ -758,6 +763,12 @@ function renderImport(root) {
             </tr>`).join('')}</tbody>
         </table>
       </div>`;
+    box.querySelectorAll('.imp-cols select').forEach((sel) => {
+      sel.onchange = async () => {
+        mapping = { ...mapping, [sel.dataset.field]: sel.value };
+        try { showPreview(await api.post('/api/import', body(false))); } catch (ex) { showErr(ex.message); }
+      };
+    });
     $('#imp-go').onclick = async (e) => {
       e.currentTarget.disabled = true;
       try {
