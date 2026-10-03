@@ -401,3 +401,28 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 .apple-card p { margin: 0 0 10px; max-width: 72ch; }
 .table td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .k-cards { padding: 0 12px 12px; }
+.pill-done { background: var(--accent-soft); color: var(--accent); }
+.pill-late { background: var(--danger-soft); color: var(--danger); }
+.k-state { margin-top: 6px; }
+.k-card-apple { margin-top: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.k-card-apple .k-state { margin: 0; }
+.k-noscroll { overflow: hidden; }
+.k-overlay { position: fixed; inset: 0; z-index: 50; background: rgb(0 0 0 / 45%); display: flex; justify-content: center; align-items: flex-start; padding: 32px 16px; overflow-y: auto; }
+.k-sheet { width: min(640px, 100%); }
+.k-sheet h2 { margin: 0; }
+.k-fields { margin: 12px 0 0; }
+.k-step { margin: 18px 0 6px; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.k-field { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 16px; padding: 8px 0; border-top: 1px solid var(--line); }
+.k-field dt { font-size: 0.88rem; }
+.k-field dd { margin: 0; min-width: 0; }
+.k-copy { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 6px 10px; border: 1px solid var(--line);
+  border-radius: var(--r-sm); background: var(--surface-2); color: var(--ink); font: inherit; font-weight: 600; cursor: copy; overflow-wrap: anywhere; }
+.k-copy:hover { border-color: var(--accent); }
+.k-copy-hint { font-size: 0.72rem; font-weight: 500; color: var(--muted); flex: none; }
+.k-done { display: flex; align-items: center; gap: 10px; margin-top: 18px; padding: 12px 14px; border-radius: var(--r-sm); background: var(--accent-soft); font-weight: 600; cursor: pointer; }
+.k-done input { width: 20px; height: 20px; }
+@media (max-width: 640px) {
+  .k-overlay { padding: 0; }
+  .k-sheet { border-radius: 0; min-height: 100%; }
+  .k-field { grid-template-columns: 1fr; }
+}
