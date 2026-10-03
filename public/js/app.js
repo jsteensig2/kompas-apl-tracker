@@ -1146,6 +1146,8 @@ async function renderAdmin(root) {
 async function render() {
   renderShell();
   const root = $('#view');
+  // Long tables get the full screen width.
+  document.body.classList.toggle('is-wide', ['activities', 'import'].includes(state.view));
   try {
     if (state.me.must_change_password) return renderChangePassword(root, { forced: true });
     if (state.view === 'password') return renderChangePassword(root, { forced: false });

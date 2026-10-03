@@ -121,6 +121,7 @@ a:hover { text-decoration: underline; }
 
 /* Page */
 .page { max-width: 1180px; margin: 0 auto; padding: 32px var(--gutter) 96px; display: flex; flex-direction: column; gap: 24px; outline: none; }
+.is-wide .page, .is-wide .topbar-inner, .is-wide .demobar-inner { max-width: none; }
 .pagehead { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .pagehead > div:first-child { min-width: 0; }
 .pagehead p.muted { margin: 6px 0 0; }
