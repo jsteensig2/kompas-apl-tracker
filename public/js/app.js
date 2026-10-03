@@ -300,7 +300,7 @@ async function renderDashboard(root) {
     <div class="pagehead">
       <div>
         <p class="eyebrow">Kompas APL Tracker</p>
-        <h1>Overblik over Professional Learning</h1>
+        <h1>Overblik over APL</h1>
         ${!isAdmin() ? `<p class="muted">Aktiviteter gennemført af Kompas for ${esc(state.me.reseller)}.</p>` : ''}
       </div>
       ${isAdmin() ? '<button class="btn btn-primary" data-go="register" type="button">+ Registrér aktivitet</button>' : ''}
