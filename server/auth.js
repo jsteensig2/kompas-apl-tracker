@@ -85,7 +85,8 @@ export function bootstrapAdmin(db) {
 }
 
 export function authRoutes(app, db) {
-  app.get('/auth/config', (_req, res) => res.json({ demo: demoEnabled(), password: true }));
+  // version: the deployed commit (Render sets RENDER_GIT_COMMIT), shown at the bottom of the app.
+  app.get('/auth/config', (_req, res) => res.json({ demo: demoEnabled(), password: true, version: (process.env.RENDER_GIT_COMMIT || '').slice(0, 7) }));
 
   app.get('/auth/demo-users', (_req, res) => {
     if (!demoEnabled()) return res.status(404).json({ error: 'Demo-login er slået fra.' });

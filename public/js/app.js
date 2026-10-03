@@ -115,6 +115,7 @@ function renderShell() {
       </div>
     </div>` : `<div class="demobar"><div class="demobar-inner"><span class="demobar-label">${esc(me.email)}</span><span class="spacer"></span><a href="#password" data-go="password" class="small">Skift adgangskode</a><button type="button" class="linkbtn" id="logout">Log ud</button></div></div>`}
     <main id="view" class="page" tabindex="-1"></main>
+    ${state.version ? `<footer class="app-version">Version ${esc(state.version)}</footer>` : ''}
     ${isAdmin() && state.view !== 'register' ? '<button class="fab show-sm" data-go="register" type="button" aria-label="Registrér aktivitet">+ Registrér</button>' : ''}
   `;
   $('#logout').onclick = async () => { await transport.auth.logout(); state.me = null; boot(); };
@@ -1191,6 +1192,7 @@ async function loadSession() {
   state.options = await api.get('/api/options');
   try {
     const cfg = await transport.auth.config();
+    state.version = cfg.version || '';
     state.demoUsers = cfg.demo ? await transport.auth.demoUsers() : [];
   } catch { state.demoUsers = []; }
 }

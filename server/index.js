@@ -81,7 +81,10 @@ export function createServer({ dbFile = process.env.DB_FILE || fileURLToPath(new
     }
   });
 
-  app.use(express.static(fileURLToPath(new URL('../public', import.meta.url))));
+  // Browsers must check for a new version on every load, so updates show up without a hard refresh.
+  app.use(express.static(fileURLToPath(new URL('../public', import.meta.url)), {
+    setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache'),
+  }));
   // SheetJS for reading Excel/CSV files in the browser (bulk import).
   app.get('/vendor/xlsx.full.min.js', (_req, res) => res.sendFile(fileURLToPath(new URL('../node_modules/xlsx/dist/xlsx.full.min.js', import.meta.url))));
   return { app, db };

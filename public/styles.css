@@ -384,3 +384,4 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 .imp-defaults-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; max-width: 760px; }
 .imp-defaults-grid small { display: block; margin-top: 4px; }
 .import-table tr.imp-off td { opacity: 0.55; }
+.app-version { text-align: center; font-size: 0.72rem; color: var(--muted); padding: 0 0 24px; }
