@@ -1,4 +1,9 @@
 // Kompas APL Tracker – single page front end.
+
+// The Kompas mark (four triangles, as in the company logo), coloured from the theme tokens.
+const LOGO_MARK = `<svg class="wordmark-mark" viewBox="0 0 660 660" aria-hidden="true">
+  <polygon class="lm-2" points="336,0 429,323 336,323"/><polygon class="lm-3" points="1,323 326,231 326,323"/>
+  <polygon class="lm-1" points="234,338 326,338 326,658"/><polygon class="lm-4" points="336,338 659,338 336,430"/></svg>`;
 // Screens: Login → Dashboard → Register activity → Activities (filter, export) → Administration.
 // The UI hides what a role cannot do, but every rule is enforced again on the server.
 import { transport } from './transport.js';
@@ -89,7 +94,7 @@ function renderShell() {
     <header class="topbar">
       <div class="topbar-inner">
         <a class="wordmark" href="#dashboard" data-go="dashboard" aria-label="Kompas APL Tracker, overblik">
-          <span class="wordmark-mark" aria-hidden="true"></span><span>Kompas <b>APL Tracker</b></span>
+          ${LOGO_MARK}<span class="wordmark-text"><span class="wordmark-kompas">KOMPAS</span> APL Tracker</span>
         </a>
         <nav class="mainnav" aria-label="Hovedmenu">
           ${nav.map(([v, l]) => `<a href="#${v}" data-go="${v}" class="${state.view === v || (v === 'activities' && state.view === 'register' && !isAdmin()) ? 'active' : ''}">${l}</a>`).join('')}
@@ -150,7 +155,7 @@ async function renderLogin() {
   $('#app').innerHTML = `
     <main class="login">
       <section class="login-card">
-        <div class="wordmark wordmark-lg"><span class="wordmark-mark" aria-hidden="true"></span><span>Kompas <b>APL Tracker</b></span></div>
+        <div class="wordmark wordmark-lg">${LOGO_MARK}<span class="wordmark-text"><span class="wordmark-kompas">KOMPAS</span> APL Tracker</span></div>
         <h1>Log ind</h1>
         <p class="muted">Apple Professional Learning-aktiviteter gennemført af Kompas ApS og delt med den enkelte reseller.</p>
         ${password ? `

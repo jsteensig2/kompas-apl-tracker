@@ -19,6 +19,7 @@
   --planned-ink: #8a4300;
   --planned-soft: #fdf0e1;
   --focus: #3f88a3;
+  --logo-1: #1d4c5c; --logo-2: #4f8494; --logo-3: #33687a; --logo-4: #8db5c1;
   --shadow: 0 1px 2px rgb(24 32 29 / 5%), 0 1px 0 rgb(24 32 29 / 3%);
 
   --font: "Schibsted Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -33,6 +34,7 @@
     --accent: #8cc0cf; --accent-ink: #0e1a1e; --accent-soft: #1f3138; --danger: #e48a7d; --danger-soft: #3a2421;
     --ok: #7fc39c; --bar: #8cc0cf; --focus: #8cc0cf; --shadow: none; color-scheme: dark;
     --planned: #f0a050; --planned-ink: #f6c48e; --planned-soft: #3a2a17;
+    --logo-1: #8cc0cf; --logo-2: #5f9aab; --logo-3: #76adbd; --logo-4: #3f6f7e;
   }
 }
 :root[data-theme="dark"] {
@@ -40,6 +42,7 @@
   --accent: #8cc0cf; --accent-ink: #0e1a1e; --accent-soft: #1f3138; --danger: #e48a7d; --danger-soft: #3a2421;
   --ok: #7fc39c; --bar: #8cc0cf; --focus: #8cc0cf; --shadow: none; color-scheme: dark;
     --planned: #f0a050; --planned-ink: #f6c48e; --planned-soft: #3a2a17;
+    --logo-1: #8cc0cf; --logo-2: #5f9aab; --logo-3: #76adbd; --logo-4: #3f6f7e;
 }
 
 * { box-sizing: border-box; }
@@ -81,10 +84,12 @@ a:hover { text-decoration: underline; }
 .wordmark { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); font-size: 0.98rem; letter-spacing: 0.01em; white-space: nowrap; }
 .wordmark:hover { text-decoration: none; }
 .wordmark b { font-weight: 700; }
-/* Compass needle: the Kompas mark */
-.wordmark-mark { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--ink); position: relative; flex: none; }
-.wordmark-mark::before { content: ""; position: absolute; left: 50%; top: 3px; bottom: 3px; width: 4px; transform: translateX(-50%) rotate(35deg);
-  background: linear-gradient(var(--accent) 50%, var(--muted) 50%); clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+/* The Kompas mark: four triangles in shades of the accent colour */
+.wordmark-mark { width: 26px; height: 26px; flex: none; }
+.lm-1 { fill: var(--logo-1); } .lm-2 { fill: var(--logo-2); } .lm-3 { fill: var(--logo-3); } .lm-4 { fill: var(--logo-4); }
+.wordmark-kompas { font-weight: 700; letter-spacing: 0.06em; color: var(--accent); }
+.wordmark-text { font-weight: 500; }
+.wordmark-lg .wordmark-mark { width: 34px; height: 34px; }
 .wordmark-lg { font-size: 1.15rem; }
 .mainnav { display: flex; gap: 4px; flex: 1; min-width: 0; }
 .mainnav a { padding: 8px 12px; border-radius: var(--r-sm); color: var(--muted); font-weight: 500; white-space: nowrap; }
