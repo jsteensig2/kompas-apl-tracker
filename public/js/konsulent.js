@@ -73,9 +73,9 @@ async function load() {
       </div>
 
       <section class="card apple-card">
-        <div class="card-head"><h2>Registrering hos Apple</h2><span class="muted small">Deadline 9. februar</span></div>
-        <p>I forhold til opgørelsen tæller en normal workshop på 1-4 timer som én session, mens en heldagsworkshop tæller for to. For de af jer, der deltog i Grønland i marts, gælder de tre dages Naapiffik som seks sessioner.</p>
-        <p>Der er deadline for indsendelse den 9. februar. I burde have modtaget et link til et personligt spørgeskema kaldet ”Engagement Checkout Survey”, men hvis I ikke kan finde det, kan I også benytte dette åbne link. Den eneste forskel er, at I her selv skal indtaste navn, land og e-mail.</p>
+        <div class="card-head"><h2>Registrering hos Apple</h2></div>
+        <p>I forhold til opgørelsen tæller en normal workshop på 1-4 timer som én session, mens en heldagsworkshop tæller for to.</p>
+        <p>Hvis du ikke kan finde dit personlige link til spørgeskemaet ”Engagement Checkout Survey”, kan du også benytte dette åbne link. Den eneste forskel er, at du her selv skal indtaste navn, land og e-mail.</p>
         <div class="copyrow"><a class="btn btn-primary" href="${APPLE_SURVEY}" target="_blank" rel="noopener">Åbn Engagement Checkout Survey</a><button type="button" class="btn" id="copy-survey">Kopiér link</button></div>
         ${years.length > 1 ? `<p class="muted small">Sessioner pr. år: ${years.map(([y, n]) => `${y}: ${n}`).join(' · ')}</p>` : ''}
       </section>
