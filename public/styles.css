@@ -379,3 +379,8 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
   .mday-dots { display: flex; }
   .mdow { padding: 6px 2px; text-align: center; }
 }
+.imp-defaults { margin-top: 14px; }
+.imp-defaults > p { margin: 0 0 8px; }
+.imp-defaults-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; max-width: 760px; }
+.imp-defaults-grid small { display: block; margin-top: 4px; }
+.import-table tr.imp-off td { opacity: 0.55; }

@@ -167,3 +167,33 @@ test('several consultants by initials become one course each; unknown initials a
   const again = await post('admin', '/api/import', { table });
   assert.equal(again.summary.duplicates, 5);
 });
+
+test('several sheets with headings, defaults for empty fields, similar courses unticked', async () => {
+  const opts = await json('admin', '/api/options');
+  const id = (list, name) => opts[list].find((x) => x.name === name).id;
+  const sheets = [
+    { name: 'Resume', table: [['Eksporteret fra Numbers'], ['Navn på ark']] },
+    { name: 'Lærere', table: [['LÆRERE', ''], ['Dato', 'Dag', 'Skole', 'Modul', 'Konsulenter'], ['10-09-2025', 'onsdag', 'Fløng', 'Modul 1', 'KB, RT']] },
+    { name: 'Pædagoger', table: [['PÆDAGOGER', ''], ['Dato', 'Dag', 'Skole', 'Modul', 'Konsulenter'], ['10-09-2025', 'onsdag', 'Fløng Skole', 'Modul 1', 'KB'], ['11/26/26', 'torsdag', 'Fløng Skole', 'Modul 1', 'SR']] },
+  ];
+  const defaults = { reseller: id('resellers', 'Atea'), paidBy: id('paidBy', 'Høje-Taastrup Kommune'), municipality: id('municipalities', 'Høje-Taastrup') };
+  const res = await post('admin', '/api/import', { sheets, defaults });
+  assert.equal(res.rows.length, 4);
+  assert.deepEqual(res.rows.map((r) => r.title), ['Modul 1 – Lærere', 'Modul 1 – Lærere', 'Modul 1 – Pædagoger', 'Modul 1 – Pædagoger']);
+  assert.ok(res.rows.every((r) => r.paidBy === 'Høje-Taastrup Kommune' && r.municipality === 'Høje-Taastrup' && r.reseller === 'Atea'));
+  assert.equal(res.rows[3].date, '2026-11-26');
+  assert.ok(res.rows[3].warnings.some((w) => w.includes('måned først')));
+  const done = await post('admin', '/api/import', { sheets, defaults, commit: true });
+  assert.equal(done.summary.imported, 4);
+  const schools = (await json('admin', '/api/options')).schools.filter((s) => s.name.startsWith('Fløng'));
+  assert.deepEqual(schools.map((s) => s.name), ['Fløng Skole']);
+
+  // The same course registered by hand under another title is flagged and left out by default.
+  const again = [{ name: 'X', table: [['Dato', 'Skole', 'Titel', 'Konsulent', 'Reseller'], ['10-09-2025', 'Fløng Skole', 'Kompetenceforløb', 'KB', 'Atea']] }];
+  const prev = await post('admin', '/api/import', { sheets: again });
+  assert.equal(prev.rows[0].similar, true);
+  assert.equal(prev.rows[0].selected, false);
+  assert.equal(prev.summary.ready, 0);
+  const forced = await post('admin', '/api/import', { sheets: again, include: { [prev.rows[0].rid]: true } });
+  assert.equal(forced.summary.ready, 1);
+});

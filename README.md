@@ -85,6 +85,11 @@ titel, skole, reseller og konsulent) springes over.
 Flere konsulenter i samme felt ("SR, KB" eller fulde navne) giver ét kursus pr. konsulent, fordi hver konsulent tæller
 som et afholdt kursus. Initialer sættes under *Administration › Konsulenter*. Man ser en forhåndsvisning, før noget gemmes.
 
+Alle ark i filen læses (ark uden genkendelige overskrifter springes over). Har arkene hver sin overskrift over tabellen
+(fx "LÆRERE" og "PÆDAGOGER"), sættes den på titlen ("Modul 1 – Lærere"). Øverst på siden kan man vælge reseller, betaler og
+kommune til felter, filen ikke selv udfylder. Kurser, der ligner noget allerede registreret (samme dag, skole og konsulent),
+er fravalgt i forhåndsvisningen og kan vælges til med et flueben. Datoer som 11/26/26 (måned først) læses, når dag-først er umulig.
+
 SheetJS 0.18.5 fra npm bruges til Excel. Til drift anbefales den nyeste version fra cdn.sheetjs.com.
 
 ## Flere konsulenter og dublering

@@ -6,14 +6,14 @@
 // The server always validates again on commit; the preview is only for the user.
 
 const HEADERS = {
-  date: ['dato', 'date', 'kursusdato', 'afholdt', 'dag'],
+  date: ['dato', 'date', 'kursusdato', 'afholdt'],
   duration: ['varighed', 'duration', 'længde', 'halv hel dag'],
   type: ['type', 'apl type', 'type af apl aktivitet', 'type of apl experience', 'apl experience', 'aktivitetstype'],
   title: ['titel', 'emne', 'titel emne', 'title', 'topic', 'title topic', 'kursus', 'modul'],
   school: ['skole', 'school', 'institution'],
   municipality: ['kommune', 'municipality'],
   participants: ['deltagere', 'antal deltagere', 'participants', 'number of participants', 'antal'],
-  consultant: ['konsulent', 'consultant', 'underviser', 'instruktør'],
+  consultant: ['konsulent', 'konsulenter', 'consultant', 'consultants', 'underviser', 'undervisere', 'instruktør'],
   reseller: ['reseller', 'partner', 'reseller partner', 'forhandler'],
   paidBy: ['betalt af', 'paid by', 'betaler', 'betaling'],
 };
@@ -50,13 +50,20 @@ function mapHeaders(sample) {
 
 // A raw sheet (array of rows of cells) may have a title or blank lines above the headers.
 // The header row is the first of the top 15 rows where at least two headers are recognised.
-export function tableToRows(table) {
+// A single-cell line above the headers ("LÆRERE") is kept as the table's heading.
+export function tableToRows(table, { strict = false } = {}) {
   const lines = (Array.isArray(table) ? table : []).filter(Array.isArray);
-  let headerAt = 0;
+  let headerAt = -1;
   for (let i = 0; i < Math.min(lines.length, 15); i++) {
     const sample = Object.fromEntries(lines[i].map((c, j) => [String(c ?? '').trim() || `_${j}`, '']));
     if (Object.keys(mapHeaders(sample)).length >= 2) { headerAt = i; break; }
   }
+  if (headerAt < 0) {
+    if (strict) return { rows: [], heading: '' };
+    headerAt = 0;
+  }
+  const heading = lines.slice(0, headerAt).map((l) => l.filter((c) => String(c ?? '').trim()))
+    .filter((cells) => cells.length === 1).map((cells) => String(cells[0]).trim()).pop() || '';
   const headers = (lines[headerAt] || []).map((c, j) => String(c ?? '').trim() || `Kolonne ${j + 1}`);
   const rows = [];
   for (let i = headerAt + 1; i < lines.length; i++) {
@@ -66,7 +73,23 @@ export function tableToRows(table) {
     headers.forEach((h, j) => { if (!(h in row)) row[h] = cells[j] ?? ''; });
     rows.push(row);
   }
-  return rows;
+  return strict ? { rows, heading } : rows;
+}
+
+// "LÆRERE" -> "Lærere"
+const tidyHeading = (h) => (h === h.toUpperCase() ? h[0] + h.slice(1).toLowerCase() : h);
+
+// Several sheets (or several tables exported from Numbers): sheets without recognisable headers
+// are skipped. When the tables have different headings, the heading is added to each title
+// ("Modul 1 – Lærere") so lærere and pædagoger on the same day stay separate courses.
+export function sheetsToRows(sheets) {
+  const parts = sheets.map((sh, k) => ({ ...tableToRows(sh?.table, { strict: true }), k }))
+    .filter((p) => p.rows.length);
+  const headings = new Set(parts.map((p) => p.heading).filter(Boolean));
+  const useHeading = parts.length > 1 && headings.size > 1;
+  return parts.flatMap((p) => p.rows.map((r) => ({
+    ...r, _sheet: p.k, _group: useHeading && p.heading ? tidyHeading(p.heading) : '',
+  })));
 }
 
 // Accepts 2026-02-19, 19.02.2026, 19-02-26, 19/2/2026, Excel serial numbers and ISO timestamps.
@@ -90,6 +113,11 @@ export function parseDate(v) {
   }
   return null;
 }
+// Numbers and US Excel sometimes write 11/26/26 (month first). Only used when day-first is impossible.
+export function parseUsDate(v) {
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4}|\d{2})(?!\d)/.exec(String(v ?? '').trim());
+  return m ? valid(m[3].length === 2 ? 2000 + +m[3] : +m[3], +m[1], +m[2]) : null;
+}
 function valid(y, mo, d) {
   const dt = new Date(Date.UTC(y, mo - 1, d));
   if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null;
@@ -111,18 +139,33 @@ export function parseDuration(v) {
  *   reseller: used for rows that have no reseller of their own.
  */
 export function runImport({ db, today, user }, body) {
-  const input = (Array.isArray(body?.table) ? tableToRows(body.table) : Array.isArray(body?.rows) ? body.rows : []).slice(0, 2000);
+  const input = (Array.isArray(body?.sheets) ? sheetsToRows(body.sheets)
+    : Array.isArray(body?.table) ? tableToRows(body.table) : Array.isArray(body?.rows) ? body.rows : []).slice(0, 2000);
   if (!input.length) return { columns: {}, headers: [], rows: [], summary: { total: 0 }, missingColumns: [] };
-  const sample = input.find((r) => r && Object.keys(r).length > 2) || input[0];
-  const headers = Object.keys(sample).filter((h) => h !== '_line');
-  const cols = mapHeaders(sample);
-  // The user can correct the automatic match: { field: header } or { field: '' } to ignore a field.
-  for (const [field, header] of Object.entries(body.mapping || {})) {
-    if (!(field in HEADERS)) continue;
-    if (header && headers.includes(header)) cols[field] = header;
-    else if (header === '') delete cols[field];
-  }
+  const isMeta = (h) => h === '_line' || h === '_sheet' || h === '_group';
+  const headers = [...new Set(input.flatMap((r) => Object.keys(r).filter((h) => !isMeta(h))))];
+  // Each sheet gets its own column match; the user can correct it: { field: header } or { field: '' } to ignore.
+  const colsBySheet = new Map();
+  const colsFor = (raw) => {
+    const k = raw?._sheet ?? 0;
+    if (!colsBySheet.has(k)) {
+      const cols = mapHeaders(Object.fromEntries(Object.keys(raw || {}).filter((h) => !isMeta(h)).map((h) => [h, ''])));
+      for (const [field, header] of Object.entries(body.mapping || {})) {
+        if (!(field in HEADERS)) continue;
+        if (header && header in raw) cols[field] = header;
+        else if (header === '') delete cols[field];
+      }
+      colsBySheet.set(k, cols);
+    }
+    return colsBySheet.get(k);
+  };
+  const cols = colsFor(input[0]);
   const missingColumns = ['date'].filter((f) => !cols[f]);
+  const defaults = body.defaults || {};
+  const pickDefault = (table, id) => (id ? db.get(`SELECT id, name FROM ${table} WHERE id = ?`, [Number(id)]) : null);
+  const defaultPaidBy = pickDefault('paid_by', defaults.paidBy);
+  const defaultMunicipality = pickDefault('municipalities', defaults.municipality);
+  const include = body.include || {};
 
   const consultantInitials = new Map(db.all('SELECT id, name, initials FROM consultants WHERE initials IS NOT NULL')
     .map((c) => [String(c.initials).toUpperCase(), c]));
@@ -134,16 +177,22 @@ export function runImport({ db, today, user }, body) {
   // Municipalities are often written "Høje-Taastrup Kommune".
   const findMunicipality = (name) => lists.municipalities.get(norm(name)) || lists.municipalities.get(norm(name).replace(/ kommune$/, ''));
   const schools = db.all('SELECT id, name, municipality_id FROM schools');
+  // "Fløng" finds "Fløng Skole"; "Borgerskolen" stays itself.
+  const schoolKey = (name) => norm(name).replace(/ (skole|skolen)$/, '');
   const findSchool = (name, municipalityId) => {
-    const hits = schools.filter((s) => norm(s.name) === norm(name));
+    let hits = schools.filter((s) => norm(s.name) === norm(name));
+    if (!hits.length) hits = schools.filter((s) => schoolKey(s.name) === schoolKey(name));
     return hits.find((s) => s.municipality_id === municipalityId) || (municipalityId ? null : hits[0]) || null;
   };
   // Same date, title, reseller, school and consultant = the same course.
-  const existing = new Set(db.all(`SELECT a.date, a.title, a.reseller_id, a.school_id, a.consultant_id FROM activities a`)
-    .map((r) => `${r.date}|${norm(r.title)}|${r.reseller_id}|${r.school_id ?? ''}|${r.consultant_id ?? ''}`));
+  const registered = db.all(`SELECT a.date, a.title, a.reseller_id, a.school_id, a.consultant_id FROM activities a`);
+  const existing = new Set(registered.map((r) => `${r.date}|${norm(r.title)}|${r.reseller_id}|${r.school_id ?? ''}|${r.consultant_id ?? ''}`));
+  // Same day, school and consultant under another title: probably registered by hand already.
+  const similar = new Map(registered.filter((r) => r.school_id && r.consultant_id)
+    .map((r) => [`${r.date}|${r.school_id}|${r.consultant_id}`, r.title]));
   const seen = new Set();
   const defaultType = db.get('SELECT id, name FROM apl_types ORDER BY id LIMIT 1');
-  const defaultReseller = body.reseller ? db.get('SELECT id, name FROM resellers WHERE id = ?', [Number(body.reseller)]) : null;
+  const defaultReseller = pickDefault('resellers', defaults.reseller ?? body.reseller);
   // "Atea A/S" or "ATEA Danmark" should find Atea.
   const findReseller = (name) => {
     const n = norm(name);
@@ -151,13 +200,18 @@ export function runImport({ db, today, user }, body) {
   };
 
   const rows = input.flatMap((raw, i) => {
-    const get = (f) => (cols[f] ? raw?.[cols[f]] : undefined);
+    const rowCols = colsFor(raw);
+    const get = (f) => (rowCols[f] ? raw?.[rowCols[f]] : undefined);
     const text = (f) => String(get(f) ?? '').trim();
     const errors = [];
     const warnings = [];
     const create = {};
 
-    const date = parseDate(get('date'));
+    let date = parseDate(get('date'));
+    if (!date && parseUsDate(get('date'))) {
+      date = parseUsDate(get('date'));
+      warnings.push(`Datoen "${text('date')}" er skrevet med måned først og læst som ${date.split('-').reverse().join('.')}`);
+    }
     if (!date) errors.push(text('date') ? `Ukendt dato "${text('date')}"` : 'Mangler dato');
     let duration = parseDuration(get('duration'));
     if (!duration) { warnings.push(`Varighed "${text('duration')}" ikke genkendt, sat til halv dag`); duration = 'half'; }
@@ -193,7 +247,8 @@ export function runImport({ db, today, user }, body) {
       warnings.push(`Ny konsulent: ${part}`);
       consultants.push({ id: null, name: part });
     }
-    const paidBy = pick('paidBy', lists.paid_by, 'betaler');
+    if (!consultants.length) warnings.push('Ingen konsulent angivet');
+    const paidBy = pick('paidBy', lists.paid_by, 'betaler') || (defaultPaidBy && { id: defaultPaidBy.id, name: defaultPaidBy.name });
 
     const muniName = text('municipality');
     const municipality = muniName ? findMunicipality(muniName) : null;
@@ -204,13 +259,14 @@ export function runImport({ db, today, user }, body) {
       school = findSchool(schoolName, municipality?.id ?? null);
       if (!school) { warnings.push(`Ny skole: ${schoolName}`); create.school = schoolName; }
     }
-    const municipalityId = municipality?.id ?? school?.municipality_id ?? null;
+    const municipalityId = municipality?.id ?? school?.municipality_id ?? defaultMunicipality?.id ?? null;
 
     let title = text('title');
     if (!title) {
       title = type?.name || schoolName || 'APL-aktivitet';
       warnings.push(`Ingen titel, sat til "${title}"`);
     }
+    if (raw?._group) title = `${title} – ${raw._group}`;
 
     const status = date && date > today ? 'planned' : 'held';
     const rawP = text('participants');
@@ -225,16 +281,23 @@ export function runImport({ db, today, user }, body) {
 
     // Each consultant counts as one course, so "SR, KB" on one line becomes two courses.
     if (consultants.length > 1) warnings.push(`Delt i ${consultants.length} kurser, ét pr. konsulent`);
-    return (consultants.length ? consultants : [null]).map((consultant) => {
+    return (consultants.length ? consultants : [null]).map((consultant, ci) => {
       const key = `${date}|${norm(title)}|${reseller?.id}|${school?.id ?? ''}|${consultant ? consultant.id ?? `n:${norm(consultant.name)}` : ''}`;
       const duplicate = !errors.length && Boolean(reseller?.id) && (existing.has(key) || seen.has(key));
       seen.add(key);
+      const looksLike = !duplicate && school?.id && consultant?.id ? similar.get(`${date}|${school.id}|${consultant.id}`) : undefined;
+      const rid = `${raw?._sheet ?? 0}:${raw?._line ?? i}:${ci}`;
+      const rowWarnings = looksLike ? [`Ligner "${looksLike}", som allerede er registreret samme dag`, ...warnings] : warnings;
       return {
+        rid,
+        selected: include[rid] ?? !looksLike,
+        similar: Boolean(looksLike),
+        sheet: raw?._group || '',
         line: raw?._line ?? i + 2, // row number in the spreadsheet
         date, duration, title, status, participants,
         type: type?.name || '', consultant: consultant?.name || '', reseller: reseller?.name || '', paidBy: paidBy?.name || '',
         school: school?.name || schoolName, municipality: municipality?.name || (municipalityId ? db.get('SELECT name FROM municipalities WHERE id = ?', [municipalityId])?.name : ''),
-        errors, warnings, duplicate,
+        errors, warnings: rowWarnings, duplicate,
         _consultant: consultant,
         _ids: { type: type?.id, reseller: reseller?.id, paidBy: paidBy?.id, school: school?.id, municipality: municipalityId },
         _create: create,
@@ -242,7 +305,7 @@ export function runImport({ db, today, user }, body) {
     });
   });
 
-  const ok = rows.filter((r) => !r.errors.length && !r.duplicate);
+  const ok = rows.filter((r) => !r.errors.length && !r.duplicate && r.selected);
   const summary = {
     total: rows.length,
     ready: ok.length,
@@ -251,10 +314,17 @@ export function runImport({ db, today, user }, body) {
     errors: rows.filter((r) => r.errors.length).length,
     duplicates: rows.filter((r) => r.duplicate).length,
     warnings: ok.filter((r) => r.warnings.length).length,
+    unselected: rows.filter((r) => !r.errors.length && !r.duplicate && !r.selected).length,
   };
 
   if (body.commit && ok.length && !missingColumns.length) {
     const created = { apl_types: {}, consultants: {}, paid_by: {}, schools: {} };
+    // "Fløng" and "Fløng Skole" in the same file become one new school, under the longer name.
+    const schoolNames = {};
+    for (const r of ok) {
+      const k = r._create.school && schoolKey(r._create.school);
+      if (k && (!schoolNames[k] || r._create.school.length > schoolNames[k].length)) schoolNames[k] = r._create.school;
+    }
     const ensure = (table, name) => {
       const k = norm(name);
       if (created[table][k]) return created[table][k];
@@ -270,8 +340,9 @@ export function runImport({ db, today, user }, body) {
         const consultantId = r._consultant ? r._consultant.id ?? ensure('consultants', r._consultant.name) : null;
         if (r._create.paidBy) ids.paidBy = ensure('paid_by', r._create.paidBy);
         if (r._create.school) {
-          const k = `${norm(r._create.school)}|${ids.municipality ?? ''}`;
-          ids.school = created.schools[k] ||= Number(db.run('INSERT INTO schools (name, municipality_id) VALUES (?, ?)', [r._create.school, ids.municipality]).lastInsertRowid);
+          const sk = schoolKey(r._create.school);
+          const k = `${sk}|${ids.municipality ?? ''}`;
+          ids.school = created.schools[k] ||= Number(db.run('INSERT INTO schools (name, municipality_id) VALUES (?, ?)', [schoolNames[sk], ids.municipality]).lastInsertRowid);
         }
         db.run(`INSERT INTO activities (date, duration, apl_type_id, title, school_id, municipality_id, participants,
                   consultant_id, reseller_id, paid_by_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,

@@ -687,10 +687,12 @@ async function readSpreadsheet(file) {
   } else {
     wb = window.XLSX.read(await file.arrayBuffer(), { cellDates: true });
   }
-  // The raw grid goes to the server, which finds the header row (it need not be the first).
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  return window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true, blankrows: true })
-    .map((cells) => cells.map(cellToValue));
+  // Every sheet goes to the server as a raw grid; it finds the header rows and skips sheets without any.
+  return wb.SheetNames.map((name) => ({
+    name,
+    table: window.XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: '', raw: true, blankrows: true })
+      .map((cells) => cells.map(cellToValue)),
+  }));
 }
 
 function renderImport(root) {
@@ -707,9 +709,19 @@ function renderImport(root) {
         <button type="button" class="btn" id="imp-template">Download skabelon</button>
         <span class="muted small" id="imp-name">Excel (.xlsx) eller CSV</span>
       </div>
-      <label class="field field-compact imp-reseller"><span>Reseller til rækker uden reseller</span>
-        <select id="imp-reseller">${selectOptions(state.options.resellers, '', 'Ingen (rækken springes over)')}</select>
-        <small class="muted">Bruges også, hvis reselleren i filen ikke findes.</small></label>
+      <div class="imp-defaults">
+        <p class="small"><b>Udfyld tomme felter med</b> <span class="muted">(bruges kun, hvor filen ikke selv har en værdi)</span></p>
+        <div class="imp-defaults-grid">
+          <label class="field field-compact"><span>Reseller</span>
+            <select id="imp-reseller" data-default="reseller">${selectOptions(state.options.resellers, '', 'Ingen (rækken springes over)')}</select>
+            <small class="muted">Bruges også, hvis reselleren i filen ikke findes.</small></label>
+          <label class="field field-compact"><span>Betalt af</span>
+            <select data-default="paidBy">${selectOptions(state.options.paidBy, '', 'Ingen')}</select></label>
+          <label class="field field-compact"><span>Kommune</span>
+            <select data-default="municipality">${selectOptions(state.options.municipalities, '', 'Ingen')}</select>
+            <small class="muted">Til nye skoler uden kommune.</small></label>
+        </div>
+      </div>
       <details class="howto"><summary>Kolonner der genkendes</summary>
         <p class="small">Dato · Varighed (Halv dag / Hel dag) · Type · Titel/emne · Skole · Kommune · Deltagere · Konsulent · Reseller · Betalt af.
         Engelske overskrifter (Date, Duration, Title, School …) virker også, og overskriftsrækken må gerne have en titel over sig.
@@ -722,13 +734,16 @@ function renderImport(root) {
     <div id="imp-preview"></div>`;
   const err = $('#imp-err');
   const showErr = (m) => { err.textContent = m; err.hidden = !m; };
-  let table = null;
+  let sheets = null;
   let mapping = {};
-  const body = (commit) => ({ table, mapping, reseller: Number($('#imp-reseller').value) || null, commit });
-  $('#imp-reseller').onchange = async () => {
-    if (!table) return;
+  let include = {};
+  const defaults = () => Object.fromEntries($$('[data-default]').map((sel) => [sel.dataset.default, Number(sel.value) || null]));
+  const body = (commit) => ({ sheets, mapping, include, defaults: defaults(), commit });
+  const refresh = async () => {
+    if (!sheets) return;
     try { showPreview(await api.post('/api/import', body(false))); } catch (ex) { showErr(ex.message); }
   };
+  $$('[data-default]').forEach((sel) => { sel.onchange = refresh; });
 
   $('#imp-template').onclick = async (e) => {
     e.currentTarget.disabled = true;
@@ -743,8 +758,9 @@ function renderImport(root) {
     $('#imp-name').textContent = file.name;
     $('#imp-preview').innerHTML = '<div class="loading">Læser filen…</div>';
     try {
-      table = await readSpreadsheet(file);
+      sheets = await readSpreadsheet(file);
       mapping = {};
+      include = {};
       const res = await api.post('/api/import', body(false));
       if (!res.rows.length) throw new Error('Filen indeholder ingen rækker.');
       showPreview(res);
@@ -770,7 +786,9 @@ function renderImport(root) {
           <div><b>${num(sm.planned)}</b><span>planlagte (ordrebog)</span></div>
           <div class="${sm.duplicates ? 'is-warn' : ''}"><b>${num(sm.duplicates)}</b><span>dubletter springes over</span></div>
           <div class="${sm.errors ? 'is-err' : ''}"><b>${num(sm.errors)}</b><span>med fejl springes over</span></div>
+          ${sm.unselected ? `<div class="is-warn"><b>${num(sm.unselected)}</b><span>fravalgt</span></div>` : ''}
         </div>
+        ${res.rows.some((r) => r.similar) ? '<p class="small notice">Nogle kurser ligner kurser, du allerede har registreret (samme dag, skole og konsulent). De er fravalgt. Sæt flueben, hvis de alligevel skal med.</p>' : ''}
         <details class="howto imp-cols" ${sm.errors || Object.keys(mapping).length ? 'open' : ''}><summary>Hvilken kolonne er hvad? Ret her, hvis noget er koblet forkert</summary>
           <div class="imp-cols-grid">${Object.keys(FIELD_LABELS).map(colPick).join('')}</div></details>
         ${sm.warnings ? `<p class="small muted">${num(sm.warnings)} ${sm.warnings === 1 ? 'række' : 'rækker'} er udfyldt eller tilpasset automatisk. Se Bemærkning i tabellen.</p>` : ''}
@@ -781,10 +799,12 @@ function renderImport(root) {
       </section>
       <div class="table-wrap import-wrap card card-flush">
         <table class="table import-table">
-          <thead><tr><th>Række</th><th>Bemærkning</th><th>Dato</th><th>Status</th><th>Titel/emne</th><th>Skole</th><th>Kommune</th><th class="num">Deltagere</th>
+          <thead><tr><th><span class="sr">Medtag</span></th>${res.rows.some((r) => r.sheet) ? '<th>Ark</th>' : ''}<th>Række</th><th>Bemærkning</th><th>Dato</th><th>Status</th><th>Titel/emne</th><th>Skole</th><th>Kommune</th><th class="num">Deltagere</th>
             <th>Varighed</th><th>Konsulent</th><th>Reseller</th><th>Betalt af</th></tr></thead>
           <tbody>${res.rows.map((r) => `
-            <tr class="imp-${rowState(r)}">
+            <tr class="imp-${rowState(r)} ${r.selected ? '' : 'imp-off'}">
+              <td>${r.errors.length || r.duplicate ? '' : `<input type="checkbox" data-rid="${esc(r.rid)}" ${r.selected ? 'checked' : ''} aria-label="Medtag række ${r.line}">`}</td>
+              ${res.rows.some((x) => x.sheet) ? `<td>${esc(r.sheet)}</td>` : ''}
               <td class="num">${r.line}</td><td class="imp-note">${esc(note(r)) || '<span class="muted">OK</span>'}</td><td class="nowrap">${r.date ? fmtDate(r.date) : '–'}</td>
               <td>${r.date ? statusPill(r) : ''}</td><td>${esc(r.title)}</td><td>${esc(r.school || '–')}</td><td>${esc(r.municipality || '–')}</td>
               <td class="num">${r.status === 'planned' && !r.participants ? '–' : num(r.participants)}</td><td class="nowrap">${r.duration === 'full' ? 'Hel dag' : r.duration === 'half' ? 'Halv dag' : '–'}</td>
@@ -792,10 +812,13 @@ function renderImport(root) {
             </tr>`).join('')}</tbody>
         </table>
       </div>`;
+    $$('[data-rid]', box).forEach((cb) => {
+      cb.onchange = () => { include = { ...include, [cb.dataset.rid]: cb.checked }; refresh(); };
+    });
     box.querySelectorAll('.imp-cols select').forEach((sel) => {
       sel.onchange = async () => {
         mapping = { ...mapping, [sel.dataset.field]: sel.value };
-        try { showPreview(await api.post('/api/import', body(false))); } catch (ex) { showErr(ex.message); }
+        refresh();
       };
     });
     $('#imp-go').onclick = async (e) => {
