@@ -95,6 +95,10 @@ konsulent(er) igen.
 
 ## Kalender (Apple Kalender / iCal)
 
+- **Månedskalender:** Kalender-siden viser en måned ad gangen med afholdte (mørke) og planlagte (orange) kurser. Kompas ser også
+  aftaler fra sin kalender, der ikke er registreret endnu (stiplede). Klik på en dag for at se kurserne, åbne dem eller registrere et nyt
+  kursus på den dato. Resellere ser kun deres egne kurser.
+
 - **Fra kalender:** Kompas-admin indsætter det offentlige iCal-link til sin kalender (Kalender › Del kalender › Offentlig kalender) under *Kalender*, eller uploader en .ics-fil. Aftaler fra de seneste 4 måneder og de næste 2 vises som forslag, med skole, kommune, emne og varighed udfyldt. Registrerede og skjulte aftaler forsvinder fra listen.
 - **Til kalender:** Hver bruger har et privat abonnementslink (`/calendar/feed/<token>.ics`) med netop de aktiviteter, brugeren må se. Linket kan fornyes, hvis det er delt ved en fejl.
 

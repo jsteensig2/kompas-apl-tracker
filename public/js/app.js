@@ -476,7 +476,7 @@ function renderRegister(root) {
       ${pre ? '<button type="button" class="btn" data-go="calendar">Tilbage til kalender</button>' : ''}
     </div>
     ${copy ? '<p class="notice">Alle felter er kopieret. Vælg en eller flere konsulenter: der oprettes ét kursus pr. konsulent.</p>' : ''}
-    ${pre ? `<p class="notice">Udfyldt fra kalenderaftalen <b>${esc(pre.eventTitle)}</b>. Tjek felterne, og tilføj antal deltagere og reseller.</p>` : ''}
+    ${pre?.eventTitle ? `<p class="notice">Udfyldt fra kalenderaftalen <b>${esc(pre.eventTitle)}</b>. Tjek felterne, og tilføj antal deltagere og reseller.</p>` : ''}
     <form id="act-form" class="card form" novalidate autocomplete="off">
       <div class="form-grid">
         <label class="field"><span>Dato</span><input id="a-date" name="date" type="date" required value="${esc(v.date)}"></label>
@@ -498,7 +498,7 @@ function renderRegister(root) {
           <input id="a-school" type="text" role="combobox" aria-expanded="false" aria-controls="school-list" aria-autocomplete="list"
             value="${esc(v.school || '')}" placeholder="Begynd at skrive skolens navn">
           <input type="hidden" name="school_id" id="a-school-id" value="${esc(v.school_id || '')}">
-          ${pre ? `<input type="hidden" name="calendar_uid" value="${esc(pre.uid)}">` : ''}
+          ${pre?.uid ? `<input type="hidden" name="calendar_uid" value="${esc(pre.uid)}">` : ''}
           <ul id="school-list" class="combo-list" role="listbox" hidden></ul>
           <small id="school-hint" class="hint"></small>
         </div>
@@ -819,7 +819,8 @@ async function renderCalendar(root) {
   const webcal = feedUrl.replace(/^https?:/, 'webcal:');
   root.innerHTML = `
     <div class="pagehead"><div><p class="eyebrow">Apple Kalender · iCal</p><h1>Kalender</h1>
-      <p class="muted">${isAdmin() ? 'Hent workshops fra din kalender som forslag, og vis registrerede aktiviteter i din kalender.' : `Vis ${esc(state.me.reseller)}s APL-aktiviteter i din egen kalender.`}</p></div></div>
+      <p class="muted">${isAdmin() ? 'Kurser og aftaler fra din kalender samlet. Klik på en dag for at se den eller registrere et kursus.' : `${esc(state.me.reseller)}s APL-kurser måned for måned.`}</p></div></div>
+    <section class="card month-card" id="month"></section>
     ${isAdmin() ? `
     <section class="card">
       <div class="card-head"><h2>Fra din kalender</h2><span class="muted small">Aftaler fra de seneste 4 måneder og de næste 2</span></div>
@@ -852,6 +853,7 @@ async function renderCalendar(root) {
       <button type="button" class="btn" id="ics-download">Download .ics-fil</button>
     </section>`;
 
+  renderMonth();
   $('#ics-download').onclick = async (e) => {
     e.currentTarget.disabled = true;
     try { const n = await transport.download('/api/calendar/download'); if (n) toast(`Hentet: ${n}`); } catch (ex) { toast(ex.message, 'err'); }
@@ -870,7 +872,7 @@ async function renderCalendar(root) {
   const load = async (fn) => {
     showErr('');
     $('#cal-events').innerHTML = '<div class="loading">Henter aftaler…</div>';
-    try { state.calEvents = await fn(); renderEvents(); } catch (ex) { $('#cal-events').innerHTML = ''; showErr(ex.message); }
+    try { state.calEvents = await fn(); renderEvents(); renderMonth(); } catch (ex) { $('#cal-events').innerHTML = ''; showErr(ex.message); }
   };
   if (!preview) {
     $('#cal-url-form').onsubmit = async (e) => {
@@ -920,11 +922,115 @@ async function renderCalendar(root) {
         await api.post('/api/calendar/ignore', { uid: b.dataset.ign });
         state.calEvents = state.calEvents.filter((ev) => ev.uid !== b.dataset.ign);
         renderEvents();
+        renderMonth();
       };
     });
     if ($('#cal-toggle')) $('#cal-toggle').onclick = () => { state.calShowAll = !state.calShowAll; renderEvents(); };
   }
   renderEvents();
+  if (!preview && cal.url && !state.calEvents && !state.calAutoLoaded) {
+    state.calAutoLoaded = true;
+    load(() => api.get('/api/calendar/events'));
+  }
+}
+
+// Month view: registered courses (held / planned) plus, for Kompas, calendar appointments not yet registered.
+const MONTHS_DA = ['januar', 'februar', 'marts', 'april', 'maj', 'juni', 'juli', 'august', 'september', 'oktober', 'november', 'december'];
+const pad2 = (n) => String(n).padStart(2, '0');
+
+async function renderMonth() {
+  const box = $('#month');
+  if (!box) return;
+  const ym = state.calMonth || todayIso().slice(0, 7);
+  state.calMonth = ym;
+  const [y, m] = ym.split('-').map(Number);
+  const days = new Date(y, m, 0).getDate();
+  const from = `${ym}-01`;
+  const to = `${ym}-${pad2(days)}`;
+  const shift = (d) => { const t = new Date(y, m - 1 + d, 1); return `${t.getFullYear()}-${pad2(t.getMonth() + 1)}`; };
+
+  if (!box.dataset.ym || box.dataset.ym !== ym) box.innerHTML = '<div class="loading">Indlæser…</div>';
+  const acts = await api.get(`/api/activities${qs({ from, to })}`);
+  if (state.calMonth !== ym || !$('#month')) return; // the user moved on while loading
+  box.dataset.ym = ym;
+  const events = (state.calEvents || []).filter((ev) => ev.date >= from && ev.date <= to);
+
+  // Several consultants on the same course and day show as one entry with a count.
+  const byDay = {};
+  for (const a of acts) {
+    const list = (byDay[a.date] ||= { courses: [], events: [] }).courses;
+    const k = `${a.title}|${a.school || ''}|${a.reseller}`;
+    const hit = list.find((g) => g.key === k);
+    if (hit) hit.items.push(a); else list.push({ key: k, items: [a] });
+  }
+  for (const ev of events) (byDay[ev.date] ||= { courses: [], events: [] }).events.push(ev);
+
+  const today = todayIso();
+  const firstDow = (new Date(y, m - 1, 1).getDay() + 6) % 7; // Monday first
+  const cells = [];
+  for (let i = 0; i < firstDow; i++) cells.push('<div class="mday is-out" aria-hidden="true"></div>');
+  for (let d = 1; d <= days; d++) {
+    const iso = `${ym}-${pad2(d)}`;
+    const day = byDay[iso] || { courses: [], events: [] };
+    const count = day.courses.reduce((n, g) => n + g.items.length, 0);
+    const label = [count && `${count} ${count === 1 ? 'kursus' : 'kurser'}`, day.events.length && `${day.events.length} ${day.events.length === 1 ? 'aftale' : 'aftaler'}`].filter(Boolean).join(', ');
+    cells.push(`<button type="button" class="mday ${iso === today ? 'is-today' : ''} ${iso === state.calDay ? 'is-sel' : ''}" data-day="${iso}" aria-label="${d}. ${MONTHS_DA[m - 1]}${label ? `: ${label}` : ''}">
+      <span class="mday-n">${d}</span>
+      <span class="mday-items">${day.courses.map((g) => `<span class="mchip ${iso > today ? 'is-planned' : 'is-held'}">${esc(g.items[0].title)}${g.items.length > 1 ? ` <b>×${g.items.length}</b>` : ''}</span>`).join('')}
+        ${day.events.map((ev) => `<span class="mchip is-event">${esc(ev.title)}</span>`).join('')}</span>
+      <span class="mday-dots">${count ? `<i class="${iso > today ? 'is-planned' : 'is-held'}"></i>` : ''}${day.events.length ? '<i class="is-event"></i>' : ''}</span>
+    </button>`);
+  }
+
+  const held = acts.filter((a) => a.status === 'held').length;
+  box.innerHTML = `
+    <div class="month-head">
+      <button type="button" class="btn btn-sm" data-shift="-1" aria-label="Forrige måned">‹</button>
+      <h2>${MONTHS_DA[m - 1][0].toUpperCase()}${MONTHS_DA[m - 1].slice(1)} ${y}</h2>
+      <button type="button" class="btn btn-sm" data-shift="1" aria-label="Næste måned">›</button>
+      ${ym !== today.slice(0, 7) ? '<button type="button" class="linkbtn" data-shift="0">I dag</button>' : ''}
+      <span class="spacer"></span>
+      <span class="muted small">${held} afholdt · ${acts.length - held} planlagt</span>
+    </div>
+    <div class="legend"><span><i class="sw sw-held"></i>Afholdt</span><span><i class="sw sw-planned"></i>Planlagt</span>
+      ${isAdmin() ? `<span><i class="sw sw-event"></i>${state.calEvents ? 'Aftale i din kalender, ikke registreret' : 'Aftaler fra din kalender vises, når de er hentet nedenfor'}</span>` : ''}</div>
+    <div class="mgrid" role="grid">${['man', 'tir', 'ons', 'tor', 'fre', 'lør', 'søn'].map((d) => `<div class="mdow">${d}</div>`).join('')}${cells.join('')}</div>
+    <div id="mday-detail"></div>`;
+
+  $$('[data-shift]', box).forEach((b) => {
+    b.onclick = () => { state.calMonth = b.dataset.shift === '0' ? today.slice(0, 7) : shift(Number(b.dataset.shift)); state.calDay = null; renderMonth(); };
+  });
+  $$('[data-day]', box).forEach((b) => { b.onclick = () => { state.calDay = b.dataset.day; renderMonth(); }; });
+
+  const sel = state.calDay && state.calDay.startsWith(ym) ? state.calDay : null;
+  if (!sel) return;
+  const day = byDay[sel] || { courses: [], events: [] };
+  const items = day.courses.flatMap((g) => g.items);
+  $('#mday-detail').innerHTML = `
+    <div class="mday-detail">
+      <div class="card-head"><h3>${fmtDate(sel)}</h3>
+        ${isAdmin() ? '<button type="button" class="btn btn-primary btn-sm" id="mday-reg">Registrér kursus denne dag</button>' : ''}</div>
+      ${items.length ? `<ul class="latest">${items.map((a) => `
+        <li class="latest-item ${a.status === 'planned' ? 'is-planned' : ''} ${isAdmin() ? 'clickable' : ''}" ${isAdmin() ? `data-open="${a.id}" role="button" tabindex="0"` : ''}>
+          <div class="latest-body"><div class="latest-title">${esc(a.title)} ${statusPill(a)}</div>
+          <div class="latest-meta"><span>${esc(a.school || '–')}</span><span>${esc(a.consultant || '')}</span><span>${participantsText(a)}</span><span class="tag">${esc(a.reseller)}</span></div></div>
+        </li>`).join('')}</ul>` : '<p class="muted">Ingen registrerede kurser denne dag.</p>'}
+      ${day.events.length ? `<p class="section-label mday-ev-label">Fra din kalender</p><ul class="cal-list">${day.events.map((ev) => `
+        <li><div class="cal-body"><b>${esc(ev.title)}</b><span class="muted">${esc(ev.location || '')}</span></div>
+          <div class="cal-actions"><button type="button" class="btn btn-sm" data-reg-ev="${esc(ev.uid)}">Registrér</button></div></li>`).join('')}</ul>` : ''}
+    </div>`;
+  $$('[data-open]', box).forEach((li) => {
+    const open = async () => go('register', { editing: await api.get(`/api/activities/${li.dataset.open}`) });
+    li.onclick = open;
+    li.onkeydown = (e) => { if (e.key === 'Enter') open(); };
+  });
+  $$('[data-reg-ev]', box).forEach((b) => {
+    b.onclick = () => {
+      const ev = state.calEvents.find((x) => x.uid === b.dataset.regEv);
+      go('register', { prefill: { ...ev.suggestion, uid: ev.uid, eventTitle: ev.title } });
+    };
+  });
+  if ($('#mday-reg')) $('#mday-reg').onclick = () => go('register', { prefill: { date: sel } });
 }
 
 // --- Administration ------------------------------------------------------------------------
