@@ -1105,6 +1105,7 @@ async function renderAdmin(root) {
         <div class="admin-row">${describe(r)}</div>
         <div class="admin-actions">
           ${isUsers && !transport.isPreview ? '<button type="button" class="linkbtn" data-act="pw">Ny engangskode</button>' : ''}
+          ${tab === 'consultants' && !transport.isPreview ? '<button type="button" class="linkbtn" data-act="feed">Kalenderlink</button>' : ''}
           <button type="button" class="linkbtn" data-act="edit">Redigér</button>
           <button type="button" class="linkbtn danger" data-act="delete">Slet</button>
         </div>
@@ -1143,6 +1144,24 @@ async function renderAdmin(root) {
           pwBtn.remove();
         } catch (ex) { fail(ex); }
       };
+    }
+    const feedBtn = li.querySelector('[data-act=feed]');
+    if (feedBtn) {
+      const showFeed = async (reset) => {
+        try {
+          const { feedPath } = reset ? await api.post(`/api/admin/consultants/${r.id}/feed`, {}) : await api.get(`/api/admin/consultants/${r.id}/feed`);
+          const webcal = new URL(feedPath, location.href).toString().replace(/^https?:/, 'webcal:');
+          li.querySelector('.temp-pw')?.remove();
+          li.insertAdjacentHTML('beforeend', `<div class="temp-pw feed-box">
+            <p class="small">Send linket til ${esc(r.name)}. Kurserne dukker op i Apple Kalender (Arkiv › Nyt kalenderabonnement) eller på iPhone (Indstillinger › Kalender › Konti › Tilføj konto › Andet) og opdateres af sig selv.</p>
+            <div class="copyrow"><input readonly value="${esc(webcal)}" aria-label="Kalenderlink til ${esc(r.name)}"><button type="button" class="btn btn-sm" data-copy>Kopiér</button></div>
+            <p class="muted small">Linket virker uden login. Er det delt ved en fejl, så <button type="button" class="linkbtn" data-reset>lav et nyt link</button>.</p></div>`);
+          const box = li.querySelector('.temp-pw');
+          box.querySelector('[data-copy]').onclick = async () => { try { await navigator.clipboard.writeText(webcal); toast('Link kopieret'); } catch { box.querySelector('input').select(); } };
+          box.querySelector('[data-reset]').onclick = async () => { await showFeed(true); toast('Nyt link lavet. Det gamle virker ikke længere.'); };
+        } catch (ex) { fail(ex); }
+      };
+      feedBtn.onclick = () => showFeed(false);
     }
     li.querySelector('[data-act=edit]').onclick = () => {
       li.innerHTML = `<form class="admin-add admin-edit">${editorFields(r)}<button class="btn btn-primary btn-sm" type="submit">Gem</button><button class="btn btn-sm" type="button" data-cancel>Annullér</button></form>`;

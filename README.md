@@ -106,6 +106,7 @@ konsulent(er) igen.
 
 - **Fra kalender:** Kompas-admin indsætter det offentlige iCal-link til sin kalender (Kalender › Del kalender › Offentlig kalender) under *Kalender*, eller uploader en .ics-fil. Aftaler fra de seneste 4 måneder og de næste 2 vises som forslag, med skole, kommune, emne og varighed udfyldt. Registrerede og skjulte aftaler forsvinder fra listen.
 - **Til kalender:** Hver bruger har et privat abonnementslink (`/calendar/feed/<token>.ics`) med netop de aktiviteter, brugeren må se. Linket kan fornyes, hvis det er delt ved en fejl.
+- **Konsulentkalender:** Under Administration › Konsulenter › Kalenderlink får hver konsulent sit eget abonnementslink med kun sine egne kurser. Kompas sender linket til konsulenten; det kan fornyes på samme sted.
 
 ## Senere udvidelser (ikke bygget)
 

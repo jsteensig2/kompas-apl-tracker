@@ -334,6 +334,9 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 .login-form { display: flex; flex-direction: column; gap: 14px; margin-top: 8px; }
 .pw-form { display: flex; flex-direction: column; gap: 16px; max-width: 520px; }
 .temp-pw { width: 100%; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border-radius: var(--r-sm); background: var(--accent-soft); }
+.feed-box { display: block; }
+.feed-box > * + * { margin-top: 8px; }
+.feed-box .copyrow { margin: 8px 0; }
 .temp-pw code { font-size: 1.05rem; font-weight: 600; letter-spacing: 0.04em; }
 .demobar .spacer { flex: 1; }
 .imp-cols { margin: 0 0 14px; }

@@ -455,8 +455,8 @@ export function createApi(db, { XLSX } = {}) {
     return { ok: true };
   }
 
-  function buildIcs(user, name) {
-    const rows = listActivities(user, {});
+  function buildIcs(user, name, filter = {}) {
+    const rows = listActivities(user, filter);
     const esc = (v) => String(v ?? '').replace(/\\/g, '\\\\').replace(/[,;]/g, (c) => `\\${c}`).replace(/\n/g, '\\n');
     const fold = (line) => line.match(/.{1,60}/gu)?.join('\r\n ') ?? line;
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
@@ -467,7 +467,7 @@ export function createApi(db, { XLSX } = {}) {
       const where = [a.school, a.municipality].filter(Boolean).join(', ');
       lines.push('BEGIN:VEVENT', `UID:apl-${a.id}@kompas-apl-tracker`, `DTSTAMP:${stamp}`,
         `DTSTART;VALUE=DATE:${a.date.replace(/-/g, '')}`, `DTEND;VALUE=DATE:${next(a.date)}`,
-        `SUMMARY:${esc(`${a.apl_type} · ${a.title}${a.school ? ` · ${a.school}` : ''}`)}`,
+        `SUMMARY:${esc(filter.consultant ? `${a.title}${a.school ? ` · ${a.school}` : ''}` : `${a.apl_type} · ${a.title}${a.school ? ` · ${a.school}` : ''}`)}`,
         `LOCATION:${esc(where)}`,
         `DESCRIPTION:${esc([`Varighed: ${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}`, `Deltagere: ${a.participants}`,
           `Konsulent: ${a.consultant || '–'}`, `Reseller: ${a.reseller}`, `Betalt af: ${a.paid_by || '–'}`].join('\n'))}`,
@@ -482,9 +482,24 @@ export function createApi(db, { XLSX } = {}) {
       : `APL-aktiviteter · ${db.get('SELECT name FROM resellers WHERE id = ?', [user.reseller_id])?.name || ''}`;
   }
 
+  // Each consultant has a subscription link with only their own courses (Kompas hands it out).
+  function consultantFeed(user, id, reset) {
+    requireAdmin(user);
+    const c = db.get('SELECT id, feed_token FROM consultants WHERE id = ?', [id]);
+    if (!c) throw new HttpError(404, 'Konsulenten findes ikke.');
+    if (reset || !c.feed_token) db.run('UPDATE consultants SET feed_token = ? WHERE id = ?', [newToken(), id]);
+    return { feedPath: `/calendar/feed/${db.get('SELECT feed_token FROM consultants WHERE id = ?', [id]).feed_token}.ics` };
+  }
+
   /** Subscription feed: authenticated by the secret token in the link, not by a login. */
   function feed(token) {
-    const user = /^[a-f0-9]{48}$/.test(String(token)) &&
+    const valid = /^[a-f0-9]{48}$/.test(String(token));
+    const consultant = valid && db.get('SELECT id, name FROM consultants WHERE feed_token = ?', [token]);
+    if (consultant) {
+      return { filename: 'mine-kurser.ics', contentType: 'text/calendar; charset=utf-8',
+        data: buildIcs({ role: 'admin' }, `Kompas-kurser · ${consultant.name}`, { consultant: consultant.id }) };
+    }
+    const user = valid &&
       db.get('SELECT id, name, email, role, reseller_id FROM users WHERE feed_token = ?', [token]);
     if (!user) throw new HttpError(404, 'Kalenderen findes ikke.');
     return { filename: 'apl-aktiviteter.ics', contentType: 'text/calendar; charset=utf-8', data: buildIcs(user, calendarName(user)) };
@@ -538,6 +553,8 @@ export function createApi(db, { XLSX } = {}) {
       case 'POST /activities': return { json: createActivity(user, body) };
       case 'PUT /activities/:id': return { json: updateActivity(user, id, body) };
       case 'DELETE /activities/:id': return { json: deleteActivity(user, id) };
+      case 'GET /admin/consultants/:id/feed': return { json: consultantFeed(user, int(parts[2]), false) };
+      case 'POST /admin/consultants/:id/feed': return { json: consultantFeed(user, int(parts[2]), true) };
       case `GET /admin/${parts[1]}`: return { json: adminList(user, parts[1]) };
       case `POST /admin/${parts[1]}`: return { json: adminSave(user, parts[1], null, body) };
       case `PUT /admin/${parts[1]}/:id`: return { json: adminSave(user, parts[1], id, body) };

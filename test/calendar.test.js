@@ -90,3 +90,19 @@ test('resetting the feed link disables the old one', async () => {
   assert.notEqual(fresh.feedPath, feedPath);
   assert.equal((await fetch(base + feedPath)).status, 404);
 });
+
+test('each consultant has a private feed with only their own courses; resellers cannot fetch it', async () => {
+  const opts = await json('admin', '/api/options');
+  const kim = opts.consultants.find((c) => c.name === 'Kim Byrding');
+  assert.equal((await call('Atea', `/api/admin/consultants/${kim.id}/feed`)).status, 403);
+  const { feedPath } = await json('admin', `/api/admin/consultants/${kim.id}/feed`);
+  assert.equal((await json('admin', `/api/admin/consultants/${kim.id}/feed`)).feedPath, feedPath);
+  const ics = await (await fetch(base + feedPath)).text();
+  const mine = (await json('admin', `/api/activities?consultant=${kim.id}`)).length;
+  assert.ok(mine > 0);
+  assert.equal((ics.match(/BEGIN:VEVENT/g) || []).length, mine);
+  assert.ok(ics.includes('Kompas-kurser · Kim Byrding'));
+  const fresh = await (await call('admin', `/api/admin/consultants/${kim.id}/feed`, { method: 'POST', body: '{}' })).json();
+  assert.notEqual(fresh.feedPath, feedPath);
+  assert.equal((await fetch(base + feedPath)).status, 404);
+});
