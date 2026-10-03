@@ -15,6 +15,9 @@
   --danger-soft: #f7e7e4;
   --ok: #2f6b4a;
   --bar: #1d4c5c;
+  --planned: #e07b16;
+  --planned-ink: #8a4300;
+  --planned-soft: #fdf0e1;
   --focus: #3f88a3;
   --shadow: 0 1px 2px rgb(24 32 29 / 5%), 0 1px 0 rgb(24 32 29 / 3%);
 
@@ -29,12 +32,14 @@
     --bg: #121615; --surface: #1a1f1e; --surface-2: #222827; --ink: #e8ecea; --muted: #97a19c; --line: #2c3331;
     --accent: #8cc0cf; --accent-ink: #0e1a1e; --accent-soft: #1f3138; --danger: #e48a7d; --danger-soft: #3a2421;
     --ok: #7fc39c; --bar: #8cc0cf; --focus: #8cc0cf; --shadow: none; color-scheme: dark;
+    --planned: #f0a050; --planned-ink: #f6c48e; --planned-soft: #3a2a17;
   }
 }
 :root[data-theme="dark"] {
   --bg: #121615; --surface: #1a1f1e; --surface-2: #222827; --ink: #e8ecea; --muted: #97a19c; --line: #2c3331;
   --accent: #8cc0cf; --accent-ink: #0e1a1e; --accent-soft: #1f3138; --danger: #e48a7d; --danger-soft: #3a2421;
   --ok: #7fc39c; --bar: #8cc0cf; --focus: #8cc0cf; --shadow: none; color-scheme: dark;
+    --planned: #f0a050; --planned-ink: #f6c48e; --planned-soft: #3a2a17;
 }
 
 * { box-sizing: border-box; }
@@ -289,14 +294,20 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 /* Held / planned (order book) */
 .pill { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600; white-space: nowrap; vertical-align: middle; }
 .pill-held { background: var(--surface-2); color: var(--muted); }
-.pill-planned { background: var(--accent-soft); color: var(--accent); }
+.pill-planned { background: var(--planned); color: #2e1700; }
+/* Planned courses stand out in lists: orange row tint and an orange edge. */
+.table tr.is-planned td { background: var(--planned-soft); }
+.table tr.is-planned td:first-child { box-shadow: inset 4px 0 0 var(--planned); }
+.table tr.is-planned.clickable:hover td { background: color-mix(in srgb, var(--planned-soft) 82%, var(--planned)); }
+.act-card.is-planned { background: var(--planned-soft); border-left: 4px solid var(--planned); }
+.latest-item.is-planned { box-shadow: inset 4px 0 0 var(--planned); padding-left: 10px; }
 .section-label { margin: 0 0 -8px; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
-.chart .bar-planned { fill: var(--accent-soft); stroke: var(--bar); stroke-width: 1; stroke-dasharray: 3 2; }
+.chart .bar-planned { fill: var(--planned); }
 .legend { display: flex; gap: 16px; font-size: 0.8rem; color: var(--muted); margin-top: 6px; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
 .sw-held { background: var(--bar); }
-.sw-planned { background: var(--accent-soft); border: 1px dashed var(--bar); }
+.sw-planned { background: var(--planned); }
 .ob-stats, .import-summary { display: flex; gap: 28px; flex-wrap: wrap; margin-bottom: 8px; }
 .ob-stats div, .import-summary div { display: flex; flex-direction: column; }
 .ob-stats b, .import-summary b { font-size: 1.6rem; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }

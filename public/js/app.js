@@ -280,7 +280,7 @@ const statusPill = (a) => (a.status === 'planned' ? '<span class="pill pill-plan
 
 function activityLine(a) {
   return `
-    <li class="latest-item">
+    <li class="latest-item ${a.status === 'planned' ? 'is-planned' : ''}">
       <div class="latest-date">${fmtDate(a.date, true)}</div>
       <div class="latest-body">
         <div class="latest-title">${esc(a.apl_type)} · ${esc(a.title)}</div>
@@ -425,7 +425,7 @@ async function loadList() {
         <thead><tr><th>Dato</th><th>Status</th><th>APL-type</th><th>Titel/emne</th><th>Skole</th><th>Kommune</th>
           <th class="num">Deltagere</th><th>Varighed</th><th>Konsulent</th><th>Reseller</th><th>Betalt af</th>${admin ? '<th><span class="sr">Redigér</span></th>' : ''}</tr></thead>
         <tbody>${rows.map((a) => `
-          <tr ${admin ? `data-edit="${a.id}" class="clickable"` : ''}>
+          <tr class="${a.status === 'planned' ? 'is-planned' : ''} ${admin ? 'clickable' : ''}" ${admin ? `data-edit="${a.id}"` : ''}>
             <td class="nowrap">${fmtDate(a.date)}</td><td>${statusPill(a)}</td><td>${esc(a.apl_type)}</td><td><b>${esc(a.title)}</b></td>
             <td>${esc(a.school || '–')}</td><td>${esc(a.municipality || '–')}</td><td class="num">${a.status === 'planned' && !a.participants ? '–' : num(a.participants)}</td>
             <td class="nowrap">${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}</td><td>${esc(a.consultant || '–')}</td>
@@ -435,7 +435,7 @@ async function loadList() {
       </table>
     </div>
     <ul class="cards-list">${rows.map((a) => `
-      <li class="card act-card ${admin ? 'clickable' : ''}" ${admin ? `data-edit="${a.id}" role="button" tabindex="0"` : ''}>
+      <li class="card act-card ${a.status === 'planned' ? 'is-planned' : ''} ${admin ? 'clickable' : ''}" ${admin ? `data-edit="${a.id}" role="button" tabindex="0"` : ''}>
         <div class="act-top"><span class="act-date">${fmtDate(a.date)} ${statusPill(a)}</span><span class="tag">${esc(a.reseller)}</span></div>
         <div class="act-title">${esc(a.apl_type)} · ${esc(a.title)}</div>
         <div class="muted">${esc(a.school || '–')}${a.municipality ? ` · ${esc(a.municipality)}` : ''}</div>
