@@ -1,0 +1,92 @@
+// A consultant's own page: held and coming courses, Apple session count and the Apple survey link.
+// Opened from the private link Kompas sends (/k/<token>); no login.
+
+const APPLE_SURVEY = 'https://essentials.applesurveys.com/jfe/form/SV_7UiJTisrllOFbsG';
+const LOGO_MARK = `<svg class="wordmark-mark" viewBox="0 0 660 660" aria-hidden="true">
+  <polygon class="lm-2" points="336,0 429,323 336,323"/><polygon class="lm-3" points="1,323 326,231 326,323"/>
+  <polygon class="lm-1" points="234,338 326,338 326,658"/><polygon class="lm-4" points="336,338 659,338 336,430"/></svg>`;
+
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmtDate = (d) => new Date(`${d}T12:00:00`).toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+const app = document.getElementById('app');
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.hidden = false;
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => { t.hidden = true; }, 2500);
+}
+
+function table(rows, planned) {
+  if (!rows.length) return `<p class="empty">${planned ? 'Ingen planlagte kurser lige nu.' : 'Ingen afholdte kurser endnu.'}</p>`;
+  return `<div class="table-wrap"><table class="table">
+    <thead><tr><th>Dato</th><th>Kursus</th><th>Skole</th><th>Varighed</th>${planned ? '' : '<th class="num">Deltagere</th><th class="num">Sessioner</th>'}</tr></thead>
+    <tbody>${rows.map((a) => `<tr class="${planned ? 'is-planned' : ''}">
+      <td class="nowrap">${esc(fmtDate(a.date))}</td>
+      <td><b>${esc(a.title)}</b><div class="muted small">${esc(a.reseller)}</div></td>
+      <td>${esc(a.school || '–')}${a.municipality ? `<div class="muted small">${esc(a.municipality)}</div>` : ''}</td>
+      <td>${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}</td>
+      ${planned ? '' : `<td class="num">${a.participants}</td><td class="num">${a.sessions}</td>`}
+    </tr>`).join('')}</tbody></table></div>
+    <ul class="cards-list k-cards">${rows.map((a) => `
+      <li class="card act-card ${planned ? 'is-planned' : ''}">
+        <div class="act-top"><span class="act-date">${esc(fmtDate(a.date))}</span><span class="tag">${esc(a.reseller)}</span></div>
+        <div class="act-title">${esc(a.title)}</div>
+        <div class="muted">${esc(a.school || '–')}${a.municipality ? ` · ${esc(a.municipality)}` : ''}</div>
+        <dl class="act-meta">
+          <div><dt>Varighed</dt><dd>${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}</dd></div>
+          ${planned ? '' : `<div><dt>Sessioner</dt><dd>${a.sessions}</dd></div><div><dt>Deltagere</dt><dd>${a.participants}</dd></div>`}
+        </dl>
+      </li>`).join('')}</ul>`;
+}
+
+async function load() {
+  const token = location.pathname.split('/').filter(Boolean)[1] || '';
+  let data;
+  try {
+    const r = await fetch(`/k/${encodeURIComponent(token)}/data`, { cache: 'no-store' });
+    data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Siden kunne ikke hentes.');
+  } catch (ex) {
+    app.innerHTML = `<main class="page"><div class="card"><h1>Siden findes ikke</h1><p class="muted">${esc(ex.message)}</p></div></main>`;
+    return;
+  }
+  const year = String(new Date().getFullYear());
+  const sessionsTotal = data.held.reduce((n, a) => n + a.sessions, 0);
+  const years = Object.entries(data.sessionsByYear).sort(([a], [b]) => b.localeCompare(a));
+  const webcal = new URL(data.feedPath, location.href).toString().replace(/^https?:/, 'webcal:');
+  document.title = `Mine kurser · ${data.name}`;
+
+  app.innerHTML = `
+    <header class="topbar"><div class="topbar-inner">
+      <span class="wordmark">${LOGO_MARK}<span class="wordmark-text"><span class="wordmark-kompas">KOMPAS</span> APL Tracker</span></span>
+    </div></header>
+    <main class="page">
+      <div class="pagehead"><div><p class="eyebrow">Konsulent</p><h1>${esc(data.name)}</h1>
+        <p class="muted">Dine afholdte og kommende kurser. Siden opdateres, når Kompas registrerer eller flytter et kursus.</p></div>
+        <div class="pagehead-actions"><a class="btn" href="${esc(webcal)}">Abonnér i Kalender</a><a class="btn btn-primary" href="${APPLE_SURVEY}" target="_blank" rel="noopener">Registrér hos Apple</a></div></div>
+
+      <div class="kpis">
+        <div class="kpi"><div class="kpi-num">${data.planned.length}</div><div class="kpi-label">Planlagte kurser</div></div>
+        <div class="kpi"><div class="kpi-num">${data.held.length}</div><div class="kpi-label">Afholdte kurser</div></div>
+        <div class="kpi"><div class="kpi-num">${data.sessionsByYear[year] || 0}</div><div class="kpi-label">Sessioner i ${year}</div></div>
+        <div class="kpi"><div class="kpi-num">${sessionsTotal}</div><div class="kpi-label">Sessioner i alt</div></div>
+      </div>
+
+      <section class="card apple-card">
+        <div class="card-head"><h2>Registrering hos Apple</h2><span class="muted small">Deadline 9. februar</span></div>
+        <p>I forhold til opgørelsen tæller en normal workshop på 1-4 timer som én session, mens en heldagsworkshop tæller for to. For de af jer, der deltog i Grønland i marts, gælder de tre dages Naapiffik som seks sessioner.</p>
+        <p>Der er deadline for indsendelse den 9. februar. I burde have modtaget et link til et personligt spørgeskema kaldet ”Engagement Checkout Survey”, men hvis I ikke kan finde det, kan I også benytte dette åbne link. Den eneste forskel er, at I her selv skal indtaste navn, land og e-mail.</p>
+        <div class="copyrow"><a class="btn btn-primary" href="${APPLE_SURVEY}" target="_blank" rel="noopener">Åbn Engagement Checkout Survey</a><button type="button" class="btn" id="copy-survey">Kopiér link</button></div>
+        ${years.length > 1 ? `<p class="muted small">Sessioner pr. år: ${years.map(([y, n]) => `${y}: ${n}`).join(' · ')}</p>` : ''}
+      </section>
+
+      <section class="card card-flush"><div class="card-head card-head-pad"><h2>Kommende kurser</h2><span class="muted small">Nærmeste først</span></div>${table(data.planned, true)}</section>
+      <section class="card card-flush"><div class="card-head card-head-pad"><h2>Afholdte kurser</h2><span class="muted small">Nyeste først · heldag tæller som 2 sessioner</span></div>${table(data.held, false)}</section>
+    </main>`;
+
+  document.getElementById('copy-survey').onclick = async () => {
+    try { await navigator.clipboard.writeText(APPLE_SURVEY); toast('Link kopieret'); } catch { window.open(APPLE_SURVEY, '_blank', 'noopener'); }
+  };
+}
+
+load();

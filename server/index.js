@@ -41,6 +41,21 @@ export function createServer({ dbFile = process.env.DB_FILE || fileURLToPath(new
     }
   });
 
+  // A consultant's own overview page, opened from the private link Kompas sends them (no login).
+  app.get('/k/:token', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('X-Robots-Tag', 'noindex');
+    res.sendFile(fileURLToPath(new URL('../public/konsulent.html', import.meta.url)));
+  });
+  app.get('/k/:token/data', (req, res) => {
+    try {
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(api.consultantOverview(req.params.token));
+    } catch (err) {
+      res.status(err.status || 500).json({ error: err.status ? err.message : 'Der opstod en fejl på serveren.' });
+    }
+  });
+
   // Fetches the admin's own calendar (saved iCal link) and returns events to register.
   app.get('/api/calendar/events', async (req, res) => {
     try {

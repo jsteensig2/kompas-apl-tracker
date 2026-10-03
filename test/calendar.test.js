@@ -106,3 +106,18 @@ test('each consultant has a private feed with only their own courses; resellers 
   assert.notEqual(fresh.feedPath, feedPath);
   assert.equal((await fetch(base + feedPath)).status, 404);
 });
+
+test('consultant page shows only their courses with Apple sessions (full day = 2)', async () => {
+  const opts = await json('admin', '/api/options');
+  const sr = opts.consultants.find((c) => c.name === 'Søren Rasmussen');
+  const { pagePath } = await json('admin', `/api/admin/consultants/${sr.id}/feed`);
+  assert.equal((await fetch(base + pagePath)).status, 200);
+  const data = await (await fetch(`${base}${pagePath}/data`)).json();
+  const all = await json('admin', `/api/activities?consultant=${sr.id}`);
+  assert.equal(data.name, 'Søren Rasmussen');
+  assert.equal(data.held.length + data.planned.length, all.length);
+  const held = all.filter((a) => a.status === 'held');
+  const sessions = held.reduce((n, a) => n + (a.duration === 'full' ? 2 : 1), 0);
+  assert.equal(Object.values(data.sessionsByYear).reduce((a, b) => a + b, 0), sessions);
+  assert.equal((await fetch(`${base}/k/${'0'.repeat(48)}/data`)).status, 404);
+});

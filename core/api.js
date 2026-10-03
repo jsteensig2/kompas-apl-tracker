@@ -488,7 +488,24 @@ export function createApi(db, { XLSX } = {}) {
     const c = db.get('SELECT id, feed_token FROM consultants WHERE id = ?', [id]);
     if (!c) throw new HttpError(404, 'Konsulenten findes ikke.');
     if (reset || !c.feed_token) db.run('UPDATE consultants SET feed_token = ? WHERE id = ?', [newToken(), id]);
-    return { feedPath: `/calendar/feed/${db.get('SELECT feed_token FROM consultants WHERE id = ?', [id]).feed_token}.ics` };
+    const token = db.get('SELECT feed_token FROM consultants WHERE id = ?', [id]).feed_token;
+    return { feedPath: `/calendar/feed/${token}.ics`, pagePath: `/k/${token}` };
+  }
+
+  // The consultant's own page (same secret link as their calendar): held and coming courses.
+  // Apple counts a workshop of 1-4 hours as one session and a full day as two.
+  function consultantOverview(token) {
+    const c = /^[a-f0-9]{48}$/.test(String(token)) && db.get('SELECT id, name, feed_token FROM consultants WHERE feed_token = ?', [token]);
+    if (!c) throw new HttpError(404, 'Siden findes ikke. Bed Kompas om et nyt link.');
+    const rows = listActivities({ role: 'admin' }, { consultant: c.id }).map((a) => ({
+      id: a.id, date: a.date, duration: a.duration, title: a.title, school: a.school || '', municipality: a.municipality || '',
+      apl_type: a.apl_type, participants: a.participants, reseller: a.reseller, status: a.status, sessions: a.duration === 'full' ? 2 : 1,
+    }));
+    const held = rows.filter((a) => a.status === 'held').sort((x, y) => y.date.localeCompare(x.date));
+    const planned = rows.filter((a) => a.status === 'planned').sort((x, y) => x.date.localeCompare(y.date));
+    const byYear = {};
+    for (const a of held) byYear[a.date.slice(0, 4)] = (byYear[a.date.slice(0, 4)] || 0) + a.sessions;
+    return { name: c.name, feedPath: `/calendar/feed/${c.feed_token}.ics`, held, planned, sessionsByYear: byYear };
   }
 
   /** Subscription feed: authenticated by the secret token in the link, not by a login. */
@@ -563,5 +580,5 @@ export function createApi(db, { XLSX } = {}) {
     }
   }
 
-  return { handle, feed, calendarUrlFor: (user) => db.get('SELECT calendar_url FROM users WHERE id = ?', [user.id])?.calendar_url || '' };
+  return { handle, feed, consultantOverview, calendarUrlFor: (user) => db.get('SELECT calendar_url FROM users WHERE id = ?', [user.id])?.calendar_url || '' };
 }
