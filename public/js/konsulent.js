@@ -9,7 +9,6 @@ const LOGO_MARK = `<svg class="wordmark-mark" viewBox="0 0 660 660" aria-hidden=
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtDate = (d) => new Date(`${d}T12:00:00`).toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 const dmy = (d) => d.split('-').reverse().join('/'); // Apple asks for dd/mm/åååå
-const addDays = (d, n) => new Date(Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10) + n)).toISOString().slice(0, 10);
 const app = document.getElementById('app');
 const token = location.pathname.split('/').filter(Boolean)[1] || '';
 let data;
@@ -20,12 +19,7 @@ function toast(msg) {
   clearTimeout(toast.timer); toast.timer = setTimeout(() => { t.hidden = true; }, 2500);
 }
 
-// Apple wants the report within 7 days of the session.
-function appleState(a) {
-  if (a.appleReportedAt) return { cls: 'pill-done', text: 'Indsendt til Apple' };
-  const due = addDays(a.date, 7);
-  return due < data.today ? { cls: 'pill-late', text: `Mangler · frist ${dmy(due)}` } : { cls: 'pill-planned', text: `Indsend senest ${dmy(due)}` };
-}
+const appleState = (a) => (a.appleReportedAt ? { cls: 'pill-done', text: 'Sendt til Apple' } : { cls: 'pill-held', text: 'Ikke sendt endnu' });
 
 function table(rows, planned) {
   if (!rows.length) return `<p class="empty">${planned ? 'Ingen planlagte kurser lige nu.' : 'Ingen afholdte kurser endnu.'}</p>`;
