@@ -68,7 +68,7 @@ function render() {
 
       <section class="card apple-card">
         <div class="card-head"><h2>Registrering hos Apple</h2><span class="muted small">${sessionsTotal} sessioner i alt</span></div>
-        <p>Husk at registrere dine afholdte workshops hos Apple. Du skal afholde mindst ${GOAL} workshops om året for at bevare din status som Apple Professional Learning Specialist.${thisYear >= GOAL ? ` Du har afholdt ${thisYear} i ${year}, så du er i mål.` : ` Du har afholdt ${thisYear} i ${year} og mangler ${GOAL - thisYear}.`}</p>
+        <p>Husk at registrere alle dine afholdte workshops hos Apple, også når du har nået de ${GOAL}. Du skal afholde mindst ${GOAL} workshops om året for at bevare din status som Apple Professional Learning Specialist.${thisYear >= GOAL ? ` Du har afholdt ${thisYear} i ${year}.` : ` Du har afholdt ${thisYear} i ${year} og mangler ${GOAL - thisYear}.`}</p>
         <p>I forhold til opgørelsen tæller en normal workshop på 1-4 timer som én session, mens en heldagsworkshop tæller for to.</p>
         <p>Hvis du ikke kan finde dit personlige link til spørgeskemaet ”Engagement Checkout Survey”, kan du også benytte dette åbne link. Den eneste forskel er, at du her selv skal indtaste navn, land og e-mail.</p>
         <div class="copyrow"><a class="btn btn-primary" href="${APPLE_SURVEY}" target="_blank" rel="noopener">Åbn Engagement Checkout Survey</a><button type="button" class="btn" id="copy-survey">Kopiér link</button></div>
