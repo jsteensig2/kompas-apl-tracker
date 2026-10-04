@@ -222,3 +222,10 @@ test('a Status column saying "afventer" imports the course as pending (Foreløbi
   const pending = await json('admin', '/api/activities?status=pending');
   assert.deepEqual(pending.map((a) => a.title), ['Pending import']);
 });
+
+test('the same course at several new schools on one day is not taken for a duplicate', async () => {
+  const rows = ['Linje 10', 'Ungdomsskolen', 'Helt Ny Reerslev'].map((Skole) => ({ Dato: future(60), 'Titel/emne': 'Modul 2', Skole, Reseller: 'Atea' }));
+  const r = await post('admin', '/api/import', { rows, commit: false });
+  assert.equal(r.summary.duplicates, 0);
+  assert.equal(r.summary.ready, 3);
+});

@@ -292,7 +292,7 @@ function chartSvg(monthly, year) {
           ${showLabel(i) ? `<text x="${x + w / 2}" y="${H - 8}" class="axis" text-anchor="middle">${label}</text>` : ''}</g>`;
       }).join('')}
     </svg>
-    ${planned.some(Boolean) ? '<div class="legend"><span><i class="sw sw-held"></i>Afholdt</span><span><i class="sw sw-planned"></i>Planlagt (ordrebog)</span></div>' : ''}`;
+    ${planned.some(Boolean) ? '<div class="legend"><span><i class="sw sw-held"></i>Afholdt</span><span><i class="sw sw-planned"></i>Kommende kurser</span></div>' : ''}`;
 }
 
 const participantsText = (a) => (a.status === 'planned' && !a.participants ? 'Deltagere ikke kendt endnu' : `${num(a.participants)} deltagere`);
@@ -411,9 +411,9 @@ async function renderDashboard(root) {
       </section>
     </div>
     <section class="card orderbook">
-      <div class="card-head"><h2>Ordrebog</h2><a href="#activities" data-go="activities" id="ob-all" class="small">Se hele ordrebogen</a></div>
+      <div class="card-head"><h2>Kommende kurser</h2><a href="#activities" data-go="activities" id="ob-all" class="small">Se alle kommende kurser</a></div>
       <div class="ob-stats">
-        <div><b>${num(d.orderbook.courses)}</b><span>planlagte kurser${d.orderbook.pending ? ` · heraf ${num(d.orderbook.pending)} afventer godkendelse` : ''}</span></div>
+        <div><b>${num(d.orderbook.courses)}</b><span>kommende kurser${d.orderbook.pending ? ` · heraf ${num(d.orderbook.pending)} afventer godkendelse` : ''}</span></div>
         <div><b>${num(d.orderbook.half_days)}</b><span>halve dage</span></div>
         <div><b>${num(d.orderbook.full_days)}</b><span>hele dage</span></div>
       </div>
@@ -431,7 +431,7 @@ function activityFilters() {
     <div class="filters">
       <div class="field field-status"><span id="st-label">Status</span>
         <div class="seg" role="radiogroup" aria-labelledby="st-label">
-          ${[['', 'Alle'], ['held', 'Afholdt'], ['planned', 'Planlagt (ordrebog)'], ['pending', 'Afventer']].map(([val, l]) => `<label><input type="radio" name="f-status" value="${val}" ${f.status === val ? 'checked' : ''}><span>${l}</span></label>`).join('')}
+          ${[['', 'Alle'], ['held', 'Afholdt'], ['planned', 'Kommende kurser'], ['pending', 'Afventer']].map(([val, l]) => `<label><input type="radio" name="f-status" value="${val}" ${f.status === val ? 'checked' : ''}><span>${l}</span></label>`).join('')}
         </div>
       </div>
       <label class="field field-search"><span>Søg</span><input id="f-q" type="search" placeholder="Emne, skole, kommune, konsulent…" value="${esc(f.q)}"></label>
@@ -497,7 +497,7 @@ async function loadList() {
   const summary = (sum) => {
     const nPlanned = rows.filter((r) => r.status === 'planned').length;
     const nPending = rows.filter((r) => r.pending).length;
-    return `${num(rows.length)} ${rows.length === 1 ? 'aktivitet' : 'aktiviteter'} · ${num(rows.length - nPlanned)} afholdt · ${num(nPlanned)} planlagt${nPending ? ` (heraf ${num(nPending)} afventer godkendelse)` : ''} · ${num(sum)} deltagere`;
+    return `${num(rows.length)} ${rows.length === 1 ? 'aktivitet' : 'aktiviteter'} · ${num(rows.length - nPlanned)} afholdt · ${num(nPlanned)} kommende${nPending ? ` (heraf ${num(nPending)} afventer godkendelse)` : ''} · ${num(sum)} deltagere`;
   };
   $('#list-summary').textContent = summary(total);
   if (!rows.length) { body.innerHTML = '<div class="card"><p class="muted empty">Ingen aktiviteter matcher filtrene.</p></div>'; return; }
@@ -793,7 +793,7 @@ function renderImport(root) {
   root.innerHTML = `
     <div class="pagehead">
       <div><p class="eyebrow">Aktiviteter</p><h1>Importér kurser</h1>
-        <p class="muted">Upload en Excel- eller CSV-fil med afholdte og planlagte kurser. Kurser med en dato efter i dag kommer i ordrebogen.</p></div>
+        <p class="muted">Upload en Excel- eller CSV-fil med afholdte og planlagte kurser. Kurser med en dato efter i dag kommer under Kommende kurser.</p></div>
       <button type="button" class="btn" data-go="activities">Tilbage til aktiviteter</button>
     </div>
     <section class="card">
@@ -877,7 +877,7 @@ function renderImport(root) {
         <div class="import-summary">
           <div><b>${num(sm.ready)}</b><span>klar til import</span></div>
           <div><b>${num(sm.held)}</b><span>afholdte</span></div>
-          <div><b>${num(sm.planned)}</b><span>planlagte (ordrebog)${sm.pending ? ` · heraf ${num(sm.pending)} afventer godkendelse` : ''}</span></div>
+          <div><b>${num(sm.planned)}</b><span>kommende kurser${sm.pending ? ` · heraf ${num(sm.pending)} afventer godkendelse` : ''}</span></div>
           <div class="${sm.duplicates ? 'is-warn' : ''}"><b>${num(sm.duplicates)}</b><span>dubletter springes over</span></div>
           <div class="${sm.errors ? 'is-err' : ''}"><b>${num(sm.errors)}</b><span>med fejl springes over</span></div>
           ${sm.unselected ? `<div class="is-warn"><b>${num(sm.unselected)}</b><span>fravalgt</span></div>` : ''}

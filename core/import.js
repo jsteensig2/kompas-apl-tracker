@@ -297,7 +297,8 @@ export function runImport({ db, today, user }, body) {
     // Each consultant counts as one course, so "SR, KB" on one line becomes two courses.
     if (consultants.length > 1) warnings.push(`Delt i ${consultants.length} kurser, ét pr. konsulent`);
     return (consultants.length ? consultants : [null]).map((consultant, ci) => {
-      const key = `${date}|${norm(title)}|${reseller?.id}|${school?.id ?? ''}|${consultant ? consultant.id ?? `n:${norm(consultant.name)}` : ''}`;
+      // New schools have no id yet, so they are told apart by name ("Linje 10" and "Ungdomsskolen" the same day).
+      const key = `${date}|${norm(title)}|${reseller?.id}|${school?.id ?? (schoolName ? `n:${norm(schoolName)}` : '')}|${consultant ? consultant.id ?? `n:${norm(consultant.name)}` : ''}`;
       const duplicate = !errors.length && Boolean(reseller?.id) && (existing.has(key) || seen.has(key));
       seen.add(key);
       const looksLike = !duplicate && school?.id && consultant?.id ? similar.get(`${date}|${school.id}|${consultant.id}`) : undefined;
