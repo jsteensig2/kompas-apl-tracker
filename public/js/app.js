@@ -511,7 +511,7 @@ function renderRegister(root) {
   const copy = !a ? state.copyOf : null;
   // A copy keeps everything except the consultant, who is picked again.
   const v = a || (copy && { ...copy, consultant_id: '' }) || {
-    date: todayIso(), duration: 'half', apl_type_id: o.aplTypes[0]?.id, title: '', school_id: '', school: '',
+    date: todayIso(), duration: 'half', apl_type_id: (o.aplTypes.find((t) => t.name === 'Workshop Fysisk') || o.aplTypes[0])?.id, title: '', school_id: '', school: '',
     municipality_id: '', participants: '', consultant_id: last.consultant_id || '', reseller_id: '', paid_by_id: '',
     ...(pre ? Object.fromEntries(Object.entries(pre).filter(([, x]) => x !== '' && x != null)) : {}),
   };

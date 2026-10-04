@@ -23,7 +23,7 @@ const post = (who, path, body) => json(who, path, { method: 'POST', body: JSON.s
 
 const future = (days) => new Date(Date.now() + days * 864e5).toISOString().slice(0, 10).split('-').reverse().join('.');
 const ROWS = [
-  { Dato: '03.03.2025', Varighed: 'Halv dag', Type: 'Workshop', 'Titel/emne': 'Jamf', Skole: 'Torstorp Skole', Kommune: 'Høje-Taastrup Kommune', Deltagere: 12, Konsulent: 'Kim Byrding', Reseller: 'Atea', 'Betalt af': 'Atea' },
+  { Dato: '03.03.2025', Varighed: 'Halv dag', Type: 'Workshop Fysisk', 'Titel/emne': 'Jamf', Skole: 'Torstorp Skole', Kommune: 'Høje-Taastrup Kommune', Deltagere: 12, Konsulent: 'Kim Byrding', Reseller: 'Atea', 'Betalt af': 'Atea' },
   { Dato: future(30), Varighed: 'Hel dag', 'Titel/emne': 'ADS 2', Skole: 'Helt Ny Skole', Kommune: 'Aalborg', Deltagere: '', Konsulent: 'Ny Konsulent', Reseller: 'comm2ig', 'Betalt af': 'Apple' },
   { Dato: 45700, Varighed: 'half day', 'Titel/emne': 'AI', Skole: '', Kommune: '', Deltagere: 9, Konsulent: 'Kim Byrding', Reseller: 'Atea', 'Betalt af': '' },
   { Dato: '31.02.2026', 'Titel/emne': 'Mac – module 1', Reseller: 'Atea', Deltagere: 5 },
@@ -196,4 +196,17 @@ test('several sheets with headings, defaults for empty fields, similar courses u
   assert.equal(prev.summary.ready, 0);
   const forced = await post('admin', '/api/import', { sheets: again, include: { [prev.rows[0].rid]: true } });
   assert.equal(forced.summary.ready, 1);
+});
+
+test('unknown APL types are not created; Greenland defaults to Workshop Online', async () => {
+  const rows = [
+    { Dato: '01.09.2026', Type: 'tirsdag', 'Titel/emne': 'A', Skole: 'Torstorp Skole', Reseller: 'Atea' },
+    { Dato: '02.09.2026', 'Titel/emne': 'B', Skole: 'Flere skoler – Kujalleq', Reseller: 'Comm2IG' },
+    { Dato: '03.09.2026', Type: 'Sparring', 'Titel/emne': 'C', Skole: 'Torstorp Skole', Reseller: 'Atea' },
+  ];
+  const r = await post('admin', '/api/import', { rows, commit: false });
+  assert.deepEqual(r.rows.map((x) => x.type), ['Workshop Fysisk', 'Workshop Online', 'Sparring']);
+  assert.ok(r.rows[0].warnings.some((w) => w.includes('"tirsdag" findes ikke')));
+  const opts = await json('admin', '/api/options');
+  assert.deepEqual(opts.aplTypes.map((t) => t.name), ['Oplæg', 'Workshop Online', 'Workshop Fysisk', 'Sparring', 'Andet']);
 });

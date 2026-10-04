@@ -5,6 +5,9 @@
 // lists and either returns a preview (commit = false) or inserts the valid rows (commit = true).
 // The server always validates again on commit; the preview is only for the user.
 
+// Municipalities in Greenland (or a school name such as "Flere skoler – Kujalleq").
+const GL_HINT = /avannaata|kujalleq|qeqertalik|qeqqata|sermersooq|grønland|kalaallit/i;
+
 const HEADERS = {
   date: ['dato', 'date', 'kursusdato', 'afholdt'],
   duration: ['varighed', 'duration', 'længde', 'halv hel dag'],
@@ -191,7 +194,10 @@ export function runImport({ db, today, user }, body) {
   const similar = new Map(registered.filter((r) => r.school_id && r.consultant_id)
     .map((r) => [`${r.date}|${r.school_id}|${r.consultant_id}`, r.title]));
   const seen = new Set();
-  const defaultType = db.get('SELECT id, name FROM apl_types ORDER BY id LIMIT 1');
+  // Without a type in the file: Greenland courses are online, the rest are on site (Jakob, 2026-10-04).
+  const typeNamed = (name) => db.get('SELECT id, name FROM apl_types WHERE lower(name) = lower(?)', [name]);
+  const firstType = db.get('SELECT id, name FROM apl_types ORDER BY id LIMIT 1');
+  const defaultTypeFor = (greenland) => typeNamed(greenland ? 'Workshop Online' : 'Workshop Fysisk') || firstType;
   const defaultReseller = pickDefault('resellers', defaults.reseller ?? body.reseller);
   // "Atea A/S" or "ATEA Danmark" should find Atea.
   const findReseller = (name) => {
@@ -236,8 +242,12 @@ export function runImport({ db, today, user }, body) {
     else if (!reseller) errors.push('Mangler reseller (vælg en reseller til rækker uden reseller)');
     reseller = reseller && { id: reseller.id, name: reseller.name };
 
+    // The type list is fixed in Administration, so an unknown type in the file is not created.
     const typeName = text('type');
-    const type = typeName ? pick('type', lists.apl_types, 'APL-type') : defaultType;
+    const knownType = typeName ? lists.apl_types.get(norm(typeName)) : null;
+    const greenland = GL_HINT.test(`${text('municipality')} ${text('school')}`) || GL_HINT.test(defaultMunicipality?.name || '');
+    const type = knownType ? { id: knownType.id, name: knownType.name } : defaultTypeFor(greenland);
+    if (typeName && !knownType) warnings.push(`APL-typen "${typeName}" findes ikke, ${type?.name} brugt`);
     // "SR, KB/RT og JS": several consultants, by name or by initials.
     const consultants = [];
     for (const part of text('consultant').split(/\s*(?:[,;/&+\n]|\bog\b|\band\b)\s*/i).map((x) => x.trim()).filter(Boolean)) {
@@ -336,7 +346,6 @@ export function runImport({ db, today, user }, body) {
     try {
       for (const r of ok) {
         const ids = { ...r._ids };
-        if (r._create.type) ids.type = ensure('apl_types', r._create.type);
         const consultantId = r._consultant ? r._consultant.id ?? ensure('consultants', r._consultant.name) : null;
         if (r._create.paidBy) ids.paidBy = ensure('paid_by', r._create.paidBy);
         if (r._create.school) {

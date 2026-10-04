@@ -94,4 +94,37 @@ export function migrate(db) {
     uid     TEXT NOT NULL,
     PRIMARY KEY (user_id, uid)
   )`);
+  db.exec('CREATE TABLE IF NOT EXISTS app_migrations (name TEXT PRIMARY KEY, ran_at TEXT NOT NULL DEFAULT (datetime(\'now\')))');
+  once(db, 'apl-types-2026-10-04', () => resetAplTypes(db));
 }
+
+// Runs a data change a single time; it is skipped until there is data to change.
+function once(db, name, fn) {
+  if (db.get('SELECT 1 AS x FROM app_migrations WHERE name = ?', [name])) return;
+  if (fn() !== false) db.run('INSERT INTO app_migrations (name) VALUES (?)', [name]);
+}
+
+export const APL_TYPE_NAMES = ['Oplæg', 'Workshop Online', 'Workshop Fysisk', 'Sparring', 'Andet'];
+const GREENLAND = ['avannaata', 'kujalleq', 'qeqertalik', 'qeqqata', 'sermersooq'];
+
+// Jakob (2026-10-04): the APL types are replaced by a fixed list. Courses in Greenland become
+// "Workshop Online", all others "Workshop Fysisk".
+function resetAplTypes(db) {
+  if (!db.get('SELECT COUNT(*) AS n FROM apl_types').n) return false; // not seeded yet
+  const id = (name) => {
+    const hit = db.get('SELECT id FROM apl_types WHERE lower(name) = lower(?)', [name]);
+    return hit ? hit.id : Number(db.run('INSERT INTO apl_types (name) VALUES (?)', [name]).lastInsertRowid);
+  };
+  const ids = Object.fromEntries(APL_TYPE_NAMES.map((n) => [n, id(n)]));
+  const like = GREENLAND.map(() => 'lower(x) LIKE ?').join(' OR ');
+  const params = GREENLAND.map((g) => `%${g}%`);
+  const greenland = `(${like.replaceAll('x', 'm.name')}) OR (${like.replaceAll('x', 's.name')})
+    OR lower(p.name) LIKE '%kivitsisa%' OR lower(s.name) LIKE '%uddannelsesstyrelsen%'`;
+  const glIds = db.all(`SELECT a.id FROM activities a LEFT JOIN municipalities m ON m.id = a.municipality_id
+    LEFT JOIN schools s ON s.id = a.school_id LEFT JOIN paid_by p ON p.id = a.paid_by_id WHERE ${greenland}`, [...params, ...params]).map((r) => r.id);
+  db.run('UPDATE activities SET apl_type_id = ?', [ids['Workshop Fysisk']]);
+  for (const a of glIds) db.run('UPDATE activities SET apl_type_id = ? WHERE id = ?', [ids['Workshop Online'], a]);
+  db.run(`DELETE FROM apl_types WHERE id NOT IN (${Object.values(ids).join(',')})`);
+  return true;
+}
+

@@ -548,8 +548,8 @@ export function createApi(db, { XLSX } = {}) {
   function importTemplate() {
     if (!XLSX) throw new HttpError(500, 'Excel er ikke tilgængelig.');
     const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS,
-      ['19.02.2026', 'Halv dag', 'Workshop', 'ADS 1', 'Gåsetårnskolen', 'Vordingborg', 16, 'Kim Byrding', 'Comm2IG', 'Comm2IG'],
-      ['12.11.2026', 'Hel dag', 'Workshop', 'Mac – module 1', 'Torstorp Skole', 'Høje-Taastrup', '', 'Jakob Steensig', 'Atea', 'Høje-Taastrup Kommune']]);
+      ['19.02.2026', 'Halv dag', 'Workshop Fysisk', 'ADS 1', 'Gåsetårnskolen', 'Vordingborg', 16, 'Kim Byrding', 'Comm2IG', 'Comm2IG'],
+      ['12.11.2026', 'Hel dag', 'Workshop Fysisk', 'Mac – module 1', 'Torstorp Skole', 'Høje-Taastrup', '', 'Jakob Steensig', 'Atea', 'Høje-Taastrup Kommune']]);
     ws['!cols'] = [12, 10, 12, 18, 22, 16, 10, 18, 12, 22].map((wch) => ({ wch }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Kurser');
