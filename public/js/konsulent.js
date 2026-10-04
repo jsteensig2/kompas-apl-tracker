@@ -9,6 +9,8 @@ const LOGO_MARK = `<svg class="wordmark-mark" viewBox="0 0 660 660" aria-hidden=
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtDate = (d) => new Date(`${d}T12:00:00`).toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 const app = document.getElementById('app');
+const PENDING = '<span class="pill pill-pending" title="Afventer godkendelse fra skole eller kommune">Foreløbig</span>';
+const rowClass = (a, planned) => (a.pending ? 'is-planned is-pending' : planned ? 'is-planned' : '');
 const token = location.pathname.split('/').filter(Boolean)[1] || '';
 const GOAL = 12; // workshops a year to keep the Apple Professional Learning Specialist status
 let data;
@@ -23,17 +25,17 @@ function table(rows, planned) {
   if (!rows.length) return `<p class="empty">${planned ? 'Ingen planlagte kurser lige nu.' : 'Ingen afholdte kurser endnu.'}</p>`;
   return `<div class="table-wrap"><table class="table">
     <thead><tr><th>Dato</th><th>Kursus</th><th>Skole</th><th>Varighed</th>${planned ? '' : '<th class="num">Deltagere</th><th class="num">Workshops</th>'}</tr></thead>
-    <tbody>${rows.map((a) => `<tr class="${planned ? 'is-planned' : ''}">
+    <tbody>${rows.map((a) => `<tr class="${rowClass(a, planned)}">
       <td class="nowrap">${esc(fmtDate(a.date))}</td>
-      <td><b>${esc(a.title)}</b><div class="muted small">${esc(a.reseller)}</div></td>
+      <td><b>${esc(a.title)}</b>${a.pending ? ` ${PENDING}` : ''}<div class="muted small">${esc(a.reseller)}</div></td>
       <td>${esc(a.school || '–')}${a.municipality ? `<div class="muted small">${esc(a.municipality)}</div>` : ''}</td>
       <td>${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}</td>
       ${planned ? '' : `<td class="num">${a.participants}</td><td class="num">${a.sessions}</td>`}
     </tr>`).join('')}</tbody></table></div>
     <ul class="cards-list k-cards">${rows.map((a) => `
-      <li class="card act-card ${planned ? 'is-planned' : ''}">
+      <li class="card act-card ${rowClass(a, planned)}">
         <div class="act-top"><span class="act-date">${esc(fmtDate(a.date))}</span><span class="tag">${esc(a.reseller)}</span></div>
-        <div class="act-title">${esc(a.title)}</div>
+        <div class="act-title">${esc(a.title)}${a.pending ? ` ${PENDING}` : ''}</div>
         <div class="muted">${esc(a.school || '–')}${a.municipality ? ` · ${esc(a.municipality)}` : ''}</div>
         <dl class="act-meta">
           <div><dt>Varighed</dt><dd>${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}</dd></div>
@@ -75,7 +77,7 @@ function render() {
         ${years.length > 1 ? `<p class="muted small">Workshops pr. år: ${years.map(([y, n]) => `${y}: ${n}`).join(' · ')}</p>` : ''}
       </section>
 
-      <section class="card card-flush"><div class="card-head card-head-pad"><h2>Kommende kurser</h2><span class="muted small">Nærmeste først</span></div>${table(data.planned, true)}</section>
+      <section class="card card-flush"><div class="card-head card-head-pad"><h2>Kommende kurser</h2><span class="muted small">Nærmeste først${data.planned.some((a) => a.pending) ? ' · Foreløbig = afventer godkendelse fra skole eller kommune' : ''}</span></div>${table(data.planned, true)}</section>
       <section class="card card-flush"><div class="card-head card-head-pad"><h2>Afholdte kurser</h2><span class="muted small">Nyeste først · heldag tæller som 2 workshops</span></div>${table(data.held, false)}</section>
     </main>`;
 

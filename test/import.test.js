@@ -210,3 +210,15 @@ test('unknown APL types are not created; Greenland defaults to Workshop Online',
   const opts = await json('admin', '/api/options');
   assert.deepEqual(opts.aplTypes.map((t) => t.name), ['Oplæg', 'Workshop Online', 'Workshop Fysisk', 'Sparring', 'Andet']);
 });
+
+test('a Status column saying "afventer" imports the course as pending (Foreløbig)', async () => {
+  const rows = [
+    { Dato: future(40), 'Titel/emne': 'Pending import', Skole: 'Torstorp Skole', Reseller: 'Atea', Konsulent: 'Kim Byrding', Status: 'Afventer godkendelse' },
+    { Dato: future(41), 'Titel/emne': 'Confirmed import', Skole: 'Torstorp Skole', Reseller: 'Atea', Konsulent: 'Kim Byrding', Status: 'Godkendt' },
+  ];
+  const r = await post('admin', '/api/import', { rows, commit: true });
+  assert.deepEqual(r.rows.map((x) => x.pending), [true, false]);
+  assert.equal(r.summary.pending, 1);
+  const pending = await json('admin', '/api/activities?status=pending');
+  assert.deepEqual(pending.map((a) => a.title), ['Pending import']);
+});

@@ -19,7 +19,11 @@ const HEADERS = {
   consultant: ['konsulent', 'konsulenter', 'consultant', 'consultants', 'underviser', 'undervisere', 'instruktør'],
   reseller: ['reseller', 'partner', 'reseller partner', 'forhandler'],
   paidBy: ['betalt af', 'paid by', 'betaler', 'betaling'],
+  status: ['status', 'godkendelse', 'godkendt'],
 };
+
+// A "Status" cell saying the course still awaits approval marks it as pending ("Afventer godkendelse").
+const PENDING_HINT = /afvent|forel[øo]b|ikke godkendt|ej godkendt|pending|tentativ/i;
 
 const norm = (s) => String(s ?? '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 
@@ -278,7 +282,8 @@ export function runImport({ db, today, user }, body) {
     }
     if (raw?._group) title = `${title} – ${raw._group}`;
 
-    const status = date && date > today ? 'planned' : 'held';
+    const pending = PENDING_HINT.test(text('status'));
+    const status = (date && date > today) || pending ? 'planned' : 'held';
     const rawP = text('participants');
     let participants = 0;
     if (rawP) {
@@ -304,7 +309,7 @@ export function runImport({ db, today, user }, body) {
         similar: Boolean(looksLike),
         sheet: raw?._group || '',
         line: raw?._line ?? i + 2, // row number in the spreadsheet
-        date, duration, title, status, participants,
+        date, duration, title, status, pending, participants,
         type: type?.name || '', consultant: consultant?.name || '', reseller: reseller?.name || '', paidBy: paidBy?.name || '',
         school: school?.name || schoolName, municipality: municipality?.name || (municipalityId ? db.get('SELECT name FROM municipalities WHERE id = ?', [municipalityId])?.name : ''),
         errors, warnings: rowWarnings, duplicate,
@@ -321,6 +326,7 @@ export function runImport({ db, today, user }, body) {
     ready: ok.length,
     held: ok.filter((r) => r.status === 'held').length,
     planned: ok.filter((r) => r.status === 'planned').length,
+    pending: ok.filter((r) => r.pending).length,
     errors: rows.filter((r) => r.errors.length).length,
     duplicates: rows.filter((r) => r.duplicate).length,
     warnings: ok.filter((r) => r.warnings.length).length,
@@ -354,9 +360,9 @@ export function runImport({ db, today, user }, body) {
           ids.school = created.schools[k] ||= Number(db.run('INSERT INTO schools (name, municipality_id) VALUES (?, ?)', [schoolNames[sk], ids.municipality]).lastInsertRowid);
         }
         db.run(`INSERT INTO activities (date, duration, apl_type_id, title, school_id, municipality_id, participants,
-                  consultant_id, reseller_id, paid_by_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                  consultant_id, reseller_id, paid_by_id, pending, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [r.date, r.duration, ids.type, r.title, ids.school ?? null, ids.municipality, r.participants,
-            consultantId, ids.reseller, ids.paidBy ?? null, user.id]);
+            consultantId, ids.reseller, ids.paidBy ?? null, r.pending ? 1 : 0, user.id]);
       }
       db.exec('COMMIT');
     } catch (e) {

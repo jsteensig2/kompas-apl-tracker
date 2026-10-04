@@ -307,6 +307,19 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 .table tr.is-planned.clickable:hover td { background: color-mix(in srgb, var(--planned-soft) 82%, var(--planned)); }
 .act-card.is-planned { background: var(--planned-soft); border-left: 4px solid var(--planned); }
 .latest-item.is-planned { box-shadow: inset 4px 0 0 var(--planned); padding-left: 10px; }
+/* Foreløbig: has a date but awaits approval from the school or municipality (dashed orange). */
+.pill-pending { background: transparent; color: var(--planned-ink); border: 1.5px dashed var(--planned); padding: 0 7px; }
+.pill-toggle { background: none; border: 0; padding: 2px; margin: -2px; cursor: pointer; border-radius: 99px; font: inherit; }
+.pill-toggle:hover .pill, .pill-toggle:focus-visible .pill { outline: 2px solid var(--planned); outline-offset: 1px; }
+.pill-toggle:disabled { opacity: 0.5; cursor: progress; }
+.table tr.is-pending td { background: transparent; }
+.table tr.is-pending td:first-child { box-shadow: none; border-left: 4px dashed var(--planned); }
+.table tr.is-pending.clickable:hover td { background: var(--planned-soft); }
+.act-card.is-pending { background: var(--surface); border: 1.5px dashed var(--planned); border-left: 4px dashed var(--planned); }
+.latest-item.is-pending { box-shadow: none; border-left: 4px dashed var(--planned); padding-left: 10px; }
+.check-field { flex-direction: row; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1.5px dashed var(--planned); border-radius: 10px; cursor: pointer; }
+.check-field input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--planned); flex: none; }
+.check-field > span { display: flex; flex-direction: column; gap: 2px; }
 .section-label { margin: 0 0 -8px; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
 .chart .bar-planned { fill: var(--planned); }
 .legend { display: flex; gap: 16px; font-size: 0.8rem; color: var(--muted); margin-top: 6px; }
@@ -314,6 +327,7 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
 .sw-held { background: var(--bar); }
 .sw-planned { background: var(--planned); }
+.sw-pending { background: transparent; border: 1.5px dashed var(--planned); }
 .ob-stats, .import-summary { display: flex; gap: 28px; flex-wrap: wrap; margin-bottom: 8px; }
 .ob-stats div, .import-summary div { display: flex; flex-direction: column; }
 .ob-stats b, .import-summary b { font-size: 1.6rem; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
@@ -369,6 +383,7 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 .mchip { display: block; font-size: 0.72rem; line-height: 1.3; padding: 2px 6px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mchip.is-held { background: var(--surface-2); color: var(--ink); border-left: 3px solid var(--bar); }
 .mchip.is-planned { background: var(--planned-soft); color: var(--planned-ink); border-left: 3px solid var(--planned); }
+.mchip.is-pending { background: transparent; border: 1px dashed var(--planned); border-left: 3px dashed var(--planned); }
 .mchip.is-event { border: 1px dashed var(--accent); color: var(--accent); }
 .mday-dots { display: none; gap: 3px; }
 .mday-dots i { width: 7px; height: 7px; border-radius: 99px; display: inline-block; }
@@ -441,3 +456,4 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
   .splash-points, .splash-foot { display: none; }
   .splash > .login-card { padding: 28px var(--gutter) 48px; }
 }
+.form .check-field small { font-weight: 400; font-size: 0.85rem; letter-spacing: 0; }

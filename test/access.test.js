@@ -117,6 +117,34 @@ test('admins can change participants straight from the list; resellers cannot', 
   assert.equal((await json('admin', `/api/activities/${a.id}`)).participants, 17);
 });
 
+test('admins mark a course as awaiting approval; it is filtered, kept out of key figures and shown to resellers', async () => {
+  const opts = await json('admin', '/api/options');
+  const atea = opts.resellers.find((x) => x.name === 'Atea').id;
+  const before = await json('admin', '/api/dashboard?year=');
+  const a = await json('admin', '/api/activities', { method: 'POST', body: JSON.stringify({
+    date: '2020-01-15', duration: 'half', apl_type_id: opts.aplTypes[0].id, title: 'Venter på kommunen',
+    participants: '', consultant_id: opts.consultants[0].id, reseller_id: atea, pending: '1' }) });
+  assert.equal(a.pending, 1);
+  assert.equal(a.status, 'planned'); // never counted as held while it awaits approval
+  const put = (who, pending) => call(who, `/api/activities/${a.id}/pending`, { method: 'PUT', body: JSON.stringify({ pending }) });
+  assert.equal((await put('Atea', false)).status, 403);
+  const d = await json('admin', '/api/dashboard?year=');
+  assert.equal(d.kpi.experiences, before.kpi.experiences);
+  assert.equal(d.orderbook.pending, before.orderbook.pending + 1);
+  assert.deepEqual((await json('admin', '/api/activities?status=pending')).map((x) => x.id), [a.id]);
+  assert.ok(!(await json('admin', '/api/activities?status=held')).some((x) => x.id === a.id));
+  const seen = await json('Atea', '/api/activities?status=pending');
+  assert.equal(seen[0]?.pending, 1); // resellers see it too, marked
+  const off = await (await put('admin', false)).json();
+  assert.equal(off.pending, 0);
+  assert.equal(off.status, 'held');
+  assert.equal((await json('admin', '/api/activities?status=pending')).length, 0);
+  await put('admin', true);
+  const { feedPath } = await json('Atea', '/api/calendar');
+  const ics = (await (await fetch(base + feedPath)).text()).replace(/\r\n /g, '');
+  assert.match(ics, /SUMMARY:\(Foreløbig\) .*Venter på kommunen/);
+});
+
 test('a read-only viewer (Apple) sees every reseller but cannot change anything', async () => {
   const created = await (await call('admin', '/api/admin/users', { method: 'POST', body: JSON.stringify({ name: 'Apple', email: 'apl@apple.example', role: 'viewer' }) })).json();
   assert.equal(created.role ?? 'viewer', 'viewer');
@@ -137,6 +165,7 @@ test('a read-only viewer (Apple) sees every reseller but cannot change anything'
   assert.equal((await call('viewer', `/api/activities/${all[0].id}`, { method: 'PUT', body: '{}' })).status, 403);
   assert.equal((await call('viewer', `/api/activities/${all[0].id}`, { method: 'DELETE' })).status, 403);
   assert.equal((await call('viewer', `/api/activities/${all[0].id}/participants`, { method: 'PUT', body: '{"participants":3}' })).status, 403);
+  assert.equal((await call('viewer', `/api/activities/${all[0].id}/pending`, { method: 'PUT', body: '{"pending":true}' })).status, 403);
   assert.equal((await call('viewer', '/api/admin/users')).status, 403);
   assert.equal((await call('viewer', '/api/import', { method: 'POST', body: '{"rows":[]}' })).status, 403);
 });

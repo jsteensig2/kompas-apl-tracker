@@ -26,14 +26,20 @@ const seesAll = (user) => user?.role === 'admin' || user?.role === 'viewer';
 export function todayIso() {
   return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Copenhagen', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 }
-const withStatus = (row) => row && ({ ...row, status: row.date <= todayIso() ? 'held' : 'planned' });
+// A course awaiting final approval from the school or municipality ("Afventer godkendelse") is never
+// counted as held; it stays in the order book, marked as pending, until Kompas confirms it.
+const withStatus = (row) => row && ({ ...row, pending: row.pending ? 1 : 0,
+  status: row.date <= todayIso() && !row.pending ? 'held' : 'planned' });
+// SQL counterparts of withStatus (the date is bound as a parameter).
+const HELD_SQL = '(a.date <= ? AND a.pending = 0)';
+const PLANNED_SQL = '(a.date > ? OR a.pending = 1)';
 
 function requireAdmin(user) {
   if (!isAdmin(user)) throw new HttpError(403, 'Kun Kompas-administratorer kan gøre dette.');
 }
 
 const ACTIVITY_SELECT = `
-  SELECT a.id, a.date, a.duration, a.title, a.participants,
+  SELECT a.id, a.date, a.duration, a.title, a.participants, a.pending,
          a.apl_type_id, t.name AS apl_type,
          a.school_id, s.name AS school,
          a.municipality_id, m.name AS municipality,
@@ -47,6 +53,8 @@ const ACTIVITY_SELECT = `
   LEFT JOIN municipalities m ON m.id = a.municipality_id
   LEFT JOIN consultants c ON c.id = a.consultant_id
   LEFT JOIN paid_by p ON p.id = a.paid_by_id`;
+
+const truthy = (v) => v === true || v === 1 || /^(1|true|on|ja|yes)$/i.test(String(v ?? '').trim());
 
 const int = (v) => {
   const n = Number.parseInt(v, 10);
@@ -65,8 +73,9 @@ function buildWhere(user, f = {}) {
   } else {
     throw new HttpError(403, 'Din bruger har ikke adgang til nogen aktiviteter.');
   }
-  if (f.status === 'held') { where.push('a.date <= ?'); params.push(todayIso()); }
-  if (f.status === 'planned') { where.push('a.date > ?'); params.push(todayIso()); }
+  if (f.status === 'held') { where.push(HELD_SQL); params.push(todayIso()); }
+  if (f.status === 'planned') { where.push(PLANNED_SQL); params.push(todayIso()); }
+  if (f.status === 'pending') where.push('a.pending = 1');
   if (int(f.year)) { where.push("substr(a.date, 1, 4) = ?"); params.push(String(int(f.year))); }
   if (/^\d{4}-\d{2}-\d{2}$/.test(f.from || '')) { where.push('a.date >= ?'); params.push(f.from); }
   if (/^\d{4}-\d{2}-\d{2}$/.test(f.to || '')) { where.push('a.date <= ?'); params.push(f.to); }
@@ -108,7 +117,7 @@ const LISTS = {
 
 export const EXPORT_COLUMNS = [
   ['Dato', (a) => a.date],
-  ['Status', (a) => (a.status === 'planned' ? 'Planlagt' : 'Afholdt')],
+  ['Status', (a) => (a.pending ? 'Afventer godkendelse' : a.status === 'planned' ? 'Planlagt' : 'Afholdt')],
   ['APL-type', (a) => a.apl_type],
   ['Titel/emne', (a) => a.title],
   ['Skole', (a) => a.school || ''],
@@ -162,13 +171,14 @@ export function createApi(db, { XLSX } = {}) {
     const and = sql ? ' AND' : ' WHERE';
     // Key figures count held courses only; planned courses are reported as the order book.
     const kpi = db.get(`SELECT COUNT(*) AS experiences, COALESCE(SUM(a.participants), 0) AS participants,
-        COALESCE(SUM(a.duration = 'half'), 0) AS half_days, COALESCE(SUM(a.duration = 'full'), 0) AS full_days ${from}${and} a.date <= ?`, [...params, today]);
+        COALESCE(SUM(a.duration = 'half'), 0) AS half_days, COALESCE(SUM(a.duration = 'full'), 0) AS full_days ${from}${and} ${HELD_SQL}`, [...params, today]);
     const orderbook = db.get(`SELECT COUNT(*) AS courses, COALESCE(SUM(a.participants), 0) AS participants,
-        COALESCE(SUM(a.duration = 'half'), 0) AS half_days, COALESCE(SUM(a.duration = 'full'), 0) AS full_days ${from}${and} a.date > ?`, [...params, today]);
+        COALESCE(SUM(a.duration = 'half'), 0) AS half_days, COALESCE(SUM(a.duration = 'full'), 0) AS full_days,
+        COALESCE(SUM(a.pending), 0) AS pending ${from}${and} ${PLANNED_SQL}`, [...params, today]);
     const monthly = db.all(`SELECT substr(a.date, 1, 7) AS month, COUNT(*) AS activities,
-        SUM(a.date <= ?) AS held, SUM(a.date > ?) AS planned ${from} GROUP BY month ORDER BY month`, [today, today, ...params]);
-    const latest = db.all(`${ACTIVITY_SELECT}${sql}${and} a.date <= ? ORDER BY a.date DESC, a.id DESC LIMIT 6`, [...params, today]).map(withStatus);
-    const upcoming = db.all(`${ACTIVITY_SELECT}${sql}${and} a.date > ? ORDER BY a.date ASC, a.id ASC LIMIT 6`, [...params, today]).map(withStatus);
+        SUM(${HELD_SQL}) AS held, SUM(${PLANNED_SQL}) AS planned, SUM(a.pending) AS pending ${from} GROUP BY month ORDER BY month`, [today, today, ...params]);
+    const latest = db.all(`${ACTIVITY_SELECT}${sql}${and} ${HELD_SQL} ORDER BY a.date DESC, a.id DESC LIMIT 6`, [...params, today]).map(withStatus);
+    const upcoming = db.all(`${ACTIVITY_SELECT}${sql}${and} ${PLANNED_SQL} ORDER BY a.date ASC, a.id ASC LIMIT 6`, [...params, today]).map(withStatus);
     return { kpi, orderbook, monthly, latest, upcoming };
   }
 
@@ -212,7 +222,7 @@ export function createApi(db, { XLSX } = {}) {
     if (!title) errors.push('Titel / emne skal udfyldes.');
     // Participants may be left empty for planned courses (order book); stored as 0 until known.
     let participants = int(b.participants);
-    if (participants === null && String(b.participants ?? '').trim() === '' && b.date > todayIso()) participants = 0;
+    if (participants === null && String(b.participants ?? '').trim() === '' && (b.date > todayIso() || truthy(b.pending))) participants = 0;
     if (participants === null || participants < 0) errors.push('Antal deltagere skal være 0 eller mere.');
     const ref = (table, id, label, required) => {
       const v = int(id);
@@ -239,11 +249,11 @@ export function createApi(db, { XLSX } = {}) {
         : db.run('INSERT INTO schools (name, municipality_id) VALUES (?, ?)', [schoolName, municipality_id]).lastInsertRowid;
     }
     return { date: b.date, duration: b.duration, apl_type_id, title, school_id: school_id || null, municipality_id,
-      participants, consultant_id, reseller_id, paid_by_id };
+      participants, consultant_id, reseller_id, paid_by_id, pending: truthy(b.pending) ? 1 : 0 };
   }
 
   const ACTIVITY_FIELDS = ['date', 'duration', 'apl_type_id', 'title', 'school_id', 'municipality_id',
-    'participants', 'consultant_id', 'reseller_id', 'paid_by_id'];
+    'participants', 'consultant_id', 'reseller_id', 'paid_by_id', 'pending'];
 
   function createActivity(user, body) {
     requireAdmin(user);
@@ -272,6 +282,14 @@ export function createApi(db, { XLSX } = {}) {
     const n = Number(body?.participants);
     if (!Number.isInteger(n) || n < 0 || n > 100000) throw new HttpError(400, 'Deltagere skal være et helt tal, 0 eller derover.');
     db.run("UPDATE activities SET participants = ?, updated_at = datetime('now') WHERE id = ?", [n, id]);
+    return getActivity(user, id);
+  }
+
+  // Quick toggle from the lists: mark a course as awaiting approval, or as approved.
+  function setPending(user, id, body) {
+    requireAdmin(user);
+    getActivity(user, id);
+    db.run("UPDATE activities SET pending = ?, updated_at = datetime('now') WHERE id = ?", [truthy(body?.pending) ? 1 : 0, id]);
     return getActivity(user, id);
   }
 
@@ -479,7 +497,7 @@ export function createApi(db, { XLSX } = {}) {
       const where = [a.school, a.municipality].filter(Boolean).join(', ');
       lines.push('BEGIN:VEVENT', `UID:apl-${a.id}@kompas-apl-tracker`, `DTSTAMP:${stamp}`,
         `DTSTART;VALUE=DATE:${a.date.replace(/-/g, '')}`, `DTEND;VALUE=DATE:${next(a.date)}`,
-        `SUMMARY:${esc(filter.consultant ? `${a.title}${a.school ? ` · ${a.school}` : ''}` : `${a.apl_type} · ${a.title}${a.school ? ` · ${a.school}` : ''}`)}`,
+        `SUMMARY:${a.pending ? '(Foreløbig) ' : ''}${esc(filter.consultant ? `${a.title}${a.school ? ` · ${a.school}` : ''}` : `${a.apl_type} · ${a.title}${a.school ? ` · ${a.school}` : ''}`)}`,
         `LOCATION:${esc(where)}`,
         `DESCRIPTION:${esc([`Varighed: ${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}`, `Deltagere: ${a.participants}`,
           `Konsulent: ${a.consultant || '–'}`, `Reseller: ${a.reseller}`, `Betalt af: ${a.paid_by || '–'}`].join('\n'))}`,
@@ -517,7 +535,7 @@ export function createApi(db, { XLSX } = {}) {
     const c = consultantByToken(token);
     const rows = listActivities({ role: 'admin' }, { consultant: c.id }).map((a) => ({
       id: a.id, date: a.date, duration: a.duration, title: a.title, school: a.school || '', municipality: a.municipality || '',
-      apl_type: a.apl_type, participants: a.participants, reseller: a.reseller, status: a.status, sessions: a.duration === 'full' ? 2 : 1,
+      apl_type: a.apl_type, participants: a.participants, reseller: a.reseller, status: a.status, pending: a.pending, sessions: a.duration === 'full' ? 2 : 1,
       country: GREENLAND.has(String(a.municipality || '').toLowerCase()) ? 'Grønland' : 'Danmark',
     }));
     const held = rows.filter((a) => a.status === 'held').sort((x, y) => y.date.localeCompare(x.date));
@@ -589,6 +607,7 @@ export function createApi(db, { XLSX } = {}) {
       case 'POST /activities': return { json: createActivity(user, body) };
       case 'PUT /activities/:id': return { json: updateActivity(user, id, body) };
       case 'PUT /activities/:id/participants': return { json: setParticipants(user, int(parts[1]), body) };
+      case 'PUT /activities/:id/pending': return { json: setPending(user, int(parts[1]), body) };
       case 'DELETE /activities/:id': return { json: deleteActivity(user, id) };
       case 'GET /admin/consultants/:id/feed': return { json: consultantFeed(user, int(parts[2]), false) };
       case 'POST /admin/consultants/:id/feed': return { json: consultantFeed(user, int(parts[2]), true) };
