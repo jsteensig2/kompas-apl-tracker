@@ -425,11 +425,13 @@ async function renderDashboard(root) {
   const k = d.kpi;
   $('#dash-body').innerHTML = `
     <p class="section-label">Afholdte kurser${f.year ? ` · ${esc(f.year)}` : ''}</p>
-    <section class="kpis" aria-label="Nøgletal for afholdte kurser">
+    <section class="kpis kpis-5" aria-label="Nøgletal for afholdte kurser">
       <div class="kpi"><div class="kpi-num">${num(k.experiences)}</div><div class="kpi-label">APL-aktiviteter</div></div>
       <div class="kpi"><div class="kpi-num">${num(k.participants)}</div><div class="kpi-label">Deltagere</div></div>
       <div class="kpi"><div class="kpi-num">${num(k.half_days)}</div><div class="kpi-label">Halve dage</div></div>
       <div class="kpi"><div class="kpi-num">${num(k.full_days)}</div><div class="kpi-label">Hele dage</div></div>
+      <div class="kpi kpi-apple"><div class="kpi-num">${num(k.half_days + 2 * k.full_days)}</div><div class="kpi-label">Apple-workshops</div>
+        <div class="kpi-sub">halv dag = 1 · hel dag = 2</div></div>
     </section>
     <div class="dash-grid">
       <section class="card">
