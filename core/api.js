@@ -18,6 +18,8 @@ export class HttpError extends Error {
 }
 
 const isAdmin = (user) => user?.role === 'admin';
+// Kompas admins and read-only viewers (Apple) see every reseller's courses.
+const seesAll = (user) => user?.role === 'admin' || user?.role === 'viewer';
 
 // Today's date in Denmark. Activities on or before this date are held ("Afholdt");
 // later ones are planned and form the order book ("Ordrebog").
@@ -55,7 +57,7 @@ const int = (v) => {
 function buildWhere(user, f = {}) {
   const where = [];
   const params = [];
-  if (isAdmin(user)) {
+  if (seesAll(user)) {
     if (int(f.reseller)) { where.push('a.reseller_id = ?'); params.push(int(f.reseller)); }
   } else if (user?.role === 'reseller' && user.reseller_id) {
     where.push('a.reseller_id = ?');
@@ -192,7 +194,7 @@ export function createApi(db, { XLSX } = {}) {
       `SELECT DISTINCT x.id, x.name FROM activities a JOIN ${table} x ON x.id = a.${idCol}${scope.sql} ORDER BY x.name`, scope.params);
     return {
       years,
-      resellers: db.all('SELECT id, name FROM resellers WHERE id = ?', [user.reseller_id]),
+      resellers: seesAll(user) ? db.all('SELECT id, name FROM resellers ORDER BY name') : db.all('SELECT id, name FROM resellers WHERE id = ?', [user.reseller_id]),
       municipalities: distinct('municipality_id', 'municipalities'),
       consultants: distinct('consultant_id', 'consultants'),
       aplTypes: distinct('apl_type_id', 'apl_types'),
@@ -283,7 +285,7 @@ export function createApi(db, { XLSX } = {}) {
   function exportActivities(user, f) {
     const rows = listActivities(user, f);
     const stamp = new Date().toISOString().slice(0, 10);
-    const scopeName = isAdmin(user) ? 'kompas' : db.get('SELECT name FROM resellers WHERE id = ?', [user.reseller_id]).name;
+    const scopeName = seesAll(user) ? 'kompas' : db.get('SELECT name FROM resellers WHERE id = ?', [user.reseller_id]).name;
     const base = `apl-aktiviteter-${scopeName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${stamp}`;
     if (f.format === 'csv') {
       return { filename: `${base}.csv`, contentType: 'text/csv; charset=utf-8', data: toCsv(rows) };
@@ -328,7 +330,7 @@ export function createApi(db, { XLSX } = {}) {
   function userInput(body, exceptId = 0) {
     const name = String(body?.name || '').trim();
     const email = String(body?.email || '').trim().toLowerCase();
-    const role = body?.role === 'admin' ? 'admin' : 'reseller';
+    const role = ['admin', 'viewer'].includes(body?.role) ? body.role : 'reseller';
     const reseller_id = role === 'reseller' ? int(body?.reseller_id) : null;
     if (!name) throw new HttpError(400, 'Navn skal udfyldes.');
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new HttpError(400, 'Indtast en gyldig e-mailadresse.');
@@ -488,7 +490,7 @@ export function createApi(db, { XLSX } = {}) {
   }
 
   function calendarName(user) {
-    return isAdmin(user) ? 'Kompas APL-aktiviteter'
+    return seesAll(user) ? 'Kompas APL-aktiviteter'
       : `APL-aktiviteter · ${db.get('SELECT name FROM resellers WHERE id = ?', [user.reseller_id])?.name || ''}`;
   }
 

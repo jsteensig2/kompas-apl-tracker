@@ -32,3 +32,24 @@ test('APL types are replaced; Greenland courses become Workshop Online, the rest
   assert.ok(db.get("SELECT 1 AS x FROM apl_types WHERE name = 'Ny type'"));
   assert.equal(db.get('SELECT t.name FROM activities a JOIN apl_types t ON t.id = a.apl_type_id WHERE a.id = 1').name, 'Sparring');
 });
+
+test('an old users table is rebuilt to allow the viewer role, keeping users and sessions', () => {
+  const db = adapt(new DatabaseSync(':memory:'));
+  const oldSchema = SCHEMA.replace("CHECK (role IN ('admin', 'reseller', 'viewer'))", "CHECK (role IN ('admin', 'reseller'))")
+    .replace("CHECK ((role IN ('admin', 'viewer') AND reseller_id IS NULL)", "CHECK ((role = 'admin' AND reseller_id IS NULL)");
+  assert.ok(!oldSchema.includes("'reseller', 'viewer'"));
+  db.exec(oldSchema);
+  db.run("INSERT INTO users (name, email, role) VALUES ('Jakob', 'j@k.dk', 'admin')");
+  db.run("INSERT INTO sessions (token, user_id) VALUES ('t', 1)");
+  assert.throws(() => db.run("INSERT INTO users (name, email, role) VALUES ('A', 'a@a.dk', 'viewer')"));
+  migrate(db); // as on the live server: adds later columns, then rebuilds users
+  db.run("UPDATE users SET password_hash = 'h' WHERE id = 1");
+  db.run("INSERT INTO users (name, email, role) VALUES ('Apple', 'a@a.dk', 'viewer')");
+  assert.equal(db.get("SELECT name FROM users WHERE email = 'j@k.dk'").name, 'Jakob');
+  assert.equal(db.get("SELECT user_id FROM sessions WHERE token = 't'").user_id, 1);
+  assert.equal(db.get('PRAGMA foreign_keys').foreign_keys, 1);
+  assert.throws(() => db.run("INSERT INTO users (name, email, role) VALUES ('B', 'b@b.dk', 'nobody')"));
+  assert.throws(() => db.run("INSERT INTO users (name, email, role, reseller_id) VALUES ('C', 'c@c.dk', 'viewer', 1)"));
+  migrate(db); // running again changes nothing
+  assert.equal(db.get('SELECT COUNT(*) AS n FROM users').n, 2);
+});

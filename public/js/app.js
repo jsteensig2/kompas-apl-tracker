@@ -53,6 +53,9 @@ const state = {
   demoUsers: [],
 };
 const isAdmin = () => state.me?.role === 'admin';
+// Admins and read-only viewers (e.g. Apple) see all resellers; only admins can change anything.
+const seesAll = () => ['admin', 'viewer'].includes(state.me?.role);
+const roleLabel = (u) => (u.role === 'admin' ? 'Kompas-administrator' : u.role === 'viewer' ? 'Læseadgang · alle resellere' : `Reseller · ${esc(u.reseller)}`);
 
 // --- Toast ---------------------------------------------------------------------------------
 let toastTimer;
@@ -104,7 +107,7 @@ function renderShell() {
           <div class="userchip" title="${esc(me.email)}">
             <span class="role-dot ${isAdmin() ? 'is-admin' : ''}" aria-hidden="true"></span>
             <span class="userchip-text"><span class="userchip-name">${esc(me.name)}</span>
-            <span class="userchip-role">${isAdmin() ? 'Kompas-administrator' : `Reseller · ${esc(me.reseller)}`}</span></span>
+            <span class="userchip-role">${roleLabel(me)}</span></span>
           </div>
         </div>
       </div>
@@ -151,7 +154,8 @@ async function renderLogin() {
     ({ demo, password } = await transport.auth.config());
     if (demo) users = await transport.auth.demoUsers();
   } catch { /* shown below */ }
-  const describe = (u) => (u.role === 'admin' ? 'Kompas · alle resellere, registrering og administration' : `Reseller · ser kun ${esc(u.reseller)}s aktiviteter`);
+  const describe = (u) => (u.role === 'admin' ? 'Kompas · alle resellere, registrering og administration'
+    : u.role === 'viewer' ? 'Læseadgang · ser alle resellere, ændrer intet' : `Reseller · ser kun ${esc(u.reseller)}s aktiviteter`);
   $('#app').innerHTML = `
     <main class="login splash">
       <section class="splash-brand" aria-label="Kompas APL Tracker">
@@ -335,7 +339,7 @@ function activityLine(a) {
         <div class="muted">${esc(a.school || '–')}${a.municipality ? ` · ${esc(a.municipality)}` : ''}</div>
         <div class="latest-meta">
           <span>${participantsCell(a, true)}</span><span>${esc(a.consultant || '')}</span>
-          ${isAdmin() ? `<span class="tag">${esc(a.reseller)}</span>` : ''}
+          ${seesAll() ? `<span class="tag">${esc(a.reseller)}</span>` : ''}
         </div>
       </div>
     </li>`;
@@ -348,13 +352,13 @@ async function renderDashboard(root) {
       <div>
         <p class="eyebrow">Kompas APL Tracker</p>
         <h1>Overblik over APL</h1>
-        ${!isAdmin() ? `<p class="muted">Aktiviteter gennemført af Kompas for ${esc(state.me.reseller)}.</p>` : ''}
+        ${!seesAll() ? `<p class="muted">Aktiviteter gennemført af Kompas for ${esc(state.me.reseller)}.</p>` : ''}
       </div>
       ${isAdmin() ? '<button class="btn btn-primary" data-go="register" type="button">+ Registrér aktivitet</button>' : ''}
     </div>
     <div class="filters filters-inline">
       <label class="field field-compact"><span>År</span><select id="d-year">${yearOptions(f.year)}</select></label>
-      ${isAdmin() ? `<label class="field field-compact"><span>Reseller</span><select id="d-reseller">${selectOptions(state.options.resellers, f.reseller, 'Alle resellere')}</select></label>` : ''}
+      ${seesAll() ? `<label class="field field-compact"><span>Reseller</span><select id="d-reseller">${selectOptions(state.options.resellers, f.reseller, 'Alle resellere')}</select></label>` : ''}
     </div>
     <div id="dash-body" aria-live="polite"><div class="loading">Indlæser…</div></div>`;
   $('#d-year').onchange = (e) => { f.year = e.target.value; renderDashboard(root); };
@@ -408,7 +412,7 @@ function activityFilters() {
       <label class="field"><span>År</span><select id="f-year">${yearOptions(f.year)}</select></label>
       <label class="field"><span>Fra dato</span><input id="f-from" type="date" value="${esc(f.from)}"></label>
       <label class="field"><span>Til dato</span><input id="f-to" type="date" value="${esc(f.to)}"></label>
-      ${isAdmin() ? `<label class="field"><span>Reseller</span><select id="f-reseller">${selectOptions(o.resellers, f.reseller, 'Alle')}</select></label>` : ''}
+      ${seesAll() ? `<label class="field"><span>Reseller</span><select id="f-reseller">${selectOptions(o.resellers, f.reseller, 'Alle')}</select></label>` : ''}
       <label class="field"><span>Kommune</span><select id="f-municipality">${selectOptions(o.municipalities, f.municipality, 'Alle')}</select></label>
       <label class="field"><span>Konsulent</span><select id="f-consultant">${selectOptions(o.consultants, f.consultant, 'Alle')}</select></label>
       <label class="field"><span>APL-type</span><select id="f-type">${selectOptions(o.aplTypes, f.type, 'Alle')}</select></label>
@@ -418,7 +422,7 @@ function activityFilters() {
 async function renderActivities(root) {
   root.innerHTML = `
     <div class="pagehead">
-      <div><p class="eyebrow">${isAdmin() ? 'Alle resellere' : esc(state.me.reseller)}</p><h1>Aktiviteter</h1></div>
+      <div><p class="eyebrow">${seesAll() ? 'Alle resellere' : esc(state.me.reseller)}</p><h1>Aktiviteter</h1></div>
       <div class="pagehead-actions">
         ${isAdmin() ? '<button class="btn" data-go="import" type="button">Importér Excel/CSV</button>' : ''}
         <button class="btn" id="export-xlsx" type="button">Eksportér Excel</button>
@@ -442,7 +446,7 @@ async function renderActivities(root) {
   bind('#f-q', 'q', 'input');
   ['year', 'from', 'to', 'municipality', 'consultant', 'type'].forEach((k) => bind(`#f-${k}`, k));
   $$('input[name="f-status"]').forEach((r) => { r.onchange = () => { f.status = r.value; loadList(); }; });
-  if (isAdmin()) bind('#f-reseller', 'reseller');
+  if (seesAll()) bind('#f-reseller', 'reseller');
   $('#f-clear').onclick = () => {
     Object.assign(f, { q: '', status: '', year: '', from: '', to: '', reseller: '', municipality: '', consultant: '', type: '' });
     renderActivities(root);
@@ -899,7 +903,7 @@ async function renderCalendar(root) {
   const webcal = feedUrl.replace(/^https?:/, 'webcal:');
   root.innerHTML = `
     <div class="pagehead"><div><p class="eyebrow">Apple Kalender · iCal</p><h1>Kalender</h1>
-      <p class="muted">${isAdmin() ? 'Kurser og aftaler fra din kalender samlet. Klik på en dag for at se den eller registrere et kursus.' : `${esc(state.me.reseller)}s APL-kurser måned for måned.`}</p></div></div>
+      <p class="muted">${isAdmin() ? 'Kurser og aftaler fra din kalender samlet. Klik på en dag for at se den eller registrere et kursus.' : seesAll() ? 'Alle APL-kurser måned for måned.' : `${esc(state.me.reseller)}s APL-kurser måned for måned.`}</p></div></div>
     <section class="card month-card" id="month"></section>
     ${isAdmin() ? `
     <section class="card">
@@ -925,7 +929,7 @@ async function renderCalendar(root) {
       <div id="cal-events"></div>
     </section>` : ''}
     <section class="card">
-      <div class="card-head"><h2>Til din kalender</h2><span class="muted small">${isAdmin() ? 'Alle registrerede aktiviteter' : `Kun ${esc(state.me.reseller)}s aktiviteter`}</span></div>
+      <div class="card-head"><h2>Til din kalender</h2><span class="muted small">${seesAll() ? 'Alle registrerede aktiviteter' : `Kun ${esc(state.me.reseller)}s aktiviteter`}</span></div>
       ${preview ? `<p class="muted">I den fulde app får hver bruger et privat abonnementslink, som Apple Kalender, Outlook og Google holder opdateret automatisk. I denne demo kan du hente aktiviteterne som en .ics-fil og åbne den i Kalender.</p>`
       : `<p class="muted">Abonnér på dette private link i Apple Kalender (Arkiv › Nyt kalenderabonnement) eller på iPhone (Indstillinger › Kalender › Konti › Tilføj konto › Andet). Nye aktiviteter dukker selv op.</p>
       <div class="copyrow"><input id="feed-url" readonly value="${esc(webcal)}" aria-label="Abonnementslink"><button class="btn" type="button" id="feed-copy">Kopiér</button><a class="btn btn-primary" href="${esc(webcal)}">Åbn i Kalender</a></div>
@@ -1139,7 +1143,7 @@ async function renderAdmin(root) {
       return `
         <input name="name" placeholder="Navn" value="${esc(r.name || '')}" aria-label="Navn" required>
         <input name="email" type="email" placeholder="E-mail" value="${esc(r.email || '')}" aria-label="E-mail" required>
-        <select name="role" aria-label="Rolle"><option value="reseller" ${r.role !== 'admin' ? 'selected' : ''}>Reseller-bruger</option><option value="admin" ${r.role === 'admin' ? 'selected' : ''}>Kompas-administrator</option></select>
+        <select name="role" aria-label="Rolle"><option value="reseller" ${!r.role || r.role === 'reseller' ? 'selected' : ''}>Reseller-bruger</option><option value="viewer" ${r.role === 'viewer' ? 'selected' : ''}>Læseadgang til alle resellere (fx Apple)</option><option value="admin" ${r.role === 'admin' ? 'selected' : ''}>Kompas-administrator</option></select>
         <select name="reseller_id" aria-label="Reseller">${selectOptions(o.resellers, r.reseller_id, 'Vælg reseller…')}</select>`;
     }
     return `<input name="name" placeholder="Navn" value="${esc(r.name || '')}" aria-label="Navn" required>
@@ -1147,7 +1151,7 @@ async function renderAdmin(root) {
       ${tab === 'consultants' ? `<input name="initials" placeholder="Initialer, fx KB" value="${esc(r.initials || '')}" aria-label="Initialer" maxlength="6" class="input-short">` : ''}`;
   };
   const describe = (r) => {
-    if (isUsers) return `<b>${esc(r.name)}</b><span class="muted">${esc(r.email)}</span><span class="tag ${r.role === 'admin' ? 'tag-admin' : ''}">${r.role === 'admin' ? 'Kompas-administrator' : `Ser ${esc(r.reseller)}`}</span>`;
+    if (isUsers) return `<b>${esc(r.name)}</b><span class="muted">${esc(r.email)}</span><span class="tag ${r.role === 'admin' ? 'tag-admin' : ''}">${r.role === 'admin' ? 'Kompas-administrator' : r.role === 'viewer' ? 'Ser alle resellere · kun læse' : `Ser ${esc(r.reseller)}`}</span>`;
     return `<b>${esc(r.name)}</b>${isSchools ? `<span class="muted">${esc(r.municipality || 'Ingen kommune')}</span>` : ''}${tab === 'consultants' && r.initials ? `<span class="muted">${esc(r.initials)}</span>` : ''}
       <span class="muted small">${r.used ? `${r.used} ${r.used === 1 ? 'aktivitet' : 'aktiviteter'}` : 'Ikke brugt'}</span>`;
   };
@@ -1155,7 +1159,7 @@ async function renderAdmin(root) {
   body.innerHTML = `
     <form class="admin-add" id="admin-add">${editorFields()}<button class="btn btn-primary" type="submit">Tilføj</button></form>
     <p class="form-error" id="admin-err" role="alert" hidden></p>
-    ${isUsers ? '<p class="muted small">Reseller-brugere ser kun aktiviteter, hvor Reseller / partner er deres egen reseller. Opret brugeren, og tryk Ny engangskode for at give vedkommende adgang.</p>' : ''}
+    ${isUsers ? '<p class="muted small">Reseller-brugere ser kun aktiviteter, hvor Reseller / partner er deres egen reseller. Brugere med læseadgang (fx Apple) ser alle resellere, men kan ikke ændre noget. Opret brugeren, og tryk Ny engangskode for at give vedkommende adgang.</p>' : ''}
     <ul class="admin-list">${rows.map((r) => `
       <li data-id="${r.id}">
         <div class="admin-row">${describe(r)}</div>
@@ -1173,7 +1177,7 @@ async function renderAdmin(root) {
   const toggleReseller = (form) => {
     const role = form.querySelector('[name=role]');
     const res = form.querySelector('[name=reseller_id]');
-    if (role && res) { res.disabled = role.value === 'admin'; role.onchange = () => toggleReseller(form); }
+    if (role && res) { res.disabled = role.value !== 'reseller'; role.onchange = () => toggleReseller(form); }
   };
   const after = async () => {
     state.options = await api.get('/api/options');

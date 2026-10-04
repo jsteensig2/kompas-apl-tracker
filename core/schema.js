@@ -36,14 +36,15 @@ CREATE TABLE IF NOT EXISTS paid_by (
   name  TEXT NOT NULL UNIQUE COLLATE NOCASE
 );
 
--- role: 'admin' (Kompas) or 'reseller'. A reseller user must point at exactly one reseller.
+-- role: 'admin' (Kompas), 'viewer' (sees every reseller, changes nothing; e.g. Apple) or 'reseller'.
+-- A reseller user must point at exactly one reseller.
 CREATE TABLE IF NOT EXISTS users (
   id           INTEGER PRIMARY KEY,
   name         TEXT NOT NULL,
   email        TEXT NOT NULL UNIQUE COLLATE NOCASE,
-  role         TEXT NOT NULL CHECK (role IN ('admin', 'reseller')),
+  role         TEXT NOT NULL CHECK (role IN ('admin', 'reseller', 'viewer')),
   reseller_id  INTEGER REFERENCES resellers(id),
-  CHECK ((role = 'admin' AND reseller_id IS NULL) OR (role = 'reseller' AND reseller_id IS NOT NULL))
+  CHECK ((role IN ('admin', 'viewer') AND reseller_id IS NULL) OR (role = 'reseller' AND reseller_id IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -96,6 +97,33 @@ export function migrate(db) {
   )`);
   db.exec('CREATE TABLE IF NOT EXISTS app_migrations (name TEXT PRIMARY KEY, ran_at TEXT NOT NULL DEFAULT (datetime(\'now\')))');
   once(db, 'apl-types-2026-10-04', () => resetAplTypes(db));
+  allowViewerRole(db);
+}
+
+// Databases created before the 'viewer' role have the old CHECK on users; SQLite can only change
+// that by rebuilding the table. Same columns and rows; foreign keys are paused during the swap.
+function allowViewerRole(db) {
+  const { sql } = db.get("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'");
+  if (sql.includes("'viewer'")) return;
+  const next = sql
+    .replace("CHECK (role IN ('admin', 'reseller'))", "CHECK (role IN ('admin', 'reseller', 'viewer'))")
+    .replace("CHECK ((role = 'admin' AND reseller_id IS NULL)", "CHECK ((role IN ('admin', 'viewer') AND reseller_id IS NULL)")
+    .replace(/^CREATE TABLE (IF NOT EXISTS )?["`]?users["`]?/, 'CREATE TABLE users_new');
+  if (!next.includes("'viewer'") || !next.startsWith('CREATE TABLE users_new')) throw new Error('Unexpected users table definition');
+  db.exec('PRAGMA foreign_keys = OFF');
+  try {
+    db.exec('BEGIN');
+    db.exec(next);
+    db.exec('INSERT INTO users_new SELECT * FROM users');
+    db.exec('DROP TABLE users');
+    db.exec('ALTER TABLE users_new RENAME TO users');
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON');
+  }
 }
 
 // Runs a data change a single time; it is skipped until there is data to change.

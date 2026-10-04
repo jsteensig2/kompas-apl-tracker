@@ -116,3 +116,27 @@ test('admins can change participants straight from the list; resellers cannot', 
   assert.equal(saved.participants, 17);
   assert.equal((await json('admin', `/api/activities/${a.id}`)).participants, 17);
 });
+
+test('a read-only viewer (Apple) sees every reseller but cannot change anything', async () => {
+  const created = await (await call('admin', '/api/admin/users', { method: 'POST', body: JSON.stringify({ name: 'Apple', email: 'apl@apple.example', role: 'viewer' }) })).json();
+  assert.equal(created.role ?? 'viewer', 'viewer');
+  const u = (await json('admin', '/api/admin/users')).find((x) => x.email === 'apl@apple.example');
+  assert.equal(u.role, 'viewer');
+  assert.equal(u.reseller_id, null);
+  const r = await fetch(`${base}/auth/demo-login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ userId: u.id }) });
+  cookies.viewer = r.headers.get('set-cookie').split(';')[0];
+  const all = await json('admin', '/api/activities');
+  const seen = await json('viewer', '/api/activities');
+  assert.equal(seen.length, all.length);
+  assert.deepEqual([...new Set(seen.map((a) => a.reseller))].sort(), [...new Set(all.map((a) => a.reseller))].sort());
+  assert.ok(seen.some((a) => a.reseller === 'Atea') && seen.some((a) => a.reseller === 'Comm2IG'));
+  const opts = await json('viewer', '/api/options');
+  assert.equal(opts.resellers.length, (await json('admin', '/api/options')).resellers.length);
+  const atea = opts.resellers.find((x) => x.name === 'Atea').id;
+  assert.ok((await json('viewer', `/api/activities?reseller=${atea}`)).every((a) => a.reseller === 'Atea'));
+  assert.equal((await call('viewer', `/api/activities/${all[0].id}`, { method: 'PUT', body: '{}' })).status, 403);
+  assert.equal((await call('viewer', `/api/activities/${all[0].id}`, { method: 'DELETE' })).status, 403);
+  assert.equal((await call('viewer', `/api/activities/${all[0].id}/participants`, { method: 'PUT', body: '{"participants":3}' })).status, 403);
+  assert.equal((await call('viewer', '/api/admin/users')).status, 403);
+  assert.equal((await call('viewer', '/api/import', { method: 'POST', body: '{"rows":[]}' })).status, 403);
+});
