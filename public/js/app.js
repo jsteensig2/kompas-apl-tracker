@@ -161,7 +161,7 @@ async function renderLogin() {
       <section class="splash-brand" aria-label="Kompas APL Tracker">
         <div class="splash-mark">${LOGO_MARK}</div>
         <p class="splash-name"><span class="wordmark-kompas">KOMPAS</span> APL Tracker</p>
-        <h2 class="splash-head">Alle jeres APL-kurser samlet ét sted</h2>
+        <h2 class="splash-head">Alle APL-kurser samlet ét sted</h2>
         <ul class="splash-points">
           <li>Afholdte og kommende kurser</li>
           <li>Kalender</li>
