@@ -106,6 +106,7 @@ konsulent(er) igen.
 
 - **Fra kalender:** Kompas-admin indsætter det offentlige iCal-link til sin kalender (Kalender › Del kalender › Offentlig kalender) under *Kalender*, eller uploader en .ics-fil. Aftaler fra de seneste 4 måneder og de næste 2 vises som forslag, med skole, kommune, emne og varighed udfyldt. Registrerede og skjulte aftaler forsvinder fra listen.
 - **Til kalender:** Hver bruger har et privat abonnementslink (`/calendar/feed/<token>.ics`) med netop de aktiviteter, brugeren må se. Linket kan fornyes, hvis det er delt ved en fejl.
+- **Hurtig rettelse af deltagere:** Administratorer kan skrive deltagerantal direkte i listen under Aktiviteter og i Overblik (gemmes ved Enter eller når feltet forlades; `PUT /api/activities/:id/participants`).
 - **Konsulentside og -kalender:** Under Administration › Konsulenter › Konsulentlink får hver konsulent et privat link til sin egen side (`/k/<token>`) med afholdte og kommende kurser, sessioner til Apple (heldag = 2) og linket til Apples Engagement Checkout Survey, samt et kalenderabonnement med kun egne kurser. Siden minder konsulenten om at registrere sine workshops hos Apple og viser antal workshops i år mod målet på 12. Linkene kan fornyes samme sted.
 
 ## Senere udvidelser (ikke bygget)

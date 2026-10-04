@@ -403,3 +403,15 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 .k-cards { padding: 0 12px 12px; }
 .kpi-of { font-size: 0.45em; font-weight: 500; color: var(--muted); letter-spacing: 0; }
 
+
+/* Quick edit of participants in the lists (admin) */
+.pedit { display: inline-flex; align-items: center; gap: 6px; }
+.pinput { width: 5.2em; min-height: 32px; padding: 2px 8px; text-align: right; font: inherit; font-variant-numeric: tabular-nums;
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); -moz-appearance: textfield; }
+.pinput::-webkit-outer-spin-button, .pinput::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.pinput:hover { border-color: var(--muted); }
+.pinput:focus { outline: 2px solid var(--focus); outline-offset: 0; }
+.pinput.is-saving { opacity: 0.6; }
+.pinput.is-saved { border-color: var(--ok); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok) 30%, transparent); }
+.pedit-inline .pinput { width: 4.2em; min-height: 28px; text-align: left; }
+.pedit-inline span { color: var(--muted); }

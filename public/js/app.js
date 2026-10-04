@@ -284,6 +284,38 @@ function chartSvg(monthly, year) {
 const participantsText = (a) => (a.status === 'planned' && !a.participants ? 'Deltagere ikke kendt endnu' : `${num(a.participants)} deltagere`);
 const statusPill = (a) => (a.status === 'planned' ? '<span class="pill pill-planned">Planlagt</span>' : '<span class="pill pill-held">Afholdt</span>');
 
+// Admins can change the number of participants straight from the lists (no need to open the form).
+function participantsCell(a, label = false) {
+  const shown = a.status === 'planned' && !a.participants ? '' : String(a.participants);
+  if (!isAdmin()) return label ? participantsText(a) : (shown ? num(a.participants) : '–');
+  return `<label class="pedit${label ? ' pedit-inline' : ''}"><input type="number" inputmode="numeric" min="0" step="1" class="pinput" data-pid="${a.id}"
+    value="${shown}" placeholder="–" aria-label="Deltagere, ${esc(a.title)} ${esc(fmtDate(a.date))}">${label ? '<span>deltagere</span>' : ''}</label>`;
+}
+
+function bindParticipants(scope, onSaved) {
+  $$('.pinput', scope).forEach((input) => {
+    let saved = input.value;
+    ['click', 'keydown', 'pointerdown'].forEach((t) => input.addEventListener(t, (e) => e.stopPropagation()));
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      if (e.key === 'Escape') { input.value = saved; input.blur(); }
+    });
+    input.addEventListener('change', async () => {
+      const value = input.value.trim();
+      if (value === saved) return;
+      if (!/^\d+$/.test(value)) { input.value = saved; toast('Skriv et helt tal', 'err'); return; }
+      input.classList.add('is-saving');
+      try {
+        const a = await api.put(`/api/activities/${input.dataset.pid}/participants`, { participants: Number(value) });
+        saved = value;
+        input.classList.remove('is-saving'); input.classList.add('is-saved');
+        setTimeout(() => input.classList.remove('is-saved'), 1200);
+        onSaved?.(a);
+      } catch (ex) { input.value = saved; input.classList.remove('is-saving'); toast(ex.message, 'err'); }
+    });
+  });
+}
+
 function activityLine(a) {
   return `
     <li class="latest-item ${a.status === 'planned' ? 'is-planned' : ''}">
@@ -292,7 +324,7 @@ function activityLine(a) {
         <div class="latest-title">${esc(a.apl_type)} · ${esc(a.title)}</div>
         <div class="muted">${esc(a.school || '–')}${a.municipality ? ` · ${esc(a.municipality)}` : ''}</div>
         <div class="latest-meta">
-          <span>${participantsText(a)}</span><span>${esc(a.consultant || '')}</span>
+          <span>${participantsCell(a, true)}</span><span>${esc(a.consultant || '')}</span>
           ${isAdmin() ? `<span class="tag">${esc(a.reseller)}</span>` : ''}
         </div>
       </div>
@@ -347,6 +379,7 @@ async function renderDashboard(root) {
       </div>
       ${d.upcoming.length ? `<ul class="latest latest-cols">${d.upcoming.map(activityLine).join('')}</ul>` : '<p class="muted empty">Ingen planlagte kurser i perioden.</p>'}
     </section>`;
+  bindParticipants(root, () => toast('Deltagere gemt'));
   $('#ob-all').addEventListener('click', () => { Object.assign(state.listFilters, { status: 'planned', year: '', from: '', to: '' }); }, true);
 }
 
@@ -433,7 +466,7 @@ async function loadList() {
         <tbody>${rows.map((a) => `
           <tr class="${a.status === 'planned' ? 'is-planned' : ''} ${admin ? 'clickable' : ''}" ${admin ? `data-edit="${a.id}"` : ''}>
             <td class="nowrap">${fmtDate(a.date)}</td><td>${statusPill(a)}</td><td>${esc(a.apl_type)}</td><td><b>${esc(a.title)}</b></td>
-            <td>${esc(a.school || '–')}</td><td>${esc(a.municipality || '–')}</td><td class="num">${a.status === 'planned' && !a.participants ? '–' : num(a.participants)}</td>
+            <td>${esc(a.school || '–')}</td><td>${esc(a.municipality || '–')}</td><td class="num">${participantsCell(a)}</td>
             <td class="nowrap">${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}</td><td>${esc(a.consultant || '–')}</td>
             <td><span class="tag">${esc(a.reseller)}</span></td><td>${esc(a.paid_by || '–')}</td>
             ${admin ? `<td><button type="button" class="linkbtn" data-edit="${a.id}">Redigér</button></td>` : ''}
@@ -446,13 +479,21 @@ async function loadList() {
         <div class="act-title">${esc(a.apl_type)} · ${esc(a.title)}</div>
         <div class="muted">${esc(a.school || '–')}${a.municipality ? ` · ${esc(a.municipality)}` : ''}</div>
         <dl class="act-meta">
-          <div><dt>Deltagere</dt><dd>${a.status === 'planned' && !a.participants ? '–' : num(a.participants)}</dd></div>
+          <div><dt>Deltagere</dt><dd>${participantsCell(a)}</dd></div>
           <div><dt>Varighed</dt><dd>${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}</dd></div>
           <div><dt>Konsulent</dt><dd>${esc(a.consultant || '–')}</dd></div>
           <div><dt>Betalt af</dt><dd>${esc(a.paid_by || '–')}</dd></div>
         </dl>
       </li>`).join('')}</ul>`;
   if (admin) {
+    bindParticipants(body, (saved) => {
+      const r = rows.find((x) => x.id === saved.id);
+      if (r) r.participants = saved.participants;
+      $$(`.pinput[data-pid="${saved.id}"]`, body).forEach((el) => { el.value = String(saved.participants); });
+      const sum = rows.reduce((n, x) => n + x.participants, 0);
+      $('#list-summary').textContent = `${num(rows.length)} ${rows.length === 1 ? 'aktivitet' : 'aktiviteter'} · ${num(rows.length - nPlanned)} afholdt · ${num(nPlanned)} planlagt · ${num(sum)} deltagere`;
+      toast('Deltagere gemt');
+    });
     const open = async (id) => go('register', { editing: await api.get(`/api/activities/${id}`) });
     $$('[data-edit]', body).forEach((el) => {
       el.addEventListener('click', (e) => { e.stopPropagation(); open(el.dataset.edit); });

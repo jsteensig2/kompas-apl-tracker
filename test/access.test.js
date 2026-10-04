@@ -105,3 +105,14 @@ test('reference values in use cannot be deleted', async () => {
   const types = await json('admin', '/api/admin/apl-types');
   assert.equal((await call('admin', `/api/admin/apl-types/${types[0].id}`, { method: 'DELETE' })).status, 409);
 });
+
+test('admins can change participants straight from the list; resellers cannot', async () => {
+  const [a] = await json('admin', '/api/activities');
+  const put = (who, body) => call(who, `/api/activities/${a.id}/participants`, { method: 'PUT', body: JSON.stringify(body) });
+  assert.equal((await put('Atea', { participants: 7 })).status, 403);
+  assert.equal((await put('admin', { participants: -1 })).status, 400);
+  assert.equal((await put('admin', { participants: 'abc' })).status, 400);
+  const saved = await (await put('admin', { participants: 17 })).json();
+  assert.equal(saved.participants, 17);
+  assert.equal((await json('admin', `/api/activities/${a.id}`)).participants, 17);
+});

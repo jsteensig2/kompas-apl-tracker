@@ -263,6 +263,16 @@ export function createApi(db, { XLSX } = {}) {
     return getActivity(user, id);
   }
 
+  // Quick edit from the lists: only the number of participants changes.
+  function setParticipants(user, id, body) {
+    requireAdmin(user);
+    getActivity(user, id);
+    const n = Number(body?.participants);
+    if (!Number.isInteger(n) || n < 0 || n > 100000) throw new HttpError(400, 'Deltagere skal være et helt tal, 0 eller derover.');
+    db.run("UPDATE activities SET participants = ?, updated_at = datetime('now') WHERE id = ?", [n, id]);
+    return getActivity(user, id);
+  }
+
   function deleteActivity(user, id) {
     requireAdmin(user);
     getActivity(user, id);
@@ -576,6 +586,7 @@ export function createApi(db, { XLSX } = {}) {
       case 'GET /activities/:id': return { json: getActivity(user, id) };
       case 'POST /activities': return { json: createActivity(user, body) };
       case 'PUT /activities/:id': return { json: updateActivity(user, id, body) };
+      case 'PUT /activities/:id/participants': return { json: setParticipants(user, int(parts[1]), body) };
       case 'DELETE /activities/:id': return { json: deleteActivity(user, id) };
       case 'GET /admin/consultants/:id/feed': return { json: consultantFeed(user, int(parts[2]), false) };
       case 'POST /admin/consultants/:id/feed': return { json: consultantFeed(user, int(parts[2]), true) };
