@@ -48,7 +48,6 @@ function render() {
   const year = data.today.slice(0, 4);
   const thisYear = data.sessionsByYear[year] || 0; // a full day counts as two workshops
   const heldYear = data.held.filter((a) => a.date.startsWith(year));
-  const nPending = data.planned.filter((a) => a.pending).length;
   // "15 halve dage + 1 hel dag" makes it clear why 16 courses are 17 workshops.
   const days = (rows) => {
     const full = rows.filter((a) => a.duration === 'full').length;
@@ -69,8 +68,7 @@ function render() {
         <div class="pagehead-actions"><a class="btn" href="${esc(webcal)}">Abonnér i Kalender</a><a class="btn btn-primary" href="${APPLE_SURVEY}" target="_blank" rel="noopener">Registrér hos Apple</a></div></div>
 
       <div class="kpis kpis-3">
-        <div class="kpi"><div class="kpi-num">${data.planned.length}</div><div class="kpi-label">Kommende kurser</div>
-          <div class="kpi-sub">${nPending ? `heraf ${nPending} foreløbige` : 'ingen foreløbige'}</div></div>
+        <div class="kpi"><div class="kpi-num">${data.planned.length}</div><div class="kpi-label">Kommende kurser</div></div>
         <div class="kpi"><div class="kpi-num">${heldYear.length}</div><div class="kpi-label">Afholdte kurser i ${year}</div>
           <div class="kpi-sub">${days(heldYear)}</div></div>
         <div class="kpi"><div class="kpi-num">${data.held.length}</div><div class="kpi-label">Afholdte kurser i alt</div></div>
