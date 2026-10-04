@@ -73,10 +73,10 @@ Uden for Render kan `Dockerfile` bruges; databasen ligger i volumen `/data`.
 Status følger datoen: kurser til og med i dag er **afholdt**, senere kurser er **planlagt** og vises under **Kommende kurser** (tidligere kaldt ordrebogen).
 Dashboardets nøgletal tæller kun afholdte kurser; kommende kurser vises for sig. Deltagere kan stå tomt på planlagte kurser.
 
-**Afventer godkendelse (Foreløbig):** et kursus med dato, som skolen eller kommunen endnu ikke har godkendt endeligt.
+**Foreløbig:** et kursus med dato, som skolen eller kommunen endnu ikke har godkendt endeligt.
 Sæt flueben i formularen, eller klik på status-mærket i listen (kun Kompas-admin). Foreløbige kurser vises med stiplet orange
-kant, ligger under Kommende kurser ("heraf N afventer godkendelse") og tæller aldrig som afholdt, før de er godkendt. I kalender-feedet
-får titlen "(Foreløbig)" foran. Ved import sætter en kolonne "Status" med fx "Afventer" mærket.
+kant, ligger under Kommende kurser ("heraf N foreløbige") og tæller aldrig som afholdt, før de er godkendt. I kalender-feedet
+får titlen "(Foreløbig)" foran. Ved import sætter en kolonne "Status" med "Foreløbig" (eller fx "Afventer") mærket.
 
 ## Bulk-import (Excel/CSV)
 

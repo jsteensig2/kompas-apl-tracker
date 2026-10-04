@@ -26,7 +26,7 @@ const seesAll = (user) => user?.role === 'admin' || user?.role === 'viewer';
 export function todayIso() {
   return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Copenhagen', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 }
-// A course awaiting final approval from the school or municipality ("Afventer godkendelse") is never
+// A course awaiting final approval from the school or municipality ("Foreløbig") is never
 // counted as held; it stays in the order book, marked as pending, until Kompas confirms it.
 const withStatus = (row) => row && ({ ...row, pending: row.pending ? 1 : 0,
   status: row.date <= todayIso() && !row.pending ? 'held' : 'planned' });
@@ -117,7 +117,7 @@ const LISTS = {
 
 export const EXPORT_COLUMNS = [
   ['Dato', (a) => a.date],
-  ['Status', (a) => (a.pending ? 'Afventer godkendelse' : a.status === 'planned' ? 'Planlagt' : 'Afholdt')],
+  ['Status', (a) => (a.pending ? 'Foreløbig' : a.status === 'planned' ? 'Planlagt' : 'Afholdt')],
   ['APL-type', (a) => a.apl_type],
   ['Titel/emne', (a) => a.title],
   ['Skole', (a) => a.school || ''],

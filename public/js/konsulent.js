@@ -9,7 +9,7 @@ const LOGO_MARK = `<svg class="wordmark-mark" viewBox="0 0 660 660" aria-hidden=
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtDate = (d) => new Date(`${d}T12:00:00`).toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 const app = document.getElementById('app');
-const PENDING = '<span class="pill pill-pending" title="Afventer godkendelse fra skole eller kommune">Foreløbig</span>';
+const PENDING = '<span class="pill pill-pending" title="Foreløbig: Datoen er aftalt, men kurset er endnu ikke endeligt godkendt af skolen eller kommunen">Foreløbig</span>';
 const rowClass = (a, planned) => (a.pending ? 'is-planned is-pending' : planned ? 'is-planned' : '');
 const token = location.pathname.split('/').filter(Boolean)[1] || '';
 const GOAL = 12; // workshops a year to keep the Apple Professional Learning Specialist status
@@ -77,7 +77,7 @@ function render() {
         ${years.length > 1 ? `<p class="muted small">Workshops pr. år: ${years.map(([y, n]) => `${y}: ${n}`).join(' · ')}</p>` : ''}
       </section>
 
-      <section class="card card-flush"><div class="card-head card-head-pad"><h2>Kommende kurser</h2><span class="muted small">Nærmeste først${data.planned.some((a) => a.pending) ? ' · Foreløbig = afventer godkendelse fra skole eller kommune' : ''}</span></div>${table(data.planned, true)}</section>
+      <section class="card card-flush"><div class="card-head card-head-pad"><h2>Kommende kurser</h2><span class="muted small">Nærmeste først${data.planned.some((a) => a.pending) ? ' · Foreløbig = endnu ikke endeligt godkendt af skolen eller kommunen' : ''}</span></div>${table(data.planned, true)}</section>
       <section class="card card-flush"><div class="card-head card-head-pad"><h2>Afholdte kurser</h2><span class="muted small">Nyeste først · heldag tæller som 2 workshops</span></div>${table(data.held, false)}</section>
     </main>`;
 

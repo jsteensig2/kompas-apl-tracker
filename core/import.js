@@ -22,7 +22,7 @@ const HEADERS = {
   status: ['status', 'godkendelse', 'godkendt'],
 };
 
-// A "Status" cell saying the course still awaits approval marks it as pending ("Afventer godkendelse").
+// A "Status" cell saying the course still awaits approval marks it as pending ("Foreløbig").
 const PENDING_HINT = /afvent|forel[øo]b|ikke godkendt|ej godkendt|pending|tentativ/i;
 
 const norm = (s) => String(s ?? '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
