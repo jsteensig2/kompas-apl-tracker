@@ -308,6 +308,24 @@ function statusCell(a) {
   return `<button type="button" class="pill-toggle" data-pending="${a.id}" title="${label}" aria-label="${label}">${statusPill(a)}</button>`;
 }
 
+// Has a user or a consultant started using the system? Shown in Administration.
+const fmtSeen = (s) => new Date(`${String(s).replace(' ', 'T')}Z`).toLocaleString('da-DK', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const stateTag = (kind, text) => `<span class="state state-${kind}">${text}</span>`;
+function userState(u) {
+  if (u.last_login_at && !u.must_change_password) return stateTag('ok', `Aktiv · sidst set ${fmtSeen(u.last_seen_at || u.last_login_at)}`);
+  if (u.last_login_at) return stateTag('wait', `Logget ind ${fmtSeen(u.last_login_at)} · mangler at vælge egen kode`);
+  if (!u.has_password) return stateTag('none', 'Ingen adgang endnu · tryk Ny engangskode');
+  return stateTag('wait', 'Har fået kode · ikke logget ind endnu');
+}
+function consultantState(c) {
+  if (!c.has_link) return stateTag('none', 'Intet konsulentlink endnu');
+  const parts = [];
+  parts.push(c.page_seen_at ? `side sidst åbnet ${fmtSeen(c.page_seen_at)}` : 'har ikke åbnet siden endnu');
+  if (c.feed_seen_at) parts.push(`kalender abonneret (hentet ${fmtSeen(c.feed_seen_at)})`);
+  const text = parts.join(' · ');
+  return stateTag(c.page_seen_at || c.feed_seen_at ? 'ok' : 'wait', text[0].toUpperCase() + text.slice(1));
+}
+
 // Short explanation of the three statuses, shown on Overblik and Aktiviteter.
 function statusGuide() {
   const rows = [
@@ -1207,9 +1225,9 @@ async function renderAdmin(root) {
       ${tab === 'consultants' ? `<input name="initials" placeholder="Initialer, fx KB" value="${esc(r.initials || '')}" aria-label="Initialer" maxlength="6" class="input-short">` : ''}`;
   };
   const describe = (r) => {
-    if (isUsers) return `<b>${esc(r.name)}</b><span class="muted">${esc(r.email)}</span><span class="tag ${r.role === 'admin' ? 'tag-admin' : ''}">${r.role === 'admin' ? 'Kompas-administrator' : r.role === 'viewer' ? 'Ser alle resellere · kun læse' : `Ser ${esc(r.reseller)}`}</span>`;
+    if (isUsers) return `<b>${esc(r.name)}</b><span class="muted">${esc(r.email)}</span><span class="tag ${r.role === 'admin' ? 'tag-admin' : ''}">${r.role === 'admin' ? 'Kompas-administrator' : r.role === 'viewer' ? 'Ser alle resellere · kun læse' : `Ser ${esc(r.reseller)}`}</span>${userState(r)}`;
     return `<b>${esc(r.name)}</b>${isSchools ? `<span class="muted">${esc(r.municipality || 'Ingen kommune')}</span>` : ''}${tab === 'consultants' && r.initials ? `<span class="muted">${esc(r.initials)}</span>` : ''}
-      <span class="muted small">${r.used ? `${r.used} ${r.used === 1 ? 'aktivitet' : 'aktiviteter'}` : 'Ikke brugt'}</span>`;
+      <span class="muted small">${r.used ? `${r.used} ${r.used === 1 ? 'aktivitet' : 'aktiviteter'}` : 'Ikke brugt'}</span>${tab === 'consultants' ? consultantState(r) : ''}`;
   };
 
   body.innerHTML = `

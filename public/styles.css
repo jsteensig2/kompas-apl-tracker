@@ -464,3 +464,8 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 .guide-list { display: grid; gap: 8px; margin: 10px 0 6px; }
 .guide-list > div { display: grid; grid-template-columns: 92px 1fr; gap: 12px; align-items: baseline; }
 .guide-list dd { margin: 0; }
+.state { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--muted); }
+.state::before { content: ''; width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--line); }
+.state-ok::before { background: #2f9e6b; }
+.state-wait::before { background: var(--planned); }
+.state-none::before { background: transparent; border: 1.5px solid var(--muted); width: 6px; height: 6px; }

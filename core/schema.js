@@ -82,6 +82,10 @@ export function migrate(db) {
   if (!cols('users').includes('must_change_password')) db.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');
   if (!cols('activities').includes('calendar_uid')) db.exec('ALTER TABLE activities ADD COLUMN calendar_uid TEXT');
   if (!cols('consultants').includes('initials')) db.exec('ALTER TABLE consultants ADD COLUMN initials TEXT');
+  if (!cols('users').includes('last_login_at')) db.exec('ALTER TABLE users ADD COLUMN last_login_at TEXT');
+  if (!cols('users').includes('last_seen_at')) db.exec('ALTER TABLE users ADD COLUMN last_seen_at TEXT');
+  if (!cols('consultants').includes('page_seen_at')) db.exec('ALTER TABLE consultants ADD COLUMN page_seen_at TEXT');
+  if (!cols('consultants').includes('feed_seen_at')) db.exec('ALTER TABLE consultants ADD COLUMN feed_seen_at TEXT');
   if (!cols('activities').includes('pending')) db.exec('ALTER TABLE activities ADD COLUMN pending INTEGER NOT NULL DEFAULT 0');
   if (!cols('activities').includes('apple_reported_at')) db.exec('ALTER TABLE activities ADD COLUMN apple_reported_at TEXT');
   if (!cols('consultants').includes('feed_token')) db.exec('ALTER TABLE consultants ADD COLUMN feed_token TEXT');

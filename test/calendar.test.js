@@ -121,3 +121,21 @@ test('consultant page shows only their courses with Apple sessions (full day = 2
   assert.equal(Object.values(data.sessionsByYear).reduce((a, b) => a + b, 0), sessions);
   assert.equal((await fetch(`${base}/k/${'0'.repeat(48)}/data`)).status, 404);
 });
+
+test('Administration shows whether users have logged in and consultants have opened their page', async () => {
+  const users = await json('admin', '/api/admin/users');
+  const atea = users.find((u) => u.reseller === 'Atea');
+  assert.ok(atea.last_login_at, 'demo login counts as a login');
+  const opts = await json('admin', '/api/options');
+  const tr = opts.consultants.find((c) => c.name === 'Torben Hollensen') || opts.consultants.at(-1);
+  let row = (await json('admin', '/api/admin/consultants')).find((c) => c.id === tr.id);
+  assert.equal(row.page_seen_at ?? null, null);
+  const { pagePath, feedPath } = await json('admin', `/api/admin/consultants/${tr.id}/feed`);
+  row = (await json('admin', '/api/admin/consultants')).find((c) => c.id === tr.id);
+  assert.equal(row.has_link, true);
+  assert.equal(row.page_seen_at, null);
+  await fetch(`${base}${pagePath}/data`);
+  await fetch(base + feedPath);
+  row = (await json('admin', '/api/admin/consultants')).find((c) => c.id === tr.id);
+  assert.ok(row.page_seen_at && row.feed_seen_at);
+});

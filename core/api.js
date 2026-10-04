@@ -331,8 +331,12 @@ export function createApi(db, { XLSX } = {}) {
     const def = LISTS[list];
     if (!def) throw new HttpError(404, 'Ukendt liste.');
     if (list === 'users') {
-      return db.all(`SELECT u.id, u.name, u.email, u.role, u.reseller_id, r.name AS reseller
-                     FROM users u LEFT JOIN resellers r ON r.id = u.reseller_id ORDER BY u.role, u.name`);
+      // Activity: logins before tracking started are read from the sessions table.
+      return db.all(`SELECT u.id, u.name, u.email, u.role, u.reseller_id, r.name AS reseller,
+                       u.password_hash IS NOT NULL AS has_password, u.must_change_password,
+                       COALESCE(u.last_login_at, (SELECT MAX(s.created_at) FROM sessions s WHERE s.user_id = u.id)) AS last_login_at,
+                       COALESCE(u.last_seen_at, u.last_login_at, (SELECT MAX(s.created_at) FROM sessions s WHERE s.user_id = u.id)) AS last_seen_at
+                     FROM users u LEFT JOIN resellers r ON r.id = u.reseller_id ORDER BY u.role, u.name`).map(({ ...x }) => ({ ...x, has_password: Boolean(x.has_password), must_change_password: Boolean(x.must_change_password) }));
     }
     if (list === 'schools') {
       return db.all(`SELECT s.id, s.name, s.municipality_id, m.name AS municipality,
@@ -340,8 +344,9 @@ export function createApi(db, { XLSX } = {}) {
                      FROM schools s LEFT JOIN municipalities m ON m.id = s.municipality_id ORDER BY s.name`);
     }
     if (list === 'consultants') {
-      return db.all(`SELECT x.id, x.name, x.initials, (SELECT COUNT(*) FROM activities a WHERE a.consultant_id = x.id) AS used
-                     FROM consultants x ORDER BY x.name`);
+      return db.all(`SELECT x.id, x.name, x.initials, (SELECT COUNT(*) FROM activities a WHERE a.consultant_id = x.id) AS used,
+                       x.feed_token IS NOT NULL AS has_link, x.page_seen_at, x.feed_seen_at
+                     FROM consultants x ORDER BY x.name`).map((x) => ({ ...x, has_link: Boolean(x.has_link) }));
     }
     const order = def.table === 'apl_types' || def.table === 'paid_by' ? 'x.id' : 'x.name';
     return db.all(`SELECT x.id, x.name, (SELECT COUNT(*) FROM activities a WHERE a.${def.usedBy} = x.id) AS used
@@ -536,6 +541,7 @@ export function createApi(db, { XLSX } = {}) {
 
   function consultantOverview(token) {
     const c = consultantByToken(token);
+    db.run("UPDATE consultants SET page_seen_at = datetime('now') WHERE id = ?", [c.id]);
     const rows = listActivities({ role: 'admin' }, { consultant: c.id }).map((a) => ({
       id: a.id, date: a.date, duration: a.duration, title: a.title, school: a.school || '', municipality: a.municipality || '',
       apl_type: a.apl_type, participants: a.participants, reseller: a.reseller, status: a.status, pending: a.pending, sessions: a.duration === 'full' ? 2 : 1,
@@ -553,6 +559,7 @@ export function createApi(db, { XLSX } = {}) {
     const valid = /^[a-f0-9]{48}$/.test(String(token));
     const consultant = valid && db.get('SELECT id, name FROM consultants WHERE feed_token = ?', [token]);
     if (consultant) {
+      db.run("UPDATE consultants SET feed_seen_at = datetime('now') WHERE id = ?", [consultant.id]);
       return { filename: 'mine-kurser.ics', contentType: 'text/calendar; charset=utf-8',
         data: buildIcs({ role: 'admin' }, `Kompas-kurser · ${consultant.name}`, { consultant: consultant.id }) };
     }

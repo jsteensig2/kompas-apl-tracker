@@ -49,6 +49,8 @@ export function authMiddleware(db) {
                 JOIN users u ON u.id = s.user_id
                 WHERE s.token = ? AND s.created_at > datetime('now', ?)`, [token, `-${SESSION_DAYS} days`]) || null
       : null;
+    // Lets Kompas see who has started using the system (at most one write per user an hour).
+    if (req.user) db.run("UPDATE users SET last_seen_at = datetime('now') WHERE id = ? AND (last_seen_at IS NULL OR last_seen_at < datetime('now', '-1 hour'))", [req.user.id]);
     next();
   };
 }
@@ -56,6 +58,7 @@ export function authMiddleware(db) {
 function startSession(db, req, res, userId) {
   const token = randomBytes(32).toString('base64url');
   db.run('INSERT INTO sessions (token, user_id) VALUES (?, ?)', [token, userId]);
+  db.run("UPDATE users SET last_login_at = datetime('now'), last_seen_at = datetime('now') WHERE id = ?", [userId]);
   res.cookie(COOKIE, token, { httpOnly: true, sameSite: 'lax', secure: req.secure, maxAge: SESSION_DAYS * 864e5, path: '/' });
 }
 
