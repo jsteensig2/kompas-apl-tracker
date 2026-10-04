@@ -24,7 +24,7 @@ function toast(msg) {
 function table(rows, planned) {
   if (!rows.length) return `<p class="empty">${planned ? 'Ingen planlagte kurser lige nu.' : 'Ingen afholdte kurser endnu.'}</p>`;
   return `<div class="table-wrap"><table class="table">
-    <thead><tr><th>Dato</th><th>Kursus</th><th>Skole</th><th>Varighed</th>${planned ? '' : '<th class="num">Deltagere</th><th class="num">Workshops</th>'}</tr></thead>
+    <thead><tr><th>Dato</th><th>Kursus</th><th>Skole</th><th>Varighed</th>${planned ? '' : '<th class="num">Deltagere</th><th class="num">Apple-workshops</th>'}</tr></thead>
     <tbody>${rows.map((a) => `<tr class="${rowClass(a, planned)}">
       <td class="nowrap">${esc(fmtDate(a.date))}</td>
       <td><b>${esc(a.title)}</b>${a.pending ? ` ${PENDING}` : ''}<div class="muted small">${esc(a.reseller)}</div></td>
@@ -39,14 +39,13 @@ function table(rows, planned) {
         <div class="muted">${esc(a.school || '–')}${a.municipality ? ` · ${esc(a.municipality)}` : ''}</div>
         <dl class="act-meta">
           <div><dt>Varighed</dt><dd>${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}</dd></div>
-          ${planned ? '' : `<div><dt>Workshops</dt><dd>${a.sessions}</dd></div><div><dt>Deltagere</dt><dd>${a.participants}</dd></div>`}
+          ${planned ? '' : `<div><dt>Apple-workshops</dt><dd>${a.sessions}</dd></div><div><dt>Deltagere</dt><dd>${a.participants}</dd></div>`}
         </dl>
       </li>`).join('')}</ul>`;
 }
 
 function render() {
   const year = data.today.slice(0, 4);
-  const sessionsTotal = data.held.reduce((n, a) => n + a.sessions, 0);
   const thisYear = data.sessionsByYear[year] || 0; // a full day counts as two workshops
   const heldYear = data.held.filter((a) => a.date.startsWith(year));
   const nPending = data.planned.filter((a) => a.pending).length;
@@ -69,28 +68,29 @@ function render() {
         <p class="muted">Dine afholdte og kommende kurser. Siden opdateres, når Kompas registrerer eller flytter et kursus.</p></div>
         <div class="pagehead-actions"><a class="btn" href="${esc(webcal)}">Abonnér i Kalender</a><a class="btn btn-primary" href="${APPLE_SURVEY}" target="_blank" rel="noopener">Registrér hos Apple</a></div></div>
 
-      <div class="kpis">
+      <div class="kpis kpis-3">
         <div class="kpi"><div class="kpi-num">${data.planned.length}</div><div class="kpi-label">Kommende kurser</div>
           <div class="kpi-sub">${nPending ? `heraf ${nPending} foreløbige` : 'ingen foreløbige'}</div></div>
         <div class="kpi"><div class="kpi-num">${heldYear.length}</div><div class="kpi-label">Afholdte kurser i ${year}</div>
           <div class="kpi-sub">${days(heldYear)}</div></div>
-        <div class="kpi"><div class="kpi-num">${thisYear}<span class="kpi-of"> / ${GOAL}</span></div><div class="kpi-label">Workshops i ${year}</div>
-          <div class="kpi-sub">halv dag = 1 · hel dag = 2</div></div>
-        <div class="kpi"><div class="kpi-num">${data.held.length}</div><div class="kpi-label">Afholdte kurser i alt</div>
-          <div class="kpi-sub">= ${sessionsTotal} ${sessionsTotal === 1 ? 'workshop' : 'workshops'} i alt</div></div>
+        <div class="kpi"><div class="kpi-num">${data.held.length}</div><div class="kpi-label">Afholdte kurser i alt</div></div>
       </div>
 
       <section class="card apple-card">
-        <div class="card-head"><h2>Registrering hos Apple</h2><span class="muted small">En heldag tæller som 2 workshops</span></div>
-        <p>Husk at registrere alle dine afholdte workshops hos Apple, også når du har nået de ${GOAL}. Du skal afholde mindst ${GOAL} workshops om året for at bevare din status som Apple Professional Learning Specialist.${thisYear >= GOAL ? ` Du har afholdt ${thisYear} i ${year}.` : ` Du har afholdt ${thisYear} i ${year} og mangler ${GOAL - thisYear}.`}</p>
-        <p>I forhold til opgørelsen tæller en normal workshop på 1-4 timer som én session, mens en heldagsworkshop tæller for to.</p>
+        <div class="card-head"><h2>Registrering hos Apple</h2></div>
+        <div class="apple-count">
+          <div class="kpi-num">${thisYear}<span class="kpi-of"> / ${GOAL}</span></div>
+          <div><div class="kpi-label">Apple-workshops i ${year}</div>
+            <div class="kpi-sub">Kun til Apple-registreringen tæller en halv dag som 1 workshop og en hel dag som 2.${heldYear.length && heldYear.length !== thisYear ? ` Dine ${heldYear.length} kurser i ${year} svarer derfor til ${thisYear} Apple-workshops.` : ''}</div></div>
+        </div>
+        <p>Husk at registrere alle dine afholdte workshops hos Apple, også når du har nået de ${GOAL}. Du skal afholde mindst ${GOAL} workshops om året for at bevare din status som Apple Professional Learning Specialist.${thisYear >= GOAL ? '' : ` Du mangler ${GOAL - thisYear} i ${year}.`}</p>
         <p>Hvis du ikke kan finde dit personlige link til spørgeskemaet ”Engagement Checkout Survey”, kan du også benytte dette åbne link. Den eneste forskel er, at du her selv skal indtaste navn, land og e-mail.</p>
         <div class="copyrow"><a class="btn btn-primary" href="${APPLE_SURVEY}" target="_blank" rel="noopener">Åbn Engagement Checkout Survey</a><button type="button" class="btn" id="copy-survey">Kopiér link</button></div>
-        ${years.length > 1 ? `<p class="muted small">Workshops pr. år: ${years.map(([y, n]) => `${y}: ${n}`).join(' · ')}</p>` : ''}
+        ${years.length > 1 ? `<p class="muted small">Apple-workshops pr. år: ${years.map(([y, n]) => `${y}: ${n}`).join(' · ')}</p>` : ''}
       </section>
 
       <section class="card card-flush"><div class="card-head card-head-pad"><h2>Kommende kurser</h2><span class="muted small">Nærmeste først${data.planned.some((a) => a.pending) ? ' · Foreløbig = endnu ikke endeligt godkendt af skolen eller kommunen' : ''}</span></div>${table(data.planned, true)}</section>
-      <section class="card card-flush"><div class="card-head card-head-pad"><h2>Afholdte kurser</h2><span class="muted small">Nyeste først · heldag tæller som 2 workshops</span></div>${table(data.held, false)}</section>
+      <section class="card card-flush"><div class="card-head card-head-pad"><h2>Afholdte kurser</h2><span class="muted small">Nyeste først</span></div>${table(data.held, false)}</section>
     </main>`;
 
   document.getElementById('copy-survey').onclick = async () => {

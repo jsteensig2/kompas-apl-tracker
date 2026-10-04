@@ -470,3 +470,8 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 .state-wait::before { background: var(--planned); }
 .state-none::before { background: transparent; border: 1.5px solid var(--muted); width: 6px; height: 6px; }
 .kpi-sub { margin-top: 4px; font-size: 0.85rem; color: var(--muted); }
+.kpis-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 760px) { .kpis-3 { grid-template-columns: 1fr; } }
+.apple-count { display: flex; align-items: center; gap: 18px; padding: 14px 16px; margin: 4px 0 14px; border-radius: 10px; background: var(--surface-2); }
+.apple-count .kpi-label { margin-top: 0; }
+.apple-count .kpi-num { white-space: nowrap; flex: none; }
