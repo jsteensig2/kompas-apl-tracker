@@ -159,9 +159,9 @@ async function renderLogin() {
         <p class="splash-name"><span class="wordmark-kompas">KOMPAS</span> APL Tracker</p>
         <h2 class="splash-head">Alle jeres APL-kurser samlet ét sted</h2>
         <ul class="splash-points">
-          <li>Afholdte kurser og ordrebog</li>
-          <li>Kalender til Kompas og konsulenter</li>
-          <li>Hver reseller ser kun sine egne kurser</li>
+          <li>Afholdte og kommende kurser</li>
+          <li>Kalender</li>
+          <li>Hver reseller kan se de kurser, der vedrører dem</li>
         </ul>
         <p class="splash-foot">Kompas ApS · Praksisnær kompetenceudvikling</p>
       </section>
