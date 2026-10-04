@@ -172,13 +172,16 @@ export function createApi(db, { XLSX } = {}) {
     // Key figures count held courses only; planned courses are reported as the order book.
     const kpi = db.get(`SELECT COUNT(*) AS experiences, COALESCE(SUM(a.participants), 0) AS participants,
         COALESCE(SUM(a.duration = 'half'), 0) AS half_days, COALESCE(SUM(a.duration = 'full'), 0) AS full_days ${from}${and} ${HELD_SQL}`, [...params, today]);
+    // Kommende kurser always covers every coming course, also those in a later year than the one chosen.
+    const ob = buildWhere(user, { reseller: f.reseller });
+    const obAnd = ob.sql ? ' AND' : ' WHERE';
     const orderbook = db.get(`SELECT COUNT(*) AS courses, COALESCE(SUM(a.participants), 0) AS participants,
         COALESCE(SUM(a.duration = 'half'), 0) AS half_days, COALESCE(SUM(a.duration = 'full'), 0) AS full_days,
-        COALESCE(SUM(a.pending), 0) AS pending ${from}${and} ${PLANNED_SQL}`, [...params, today]);
+        COALESCE(SUM(a.pending), 0) AS pending FROM activities a${ob.sql}${obAnd} ${PLANNED_SQL}`, [...ob.params, today]);
     const monthly = db.all(`SELECT substr(a.date, 1, 7) AS month, COUNT(*) AS activities,
         SUM(${HELD_SQL}) AS held, SUM(${PLANNED_SQL}) AS planned, SUM(a.pending) AS pending ${from} GROUP BY month ORDER BY month`, [today, today, ...params]);
     const latest = db.all(`${ACTIVITY_SELECT}${sql}${and} ${HELD_SQL} ORDER BY a.date DESC, a.id DESC LIMIT 6`, [...params, today]).map(withStatus);
-    const upcoming = db.all(`${ACTIVITY_SELECT}${sql}${and} ${PLANNED_SQL} ORDER BY a.date ASC, a.id ASC LIMIT 6`, [...params, today]).map(withStatus);
+    const upcoming = db.all(`${ACTIVITY_SELECT}${ob.sql}${obAnd} ${PLANNED_SQL} ORDER BY a.date ASC, a.id ASC LIMIT 6`, [...ob.params, today]).map(withStatus);
     return { kpi, orderbook, monthly, latest, upcoming };
   }
 

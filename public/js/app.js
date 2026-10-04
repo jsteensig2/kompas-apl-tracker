@@ -486,7 +486,14 @@ async function renderActivities(root) {
   };
   bind('#f-q', 'q', 'input');
   ['year', 'from', 'to', 'municipality', 'consultant', 'type'].forEach((k) => bind(`#f-${k}`, k));
-  $$('input[name="f-status"]').forEach((r) => { r.onchange = () => { f.status = r.value; loadList(); }; });
+  $$('input[name="f-status"]').forEach((r) => {
+    r.onchange = () => {
+      f.status = r.value;
+      // Coming and Foreløbig courses often fall in next year, so the year filter is cleared for them.
+      if (['planned', 'pending'].includes(r.value) && f.year) { f.year = ''; $('#f-year').value = ''; }
+      loadList();
+    };
+  });
   if (seesAll()) bind('#f-reseller', 'reseller');
   $('#f-clear').onclick = () => {
     Object.assign(f, { q: '', status: '', year: '', from: '', to: '', reseller: '', municipality: '', consultant: '', type: '' });

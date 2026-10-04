@@ -83,7 +83,8 @@ test('dashboard key figures count held courses only; order book counts planned',
   const d = await json('admin', `/api/dashboard?year=${new Date().getFullYear()}`);
   const all = await json('admin', `/api/activities?year=${new Date().getFullYear()}`);
   assert.equal(d.kpi.experiences, all.filter((a) => a.status === 'held').length);
-  assert.equal(d.orderbook.courses, all.filter((a) => a.status === 'planned').length);
+  const coming = await json('admin', '/api/activities?status=planned');
+  assert.equal(d.orderbook.courses, coming.length); // all coming courses, also in later years
   assert.ok(d.upcoming.every((a) => a.status === 'planned'));
 });
 
