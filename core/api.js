@@ -503,29 +503,16 @@ export function createApi(db, { XLSX } = {}) {
 
   function consultantOverview(token) {
     const c = consultantByToken(token);
-    const reported = new Map(db.all('SELECT id, apple_reported_at FROM activities WHERE consultant_id = ?', [c.id]).map((r) => [r.id, r.apple_reported_at]));
     const rows = listActivities({ role: 'admin' }, { consultant: c.id }).map((a) => ({
       id: a.id, date: a.date, duration: a.duration, title: a.title, school: a.school || '', municipality: a.municipality || '',
       apl_type: a.apl_type, participants: a.participants, reseller: a.reseller, status: a.status, sessions: a.duration === 'full' ? 2 : 1,
       country: GREENLAND.has(String(a.municipality || '').toLowerCase()) ? 'Grønland' : 'Danmark',
-      appleReportedAt: reported.get(a.id) || null,
     }));
     const held = rows.filter((a) => a.status === 'held').sort((x, y) => y.date.localeCompare(x.date));
     const planned = rows.filter((a) => a.status === 'planned').sort((x, y) => x.date.localeCompare(y.date));
     const byYear = {};
     for (const a of held) byYear[a.date.slice(0, 4)] = (byYear[a.date.slice(0, 4)] || 0) + a.sessions;
     return { name: c.name, today: todayIso(), feedPath: `/calendar/feed/${c.feed_token}.ics`, held, planned, sessionsByYear: byYear };
-  }
-
-  // The consultant ticks off a held course once it is reported in Apple's survey (only their own courses).
-  function markAppleReported(token, body) {
-    const c = consultantByToken(token);
-    const id = int(body?.id);
-    const a = id && db.get('SELECT id, date FROM activities WHERE id = ? AND consultant_id = ?', [id, c.id]);
-    if (!a) throw new HttpError(404, 'Kurset findes ikke.');
-    if (a.date > todayIso()) throw new HttpError(400, 'Kurset er ikke afholdt endnu.');
-    db.run('UPDATE activities SET apple_reported_at = ? WHERE id = ?', [body?.reported ? new Date().toISOString() : null, id]);
-    return { ok: true };
   }
 
   /** Subscription feed: authenticated by the secret token in the link, not by a login. */
@@ -600,5 +587,5 @@ export function createApi(db, { XLSX } = {}) {
     }
   }
 
-  return { handle, feed, consultantOverview, markAppleReported, calendarUrlFor: (user) => db.get('SELECT calendar_url FROM users WHERE id = ?', [user.id])?.calendar_url || '' };
+  return { handle, feed, consultantOverview, calendarUrlFor: (user) => db.get('SELECT calendar_url FROM users WHERE id = ?', [user.id])?.calendar_url || '' };
 }

@@ -56,14 +56,6 @@ export function createServer({ dbFile = process.env.DB_FILE || fileURLToPath(new
     }
   });
 
-  app.post('/k/:token/apple', (req, res) => {
-    try {
-      res.json(api.markAppleReported(req.params.token, req.body));
-    } catch (err) {
-      res.status(err.status || 500).json({ error: err.status ? err.message : 'Der opstod en fejl på serveren.' });
-    }
-  });
-
   // Fetches the admin's own calendar (saved iCal link) and returns events to register.
   app.get('/api/calendar/events', async (req, res) => {
     try {

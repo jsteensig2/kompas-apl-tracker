@@ -121,20 +121,3 @@ test('consultant page shows only their courses with Apple sessions (full day = 2
   assert.equal(Object.values(data.sessionsByYear).reduce((a, b) => a + b, 0), sessions);
   assert.equal((await fetch(`${base}/k/${'0'.repeat(48)}/data`)).status, 404);
 });
-
-test('consultant can mark own held course as sent to Apple, not others or planned ones', async () => {
-  const opts = await json('admin', '/api/options');
-  const sr = opts.consultants.find((c) => c.name === 'Søren Rasmussen');
-  const { pagePath } = await json('admin', `/api/admin/consultants/${sr.id}/feed`);
-  const post = (body) => fetch(`${base}${pagePath}/apple`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-  const data = await (await fetch(`${base}${pagePath}/data`)).json();
-  const held = data.held[0];
-  assert.equal(held.appleReportedAt, null);
-  assert.equal((await post({ id: held.id, reported: true })).status, 200);
-  const after = await (await fetch(`${base}${pagePath}/data`)).json();
-  assert.ok(after.held.find((a) => a.id === held.id).appleReportedAt);
-  if (data.planned[0]) assert.equal((await post({ id: data.planned[0].id, reported: true })).status, 400);
-  const other = (await json('admin', '/api/activities')).find((a) => a.consultant_id !== sr.id);
-  assert.equal((await post({ id: other.id, reported: true })).status, 404);
-  assert.equal((await fetch(`${base}${pagePath}/apple`, { method: 'POST', body: 'id=1' })).status, 415);
-});
