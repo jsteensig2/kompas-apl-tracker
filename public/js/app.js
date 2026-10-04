@@ -308,6 +308,19 @@ function statusCell(a) {
   return `<button type="button" class="pill-toggle" data-pending="${a.id}" title="${label}" aria-label="${label}">${statusPill(a)}</button>`;
 }
 
+// Short explanation of the three statuses, shown on Overblik and Aktiviteter.
+function statusGuide() {
+  const rows = [
+    ['<span class="pill pill-held">Afholdt</span>', 'Kurset er gennemført: datoen er i dag eller passeret. Afholdte kurser tæller med i nøgletallene.'],
+    ['<span class="pill pill-planned">Planlagt</span>', 'Kurset er godkendt og har en dato efter i dag. Det vises under Kommende kurser.'],
+    ['<span class="pill pill-pending">Foreløbig</span>', 'Datoen er aftalt, men kurset er endnu ikke endeligt godkendt af skolen eller kommunen. Det vises under Kommende kurser og tæller ikke med som afholdt, før det er godkendt.'],
+  ];
+  return `<details class="howto status-guide"><summary>Hvad betyder Afholdt, Planlagt og Foreløbig?</summary>
+    <dl class="guide-list">${rows.map(([pill, text]) => `<div><dt>${pill}</dt><dd>${text}</dd></div>`).join('')}</dl>
+    ${isAdmin() ? '<p class="muted small">Du skifter mellem Planlagt og Foreløbig ved at klikke på mærket i listen eller med fluebenet i formularen.</p>' : ''}
+  </details>`;
+}
+
 function bindPendingToggle(scope, onSaved) {
   $$('[data-pending]', scope).forEach((btn) => {
     btn.addEventListener('click', async (e) => {
@@ -418,6 +431,7 @@ async function renderDashboard(root) {
         <div><b>${num(d.orderbook.full_days)}</b><span>hele dage</span></div>
       </div>
       ${d.upcoming.length ? `<ul class="latest latest-cols">${d.upcoming.map(activityLine).join('')}</ul>` : '<p class="muted empty">Ingen planlagte kurser i perioden.</p>'}
+      ${statusGuide()}
     </section>`;
   bindParticipants(root, () => toast('Deltagere gemt'));
   $('#ob-all').addEventListener('click', () => { Object.assign(state.listFilters, { status: 'planned', year: '', from: '', to: '' }); }, true);
@@ -457,6 +471,7 @@ async function renderActivities(root) {
     </div>
     ${activityFilters()}
     <div class="listbar"><span id="list-summary" class="muted" aria-live="polite"></span><button type="button" class="linkbtn" id="f-clear">Nulstil filtre</button></div>
+    ${statusGuide()}
     <div id="list-body"></div>`;
   const f = state.listFilters;
   let timer;

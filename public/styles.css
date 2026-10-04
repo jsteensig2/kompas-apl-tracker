@@ -460,3 +460,7 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
   .splash > .login-card { padding: 28px var(--gutter) 48px; }
 }
 .form .check-field small { font-weight: 400; font-size: 0.85rem; letter-spacing: 0; }
+.status-guide { margin: 4px 0 14px; }
+.guide-list { display: grid; gap: 8px; margin: 10px 0 6px; }
+.guide-list > div { display: grid; grid-template-columns: 92px 1fr; gap: 12px; align-items: baseline; }
+.guide-list dd { margin: 0; }
