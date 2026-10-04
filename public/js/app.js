@@ -153,11 +153,21 @@ async function renderLogin() {
   } catch { /* shown below */ }
   const describe = (u) => (u.role === 'admin' ? 'Kompas · alle resellere, registrering og administration' : `Reseller · ser kun ${esc(u.reseller)}s aktiviteter`);
   $('#app').innerHTML = `
-    <main class="login">
+    <main class="login splash">
+      <section class="splash-brand" aria-label="Kompas APL Tracker">
+        <div class="splash-mark">${LOGO_MARK}</div>
+        <p class="splash-name"><span class="wordmark-kompas">KOMPAS</span> APL Tracker</p>
+        <h2 class="splash-head">Alle jeres APL-kurser samlet ét sted</h2>
+        <ul class="splash-points">
+          <li>Afholdte kurser og ordrebog</li>
+          <li>Kalender til Kompas og konsulenter</li>
+          <li>Hver reseller ser kun sine egne kurser</li>
+        </ul>
+        <p class="splash-foot">Kompas ApS · Praksisnær kompetenceudvikling</p>
+      </section>
       <section class="login-card">
-        <div class="wordmark wordmark-lg">${LOGO_MARK}<span class="wordmark-text"><span class="wordmark-kompas">KOMPAS</span> APL Tracker</span></div>
         <h1>Log ind</h1>
-        <p class="muted">Apple Professional Learning-aktiviteter gennemført af Kompas ApS og delt med den enkelte reseller.</p>
+        <p class="muted">Velkommen. Log ind med den e-mail, Kompas har oprettet dig med.</p>
         ${password ? `
           <form id="login-form" class="login-form" novalidate>
             <label class="field"><span>E-mail</span><input id="l-email" type="email" autocomplete="username" required></label>

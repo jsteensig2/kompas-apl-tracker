@@ -415,3 +415,29 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 .pinput.is-saved { border-color: var(--ok); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok) 30%, transparent); }
 .pedit-inline .pinput { width: 4.2em; min-height: 28px; text-align: left; }
 .pedit-inline span { color: var(--muted); }
+
+/* Login as a splash page: brand panel + login card */
+.splash { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); padding: 0; place-items: stretch; }
+.splash > .login-card { align-self: center; justify-self: center; padding: 48px var(--gutter); }
+.splash .login-card h1 { margin-top: 0; }
+.splash-brand { --logo-1: #ffffff; --logo-2: #cfe3e9; --logo-3: #9cc4d0; --logo-4: #6c9fae;
+  background: #1d4c5c radial-gradient(120% 90% at 0% 100%, #2a6577 0%, transparent 60%); color: #eef5f7;
+  padding: clamp(32px, 6vw, 80px); display: flex; flex-direction: column; justify-content: center; gap: 18px; }
+.splash-mark .wordmark-mark { width: clamp(72px, 9vw, 112px); height: auto; }
+.splash-name { margin: 0; font-size: 1.1rem; letter-spacing: 0.02em; }
+.splash-name .wordmark-kompas { color: #ffffff; }
+.splash-head { margin: 8px 0 0; max-width: 18ch; font-size: clamp(1.8rem, 1.2rem + 2.2vw, 2.9rem); line-height: 1.1; letter-spacing: -0.02em; color: #ffffff; }
+.splash-points { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; color: #cfe3e9; }
+.splash-points li::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 10px; border-radius: 50%; background: #9cc4d0; vertical-align: middle; }
+.splash-foot { margin: 24px 0 0; font-size: 0.8rem; letter-spacing: 0.1em; text-transform: uppercase; color: #9cc4d0; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .splash-brand { background: #12313b radial-gradient(120% 90% at 0% 100%, #1d4c5c 0%, transparent 60%); }
+}
+:root[data-theme="dark"] .splash-brand { background: #12313b radial-gradient(120% 90% at 0% 100%, #1d4c5c 0%, transparent 60%); }
+@media (max-width: 860px) {
+  .splash { grid-template-columns: 1fr; }
+  .splash-brand { padding: 28px var(--gutter) 32px; gap: 12px; }
+  .splash-mark .wordmark-mark { width: 56px; }
+  .splash-points, .splash-foot { display: none; }
+  .splash > .login-card { padding: 28px var(--gutter) 48px; }
+}
