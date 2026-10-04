@@ -469,3 +469,4 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 .state-ok::before { background: #2f9e6b; }
 .state-wait::before { background: var(--planned); }
 .state-none::before { background: transparent; border: 1.5px solid var(--muted); width: 6px; height: 6px; }
+.kpi-sub { margin-top: 4px; font-size: 0.85rem; color: var(--muted); }

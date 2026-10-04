@@ -48,6 +48,14 @@ function render() {
   const year = data.today.slice(0, 4);
   const sessionsTotal = data.held.reduce((n, a) => n + a.sessions, 0);
   const thisYear = data.sessionsByYear[year] || 0; // a full day counts as two workshops
+  const heldYear = data.held.filter((a) => a.date.startsWith(year));
+  const nPending = data.planned.filter((a) => a.pending).length;
+  // "15 halve dage + 1 hel dag" makes it clear why 16 courses are 17 workshops.
+  const days = (rows) => {
+    const full = rows.filter((a) => a.duration === 'full').length;
+    const half = rows.length - full;
+    return [half && `${half} ${half === 1 ? 'halv dag' : 'halve dage'}`, full && `${full} ${full === 1 ? 'hel dag' : 'hele dage'}`].filter(Boolean).join(' + ') || 'ingen endnu';
+  };
   const years = Object.entries(data.sessionsByYear).sort(([a], [b]) => b.localeCompare(a));
   const webcal = new URL(data.feedPath, location.href).toString().replace(/^https?:/, 'webcal:');
   document.title = `Mine kurser · ${data.name}`;
@@ -62,10 +70,14 @@ function render() {
         <div class="pagehead-actions"><a class="btn" href="${esc(webcal)}">Abonnér i Kalender</a><a class="btn btn-primary" href="${APPLE_SURVEY}" target="_blank" rel="noopener">Registrér hos Apple</a></div></div>
 
       <div class="kpis">
-        <div class="kpi"><div class="kpi-num">${data.planned.length}</div><div class="kpi-label">Planlagte kurser</div></div>
-        <div class="kpi"><div class="kpi-num">${data.held.length}</div><div class="kpi-label">Afholdte kurser</div></div>
-        <div class="kpi"><div class="kpi-num">${thisYear}<span class="kpi-of"> / ${GOAL}</span></div><div class="kpi-label">Workshops i ${year}</div></div>
-        <div class="kpi"><div class="kpi-num">${sessionsTotal}</div><div class="kpi-label">Workshops i alt</div></div>
+        <div class="kpi"><div class="kpi-num">${data.planned.length}</div><div class="kpi-label">Kommende kurser</div>
+          <div class="kpi-sub">${nPending ? `heraf ${nPending} foreløbige` : 'ingen foreløbige'}</div></div>
+        <div class="kpi"><div class="kpi-num">${heldYear.length}</div><div class="kpi-label">Afholdte kurser i ${year}</div>
+          <div class="kpi-sub">${days(heldYear)}</div></div>
+        <div class="kpi"><div class="kpi-num">${thisYear}<span class="kpi-of"> / ${GOAL}</span></div><div class="kpi-label">Workshops i ${year}</div>
+          <div class="kpi-sub">halv dag = 1 · hel dag = 2</div></div>
+        <div class="kpi"><div class="kpi-num">${data.held.length}</div><div class="kpi-label">Afholdte kurser i alt</div>
+          <div class="kpi-sub">= ${sessionsTotal} ${sessionsTotal === 1 ? 'workshop' : 'workshops'} i alt</div></div>
       </div>
 
       <section class="card apple-card">
