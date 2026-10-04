@@ -112,7 +112,9 @@ function renderShell() {
         </div>
       </div>
     </header>
-    ${state.demoUsers.length ? `
+    ${me.viewed_by ? `<div class="demobar viewas-bar" role="region" aria-label="Se som"><div class="demobar-inner">
+      <span><b>Du ser systemet som ${esc(me.name)}</b> · ${roleLabel(me)} · kun visning, du kan ikke ændre noget</span><span class="spacer"></span>
+      <button type="button" class="btn btn-sm" id="viewas-end">Afslut visning</button><button type="button" class="linkbtn" id="logout">Log ud</button></div></div>` : state.demoUsers.length ? `
     <div class="demobar" role="region" aria-label="Skift demobruger">
       <div class="demobar-inner">
         <span class="demobar-label">Demo · vis som</span>
@@ -126,7 +128,8 @@ function renderShell() {
     ${state.version ? `<footer class="app-version">Version ${esc(state.version)}</footer>` : ''}
     ${isAdmin() && state.view !== 'register' ? '<button class="fab show-sm" data-go="register" type="button" aria-label="Registrér aktivitet">+ Registrér</button>' : ''}
   `;
-  $('#logout').onclick = async () => { await transport.auth.logout(); state.me = null; boot(); };
+  $('#logout').onclick = async () => { transport.viewAs = null; await transport.auth.logout(); state.me = null; boot(); };
+  $('#viewas-end')?.addEventListener('click', () => viewAs(null));
   $$('[data-demo-user]').forEach((b) => { b.onclick = () => switchUser(Number(b.dataset.demoUser)); });
 }
 
@@ -138,6 +141,7 @@ document.addEventListener('click', (e) => {
 });
 
 async function switchUser(id) {
+  transport.viewAs = null;
   await transport.auth.login(id);
   state.listFilters.reseller = '';
   state.dashFilters.reseller = '';
@@ -1240,6 +1244,7 @@ async function renderAdmin(root) {
       <li data-id="${r.id}">
         <div class="admin-row">${describe(r)}</div>
         <div class="admin-actions">
+          ${isUsers && !transport.isPreview && r.role !== 'admin' ? '<button type="button" class="linkbtn" data-act="viewas">Se som</button>' : ''}
           ${isUsers && !transport.isPreview ? '<button type="button" class="linkbtn" data-act="pw">Ny engangskode</button>' : ''}
           ${tab === 'consultants' && !transport.isPreview ? '<button type="button" class="linkbtn" data-act="feed">Konsulentlink</button>' : ''}
           <button type="button" class="linkbtn" data-act="edit">Redigér</button>
@@ -1268,6 +1273,8 @@ async function renderAdmin(root) {
   };
   $$('.admin-list li').forEach((li) => {
     const r = rows.find((x) => String(x.id) === li.dataset.id);
+    const vaBtn = li.querySelector('[data-act=viewas]');
+    if (vaBtn) vaBtn.onclick = () => viewAs(Number(li.dataset.id));
     const pwBtn = li.querySelector('[data-act=pw]');
     if (pwBtn) {
       pwBtn.onclick = async () => {
@@ -1343,6 +1350,15 @@ async function render() {
     if (ex.status === 401) { state.me = null; return boot(); }
     root.innerHTML = `<div class="card"><p class="form-error">${esc(ex.message)}</p></div>`;
   }
+}
+
+// "Se som": look at the system as a reseller or Apple sees it (read only), then go back.
+async function viewAs(userId) {
+  transport.viewAs = userId;
+  try { await loadSession(); } catch (ex) { transport.viewAs = null; await loadSession(); toast(ex.message, 'err'); }
+  state.listFilters.reseller = '';
+  state.dashFilters.reseller = '';
+  go(userId ? 'dashboard' : 'admin');
 }
 
 async function loadSession() {

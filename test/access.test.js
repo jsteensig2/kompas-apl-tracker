@@ -169,3 +169,20 @@ test('a read-only viewer (Apple) sees every reseller but cannot change anything'
   assert.equal((await call('viewer', '/api/admin/users')).status, 403);
   assert.equal((await call('viewer', '/api/import', { method: 'POST', body: '{"rows":[]}' })).status, 403);
 });
+
+test('"Se som": an admin can read as a reseller, but cannot change anything in that mode', async () => {
+  const users = await json('admin', '/api/admin/users');
+  const atea = users.find((u) => u.reseller === 'Atea' && u.role === 'reseller');
+  const as = (path, opts = {}) => call('admin', path, { ...opts, headers: { 'x-view-as': String(atea.id) } });
+  const me = await (await as('/api/me')).json();
+  assert.equal(me.role, 'reseller');
+  assert.equal(me.reseller, 'Atea');
+  assert.ok(me.viewed_by);
+  const seen = await (await as('/api/activities')).json();
+  assert.deepEqual(seen.map((a) => a.id), (await json('Atea', '/api/activities')).map((a) => a.id));
+  assert.equal((await as(`/api/activities/${seen[0].id}`, { method: 'DELETE' })).status, 403);
+  assert.equal((await as('/api/admin/users')).status, 403); // reseller has no admin pages
+  const admin = users.find((u) => u.role === 'admin');
+  assert.equal((await call('admin', '/api/me', { headers: { 'x-view-as': String(admin.id) } })).status, 400);
+  assert.equal((await call('Atea', '/api/me', { headers: { 'x-view-as': String(atea.id) } })).status, 403);
+});

@@ -11,19 +11,29 @@ async function parse(res) {
   return data;
 }
 
+// "Se som": the administrator's chosen user, kept for this browser tab only.
+const viewAsHeader = () => {
+  const id = transport.viewAs;
+  return id ? { 'x-view-as': String(id) } : {};
+};
+
 export const transport = {
+  get viewAs() { try { return Number(sessionStorage.getItem('apl.viewAs')) || null; } catch { return null; } },
+  set viewAs(id) { try { if (id) sessionStorage.setItem('apl.viewAs', String(id)); else sessionStorage.removeItem('apl.viewAs'); } catch { /* storage unavailable */ } },
+
   request(method, path, body) {
     const write = method !== 'GET';
+    const auth = path.startsWith('/auth/');
     return fetch(path, {
       method,
-      headers: write ? { 'content-type': 'application/json' } : {},
+      headers: { ...(write ? { 'content-type': 'application/json' } : {}), ...(auth ? {} : viewAsHeader()) },
       body: write ? JSON.stringify(body ?? {}) : undefined,
       credentials: 'same-origin',
     }).then(parse);
   },
 
   async download(path) {
-    const res = await fetch(path, { credentials: 'same-origin' });
+    const res = await fetch(path, { credentials: 'same-origin', headers: viewAsHeader() });
     if (!res.ok) await parse(res);
     const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') || '')?.[1] || 'export';
     const url = URL.createObjectURL(await res.blob());

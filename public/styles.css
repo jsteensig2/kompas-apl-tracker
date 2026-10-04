@@ -480,3 +480,6 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 @media (max-width: 760px) { .kpis-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .kpis-5 .kpi-apple { grid-column: 1 / -1; } }
 .kpi-apple { background: var(--surface-2); }
 .k-guide { margin: 0; padding: 0 20px 16px; }
+.viewas-bar { background: #1d4c5c; color: #fff; border-bottom-color: transparent; }
+.viewas-bar .linkbtn { color: #fff; }
+.viewas-bar .demobar-inner { gap: 12px; flex-wrap: wrap; }

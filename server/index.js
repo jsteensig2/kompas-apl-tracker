@@ -27,6 +27,18 @@ export function createServer({ dbFile = process.env.DB_FILE || fileURLToPath(new
   app.use(express.json({ limit: '5mb' }));
   app.get('/healthz', (_req, res) => res.send('ok'));
   app.use(authMiddleware(db));
+  // "Se som": an administrator can look at the system exactly as a reseller or viewer sees it.
+  // The X-View-As header swaps the user for API reads only; every change is refused in that mode.
+  app.use('/api', (req, res, next) => {
+    const viewAs = Number(req.get('x-view-as'));
+    if (!viewAs) return next();
+    if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Kun Kompas-administratorer kan se systemet som en anden bruger.' });
+    const target = db.get('SELECT id, name, email, role, reseller_id FROM users WHERE id = ?', [viewAs]);
+    if (!target || target.role === 'admin') return res.status(400).json({ error: 'Brugeren kan ikke vises.' });
+    if (req.method !== 'GET') return res.status(403).json({ error: `Du ser systemet som ${target.name}. Afslut visningen for at ændre noget.` });
+    req.user = { ...target, must_change_password: 0, viewed_by: req.user.name };
+    next();
+  });
   authRoutes(app, db);
 
   // Private iCal subscription link for Apple Kalender, Outlook or Google (token in the URL).

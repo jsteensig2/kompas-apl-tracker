@@ -599,7 +599,8 @@ export function createApi(db, { XLSX } = {}) {
     switch (route) {
       case 'GET /me': {
         const reseller = user.reseller_id ? db.get('SELECT name FROM resellers WHERE id = ?', [user.reseller_id])?.name : null;
-        return { json: { id: user.id, name: user.name, email: user.email, role: user.role, reseller_id: user.reseller_id, reseller, must_change_password: Boolean(user.must_change_password) } };
+        return { json: { id: user.id, name: user.name, email: user.email, role: user.role, reseller_id: user.reseller_id, reseller, must_change_password: Boolean(user.must_change_password),
+          viewed_by: user.viewed_by || null } };
       }
       case 'GET /options': return { json: options(user) };
       case 'POST /import': return { json: importActivities(user, body) };
