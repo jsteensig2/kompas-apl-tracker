@@ -483,3 +483,9 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 .viewas-bar { background: #1d4c5c; color: #fff; border-bottom-color: transparent; }
 .viewas-bar .linkbtn { color: #fff; }
 .viewas-bar .demobar-inner { gap: 12px; flex-wrap: wrap; }
+.star { color: #c9971a; font-weight: 700; }
+.check-star { border-color: #c9971a; }
+.check-star input { accent-color: #c9971a; }
+.filter-check { flex-direction: row; align-items: center; gap: 8px; align-self: end; padding-bottom: 10px; white-space: nowrap; }
+.filter-check input { width: 18px; height: 18px; flex: none; padding: 0; accent-color: #c9971a; }
+[hidden] { display: none !important; }

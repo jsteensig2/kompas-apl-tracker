@@ -186,3 +186,17 @@ test('"Se som": an admin can read as a reseller, but cannot change anything in t
   assert.equal((await call('admin', '/api/me', { headers: { 'x-view-as': String(admin.id) } })).status, 400);
   assert.equal((await call('Atea', '/api/me', { headers: { 'x-view-as': String(atea.id) } })).status, 403);
 });
+
+test('★ Skal have ny dato: the course keeps its date, is starred, filterable and starred in the feed', async () => {
+  const [a] = await json('admin', '/api/activities?status=held');
+  const upd = await json('admin', `/api/activities/${a.id}`, { method: 'PUT', body: JSON.stringify({ ...a, reschedule: '1' }) });
+  assert.equal(upd.reschedule, 1);
+  assert.equal(upd.date, a.date);
+  assert.equal(upd.status, 'held');
+  assert.deepEqual((await json('admin', '/api/activities?reschedule=1')).map((x) => x.id), [a.id]);
+  const { feedPath } = await json('admin', '/api/calendar');
+  const ics = (await (await fetch(base + feedPath)).text()).replace(/\r\n /g, '');
+  assert.match(ics, /SUMMARY:★ /);
+  await json('admin', `/api/activities/${a.id}`, { method: 'PUT', body: JSON.stringify({ ...a, reschedule: '' }) });
+  assert.equal((await json('admin', '/api/activities?reschedule=1')).length, 0);
+});

@@ -39,7 +39,7 @@ function requireAdmin(user) {
 }
 
 const ACTIVITY_SELECT = `
-  SELECT a.id, a.date, a.duration, a.title, a.participants, a.pending,
+  SELECT a.id, a.date, a.duration, a.title, a.participants, a.pending, a.reschedule,
          a.apl_type_id, t.name AS apl_type,
          a.school_id, s.name AS school,
          a.municipality_id, m.name AS municipality,
@@ -76,6 +76,7 @@ function buildWhere(user, f = {}) {
   if (f.status === 'held') { where.push(HELD_SQL); params.push(todayIso()); }
   if (f.status === 'planned') { where.push(PLANNED_SQL); params.push(todayIso()); }
   if (f.status === 'pending') where.push('a.pending = 1');
+  if (truthy(f.reschedule)) where.push('a.reschedule = 1'); // ★ Skal have ny dato
   if (int(f.year)) { where.push("substr(a.date, 1, 4) = ?"); params.push(String(int(f.year))); }
   if (/^\d{4}-\d{2}-\d{2}$/.test(f.from || '')) { where.push('a.date >= ?'); params.push(f.from); }
   if (/^\d{4}-\d{2}-\d{2}$/.test(f.to || '')) { where.push('a.date <= ?'); params.push(f.to); }
@@ -118,6 +119,7 @@ const LISTS = {
 export const EXPORT_COLUMNS = [
   ['Dato', (a) => a.date],
   ['Status', (a) => (a.pending ? 'Foreløbig' : a.status === 'planned' ? 'Planlagt' : 'Afholdt')],
+  ['Skal have ny dato', (a) => (a.reschedule ? 'Ja' : '')],
   ['APL-type', (a) => a.apl_type],
   ['Titel/emne', (a) => a.title],
   ['Skole', (a) => a.school || ''],
@@ -252,11 +254,12 @@ export function createApi(db, { XLSX } = {}) {
         : db.run('INSERT INTO schools (name, municipality_id) VALUES (?, ?)', [schoolName, municipality_id]).lastInsertRowid;
     }
     return { date: b.date, duration: b.duration, apl_type_id, title, school_id: school_id || null, municipality_id,
-      participants, consultant_id, reseller_id, paid_by_id, pending: truthy(b.pending) ? 1 : 0 };
+      participants, consultant_id, reseller_id, paid_by_id, pending: truthy(b.pending) ? 1 : 0,
+      reschedule: truthy(b.reschedule) ? 1 : 0 };
   }
 
   const ACTIVITY_FIELDS = ['date', 'duration', 'apl_type_id', 'title', 'school_id', 'municipality_id',
-    'participants', 'consultant_id', 'reseller_id', 'paid_by_id', 'pending'];
+    'participants', 'consultant_id', 'reseller_id', 'paid_by_id', 'pending', 'reschedule'];
 
   function createActivity(user, body) {
     requireAdmin(user);
@@ -505,7 +508,7 @@ export function createApi(db, { XLSX } = {}) {
       const where = [a.school, a.municipality].filter(Boolean).join(', ');
       lines.push('BEGIN:VEVENT', `UID:apl-${a.id}@kompas-apl-tracker`, `DTSTAMP:${stamp}`,
         `DTSTART;VALUE=DATE:${a.date.replace(/-/g, '')}`, `DTEND;VALUE=DATE:${next(a.date)}`,
-        `SUMMARY:${a.pending ? '(Foreløbig) ' : ''}${esc(filter.consultant ? `${a.title}${a.school ? ` · ${a.school}` : ''}` : `${a.apl_type} · ${a.title}${a.school ? ` · ${a.school}` : ''}`)}`,
+        `SUMMARY:${a.reschedule ? '★ ' : ''}${a.pending ? '(Foreløbig) ' : ''}${esc(filter.consultant ? `${a.title}${a.school ? ` · ${a.school}` : ''}` : `${a.apl_type} · ${a.title}${a.school ? ` · ${a.school}` : ''}`)}`,
         `LOCATION:${esc(where)}`,
         `DESCRIPTION:${esc([`Varighed: ${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}`, `Deltagere: ${a.participants}`,
           `Konsulent: ${a.consultant || '–'}`, `Reseller: ${a.reseller}`, `Betalt af: ${a.paid_by || '–'}`].join('\n'))}`,
@@ -544,7 +547,7 @@ export function createApi(db, { XLSX } = {}) {
     db.run("UPDATE consultants SET page_seen_at = datetime('now') WHERE id = ?", [c.id]);
     const rows = listActivities({ role: 'admin' }, { consultant: c.id }).map((a) => ({
       id: a.id, date: a.date, duration: a.duration, title: a.title, school: a.school || '', municipality: a.municipality || '',
-      apl_type: a.apl_type, participants: a.participants, reseller: a.reseller, status: a.status, pending: a.pending, sessions: a.duration === 'full' ? 2 : 1,
+      apl_type: a.apl_type, participants: a.participants, reseller: a.reseller, status: a.status, pending: a.pending, reschedule: a.reschedule, sessions: a.duration === 'full' ? 2 : 1,
       country: GREENLAND.has(String(a.municipality || '').toLowerCase()) ? 'Grønland' : 'Danmark',
     }));
     const held = rows.filter((a) => a.status === 'held').sort((x, y) => y.date.localeCompare(x.date));

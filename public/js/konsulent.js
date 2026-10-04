@@ -10,6 +10,7 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const fmtDate = (d) => new Date(`${d}T12:00:00`).toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 const app = document.getElementById('app');
 const PENDING = '<span class="pill pill-pending" title="Foreløbig: Datoen er aftalt, men kurset er endnu ikke endeligt godkendt af skolen eller kommunen">Foreløbig</span>';
+const STAR = '<span class="star" title="Skal have ny dato. Står på den gamle dato, indtil en ny er fundet" aria-label="Skal have ny dato">★</span> ';
 const rowClass = (a, planned) => (a.pending ? 'is-planned is-pending' : planned ? 'is-planned' : '');
 const token = location.pathname.split('/').filter(Boolean)[1] || '';
 const GOAL = 12; // workshops a year to keep the Apple Professional Learning Specialist status
@@ -27,7 +28,7 @@ function table(rows, planned) {
     <thead><tr><th>Dato</th><th>Kursus</th><th>Skole</th><th>Varighed</th>${planned ? '' : '<th class="num">Deltagere</th><th class="num">Apple-workshops</th>'}</tr></thead>
     <tbody>${rows.map((a) => `<tr class="${rowClass(a, planned)}">
       <td class="nowrap">${esc(fmtDate(a.date))}</td>
-      <td><b>${esc(a.title)}</b>${a.pending ? ` ${PENDING}` : ''}<div class="muted small">${esc(a.reseller)}</div></td>
+      <td>${a.reschedule ? STAR : ''}<b>${esc(a.title)}</b>${a.pending ? ` ${PENDING}` : ''}<div class="muted small">${esc(a.reseller)}</div></td>
       <td>${esc(a.school || '–')}${a.municipality ? `<div class="muted small">${esc(a.municipality)}</div>` : ''}</td>
       <td>${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}</td>
       ${planned ? '' : `<td class="num">${a.participants}</td><td class="num">${a.sessions}</td>`}
@@ -35,7 +36,7 @@ function table(rows, planned) {
     <ul class="cards-list k-cards">${rows.map((a) => `
       <li class="card act-card ${rowClass(a, planned)}">
         <div class="act-top"><span class="act-date">${esc(fmtDate(a.date))}</span><span class="tag">${esc(a.reseller)}</span></div>
-        <div class="act-title">${esc(a.title)}${a.pending ? ` ${PENDING}` : ''}</div>
+        <div class="act-title">${a.reschedule ? STAR : ''}${esc(a.title)}${a.pending ? ` ${PENDING}` : ''}</div>
         <div class="muted">${esc(a.school || '–')}${a.municipality ? ` · ${esc(a.municipality)}` : ''}</div>
         <dl class="act-meta">
           <div><dt>Varighed</dt><dd>${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}</dd></div>
@@ -90,6 +91,7 @@ function render() {
       <section class="card card-flush"><div class="card-head card-head-pad"><h2>Kommende kurser</h2><span class="muted small">Nærmeste først</span></div>
         <dl class="guide-list k-guide">
           <div><dt><span class="pill pill-planned">Planlagt</span></dt><dd>Kurset er godkendt. Du skal afholde det på datoen.</dd></div>
+          <div><dt><span class="star">★</span></dt><dd>Kurset skal have en ny dato. Det står på den gamle dato, indtil en ny er fundet.</dd></div>
           <div><dt>${PENDING}</dt><dd>Datoen er aftalt, men skolen eller kommunen har endnu ikke godkendt kurset endeligt. Hold datoen fri, men regn ikke med kurset, før det skifter til Planlagt. I din kalender står der "(Foreløbig)" foran titlen.</dd></div>
         </dl>${table(data.planned, true)}</section>
       <section class="card card-flush"><div class="card-head card-head-pad"><h2>Afholdte kurser</h2><span class="muted small">Nyeste først</span></div>${table(data.held, false)}</section>

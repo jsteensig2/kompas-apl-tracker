@@ -47,7 +47,7 @@ const state = {
   calEvents: null,
   calShowAll: false,
   dashFilters: { year: String(new Date().getFullYear()), reseller: '' },
-  listFilters: { q: '', status: '', year: String(new Date().getFullYear()), from: '', to: '', reseller: '', municipality: '', consultant: '', type: '' },
+  listFilters: { q: '', status: '', year: String(new Date().getFullYear()), from: '', to: '', reseller: '', municipality: '', consultant: '', type: '', reschedule: '' },
   importResult: null,
   adminTab: 'consultants',
   demoUsers: [],
@@ -330,11 +330,15 @@ function consultantState(c) {
   return stateTag(c.page_seen_at || c.feed_seen_at ? 'ok' : 'wait', text[0].toUpperCase() + text.slice(1));
 }
 
+// ★ = the course must be moved; it stays on its current date until a new one is found.
+const star = (a) => (a.reschedule ? '<span class="star" title="Skal have ny dato. Står på den gamle dato, indtil en ny er fundet" aria-label="Skal have ny dato">★</span> ' : '');
+
 // Short explanation of the three statuses, shown on Overblik and Aktiviteter.
 function statusGuide() {
   const rows = [
     ['<span class="pill pill-held">Afholdt</span>', 'Kurset er gennemført: datoen er i dag eller passeret. Afholdte kurser tæller med i nøgletallene.'],
     ['<span class="pill pill-planned">Planlagt</span>', 'Kurset er godkendt og har en dato efter i dag. Det vises under Kommende kurser.'],
+    ['<span class="star">★</span>', 'Kurset skal have en ny dato. Det står på den gamle dato, indtil en ny er fundet.'],
     ['<span class="pill pill-pending">Foreløbig</span>', 'Datoen er aftalt, men kurset er endnu ikke endeligt godkendt af skolen eller kommunen. Det vises under Kommende kurser og tæller ikke med som afholdt, før det er godkendt.'],
   ];
   return `<details class="howto status-guide"><summary>Hvad betyder Afholdt, Planlagt og Foreløbig?</summary>
@@ -396,7 +400,7 @@ function activityLine(a) {
     <li class="latest-item ${rowState(a)}">
       <div class="latest-date">${fmtDate(a.date, true)}</div>
       <div class="latest-body">
-        <div class="latest-title">${esc(a.apl_type)} · ${esc(a.title)}${a.pending ? ` ${statusPill(a)}` : ''}</div>
+        <div class="latest-title">${star(a)}${esc(a.apl_type)} · ${esc(a.title)}${a.pending ? ` ${statusPill(a)}` : ''}</div>
         <div class="muted">${esc(a.school || '–')}${a.municipality ? ` · ${esc(a.municipality)}` : ''}</div>
         <div class="latest-meta">
           <span>${participantsCell(a, true)}</span><span>${esc(a.consultant || '')}</span>
@@ -480,6 +484,7 @@ function activityFilters() {
       <label class="field"><span>Kommune</span><select id="f-municipality">${selectOptions(o.municipalities, f.municipality, 'Alle')}</select></label>
       <label class="field"><span>Konsulent</span><select id="f-consultant">${selectOptions(o.consultants, f.consultant, 'Alle')}</select></label>
       <label class="field"><span>APL-type</span><select id="f-type">${selectOptions(o.aplTypes, f.type, 'Alle')}</select></label>
+      <label class="field filter-check"><input type="checkbox" id="f-reschedule" ${f.reschedule ? 'checked' : ''}><span><span class="star">★</span> Skal have ny dato</span></label>
     </div>`;
 }
 
@@ -519,8 +524,13 @@ async function renderActivities(root) {
     };
   });
   if (seesAll()) bind('#f-reseller', 'reseller');
+  $('#f-reschedule').onchange = (e) => {
+    f.reschedule = e.target.checked ? '1' : '';
+    if (f.reschedule) { f.year = ''; $('#f-year').value = ''; }
+    loadList();
+  };
   $('#f-clear').onclick = () => {
-    Object.assign(f, { q: '', status: '', year: '', from: '', to: '', reseller: '', municipality: '', consultant: '', type: '' });
+    Object.assign(f, { q: '', status: '', year: '', from: '', to: '', reseller: '', municipality: '', consultant: '', type: '', reschedule: '' });
     renderActivities(root);
   };
   const exportAs = async (format, btn) => {
@@ -555,7 +565,7 @@ async function loadList() {
           <th class="num">Deltagere</th><th>Varighed</th><th>Konsulent</th><th>Reseller</th><th>Betalt af</th>${admin ? '<th><span class="sr">Redigér</span></th>' : ''}</tr></thead>
         <tbody>${rows.map((a) => `
           <tr class="${rowState(a)} ${admin ? 'clickable' : ''}" ${admin ? `data-edit="${a.id}"` : ''}>
-            <td class="nowrap">${fmtDate(a.date)}</td><td>${statusCell(a)}</td><td>${esc(a.apl_type)}</td><td><b>${esc(a.title)}</b></td>
+            <td class="nowrap">${fmtDate(a.date)}</td><td>${statusCell(a)}</td><td>${esc(a.apl_type)}</td><td>${star(a)}<b>${esc(a.title)}</b></td>
             <td>${esc(a.school || '–')}</td><td>${esc(a.municipality || '–')}</td><td class="num">${participantsCell(a)}</td>
             <td class="nowrap">${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}</td><td>${esc(a.consultant || '–')}</td>
             <td><span class="tag">${esc(a.reseller)}</span></td><td>${esc(a.paid_by || '–')}</td>
@@ -566,7 +576,7 @@ async function loadList() {
     <ul class="cards-list">${rows.map((a) => `
       <li class="card act-card ${rowState(a)} ${admin ? 'clickable' : ''}" ${admin ? `data-edit="${a.id}" role="button" tabindex="0"` : ''}>
         <div class="act-top"><span class="act-date">${fmtDate(a.date)} ${statusCell(a)}</span><span class="tag">${esc(a.reseller)}</span></div>
-        <div class="act-title">${esc(a.apl_type)} · ${esc(a.title)}</div>
+        <div class="act-title">${star(a)}${esc(a.apl_type)} · ${esc(a.title)}</div>
         <div class="muted">${esc(a.school || '–')}${a.municipality ? ` · ${esc(a.municipality)}` : ''}</div>
         <dl class="act-meta">
           <div><dt>Deltagere</dt><dd>${participantsCell(a)}</dd></div>
@@ -654,6 +664,8 @@ function renderRegister(root) {
         <label class="field"><span>Betalt af</span><select id="a-paid" name="paid_by_id">${selectOptions(o.paidBy, v.paid_by_id, 'Vælg hvem der betalte')}</select></label>
         <label class="field field-wide check-field"><input type="checkbox" id="a-pending" name="pending" value="1" ${v.pending ? 'checked' : ''}>
           <span><b>Foreløbig</b><small class="muted">Datoen er aftalt, men kurset er endnu ikke endeligt godkendt af skolen eller kommunen.</small></span></label>
+        <label class="field field-wide check-field check-star"><input type="checkbox" id="a-reschedule" name="reschedule" value="1" ${v.reschedule ? 'checked' : ''}>
+          <span><b>★ Skal have ny dato</b><small class="muted">Kurset skal flyttes. Det bliver stående på datoen ovenfor, indtil du retter den, og vises med en stjerne.</small></span></label>
       </div>
       <p id="form-error" class="form-error" role="alert" hidden></p>
       <p class="muted small form-tip">Mangler en konsulent, kommune, APL-type eller betaler i listerne? Tilføj den under <a href="#admin" data-go="admin">Administration</a>. Nye skoler kan skrives direkte i feltet.</p>
@@ -1139,7 +1151,7 @@ async function renderMonth() {
     const label = [count && `${count} ${count === 1 ? 'kursus' : 'kurser'}`, day.events.length && `${day.events.length} ${day.events.length === 1 ? 'aftale' : 'aftaler'}`].filter(Boolean).join(', ');
     cells.push(`<button type="button" class="mday ${iso === today ? 'is-today' : ''} ${iso === state.calDay ? 'is-sel' : ''}" data-day="${iso}" aria-label="${d}. ${MONTHS_DA[m - 1]}${label ? `: ${label}` : ''}">
       <span class="mday-n">${d}</span>
-      <span class="mday-items">${day.courses.map((g) => `<span class="mchip ${g.items.some((x) => x.pending) ? 'is-planned is-pending' : g.items[0].status === 'planned' ? 'is-planned' : 'is-held'}">${esc(g.items[0].title)}${g.items.length > 1 ? ` <b>×${g.items.length}</b>` : ''}</span>`).join('')}
+      <span class="mday-items">${day.courses.map((g) => `<span class="mchip ${g.items.some((x) => x.pending) ? 'is-planned is-pending' : g.items[0].status === 'planned' ? 'is-planned' : 'is-held'}">${g.items.some((x) => x.reschedule) ? '★ ' : ''}${esc(g.items[0].title)}${g.items.length > 1 ? ` <b>×${g.items.length}</b>` : ''}</span>`).join('')}
         ${day.events.map((ev) => `<span class="mchip is-event">${esc(ev.title)}</span>`).join('')}</span>
       <span class="mday-dots">${count ? `<i class="${day.courses.some((g) => g.items.some((x) => x.status === 'planned')) ? 'is-planned' : 'is-held'}"></i>` : ''}${day.events.length ? '<i class="is-event"></i>' : ''}</span>
     </button>`);
@@ -1176,7 +1188,7 @@ async function renderMonth() {
         ${isAdmin() ? '<button type="button" class="btn btn-primary btn-sm" id="mday-reg">Registrér kursus denne dag</button>' : ''}</div>
       ${items.length ? `<ul class="latest">${items.map((a) => `
         <li class="latest-item ${rowState(a)} ${isAdmin() ? 'clickable' : ''}" ${isAdmin() ? `data-open="${a.id}" role="button" tabindex="0"` : ''}>
-          <div class="latest-body"><div class="latest-title">${esc(a.title)} ${statusPill(a)}</div>
+          <div class="latest-body"><div class="latest-title">${star(a)}${esc(a.title)} ${statusPill(a)}</div>
           <div class="latest-meta"><span>${esc(a.school || '–')}</span><span>${esc(a.consultant || '')}</span><span>${participantsText(a)}</span><span class="tag">${esc(a.reseller)}</span></div></div>
         </li>`).join('')}</ul>` : '<p class="muted">Ingen registrerede kurser denne dag.</p>'}
       ${day.events.length ? `<p class="section-label mday-ev-label">Fra din kalender</p><ul class="cal-list">${day.events.map((ev) => `
