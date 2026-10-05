@@ -1347,7 +1347,7 @@ async function renderAdmin(root) {
 // --- Tilmelding --------------------------------------------------------------------------------
 // Doodle for Foreløbig courses without a consultant: the consultants answer on their own page
 // (Konsulentlink); here Kompas sees every answer and puts the chosen consultants on the course.
-const ANSWER_MARK = { yes: ['✓', 'Kan'], maybe: ['?', 'Måske'], no: ['✕', 'Kan ikke'] };
+const ANSWER_MARK = { yes: ['✓', 'Kan'], maybe: ['?', 'Måske'] };
 
 async function renderSignup(root) {
   const { consultants, courses } = await api.get('/api/signups');
@@ -1358,7 +1358,7 @@ async function renderSignup(root) {
   const silent = consultants.filter((p) => !courses.some((c) => c.answers[p.id]));
   root.innerHTML = `
     <div class="pagehead"><div><p class="eyebrow">Foreløbige kurser</p><h1>Tilmelding</h1>
-      <p class="muted">Foreløbige kurser uden konsulent. Konsulenterne svarer Kan, Måske eller Kan ikke på deres konsulentside, og du sætter dem på kurset her.
+      <p class="muted">Foreløbige kurser uden konsulent. Konsulenterne klikker Kan eller Måske på deres konsulentside, og du sætter dem på kurset her.
         Linket til konsulentsiden finder du under Administration › Konsulenter › Konsulentlink.</p></div></div>
     ${munis.length > 1 ? `<div class="filters filters-inline"><label class="field field-compact"><span>Kommune</span><select id="su-muni">
       <option value="">Alle kommuner</option>${munis.map((m) => `<option ${m === state.signupMunicipality ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></label></div>` : ''}
@@ -1373,10 +1373,10 @@ async function renderSignup(root) {
           <div><b>${esc(c.title)}</b></div><div class="muted small">${esc(c.school || '–')}${c.municipality ? ` · ${esc(c.municipality)}` : ''} · ${esc(c.reseller)}</div></td>
         <td class="num"><input class="input-num" type="number" min="1" max="50" value="${c.needed ?? ''}" data-needed aria-label="Konsulenter der skal bruges"></td>
         <td class="num"><b class="${c.needed && yes >= c.needed ? 'su-enough' : ''}">${yes}</b>${count(c, 'maybe') ? `<div class="muted small">+${count(c, 'maybe')} måske</div>` : ''}</td>
-        ${consultants.map((p) => { const a = c.answers[p.id]; return `<td class="su-cell ${a ? `su-${a}` : ''}" title="${esc(p.name)}: ${a ? ANSWER_MARK[a][1] : 'Har ikke svaret'}">${a ? ANSWER_MARK[a][0] : '<span class="muted">–</span>'}</td>`; }).join('')}
+        ${consultants.map((p) => { const a = c.answers[p.id]; return `<td class="su-cell ${a ? `su-${a}` : ''}" title="${esc(p.name)}: ${a ? ANSWER_MARK[a][1] : 'Har ikke meldt sig'}">${a ? ANSWER_MARK[a][0] : '<span class="muted">–</span>'}</td>`; }).join('')}
         <td><button type="button" class="btn btn-sm" data-assign>Sæt på</button></td></tr>`;
       }).join('')}</tbody></table></div></section>`}
-    <p class="muted small">✓ Kan · ? Måske · ✕ Kan ikke · – har ikke svaret.${silent.length ? ` Har ikke svaret på noget endnu: ${silent.map((p) => `${esc(p.name)}${p.has_link ? '' : ' (har ikke fået et konsulentlink)'}`).join(', ')}.` : ''}</p>`;
+    <p class="muted small">✓ Kan · ? Måske · – kan ikke (har ikke meldt sig).${silent.length ? ` Har ikke meldt sig på noget endnu: ${silent.map((p) => `${esc(p.name)}${p.has_link ? '' : ' (har ikke fået et konsulentlink)'}`).join(', ')}.` : ''}</p>`;
 
   $('#su-muni')?.addEventListener('change', (e) => { state.signupMunicipality = e.target.value; renderSignup(root); });
   $$('.signup-grid tbody tr').forEach((tr) => {
@@ -1389,14 +1389,14 @@ async function renderSignup(root) {
       const next = tr.nextElementSibling;
       if (next?.classList.contains('su-assign')) { next.remove(); return; }
       // Those who said Kan come first and are ticked, up to the number needed.
-      const order = { yes: 0, maybe: 1, undefined: 2, no: 3 };
+      const order = { yes: 0, maybe: 1, undefined: 2 };
       const ranked = [...consultants].sort((a, b) => order[c.answers[a.id]] - order[c.answers[b.id]]);
       const limit = c.needed || Infinity;
       let ticked = 0;
       tr.insertAdjacentHTML('afterend', `<tr class="su-assign"><td colspan="${consultants.length + 4}">
         <form class="su-assign-form"><p class="small"><b>Hvem skal tage kurset?</b> Hver konsulent får sit eget kursus, og kurserne forbliver Foreløbige, indtil du godkender dem.</p>
           <div class="su-choices">${ranked.map((p) => { const a = c.answers[p.id]; const on = a === 'yes' && ticked < limit; if (on) ticked += 1;
-            return `<label class="check"><input type="checkbox" name="c" value="${p.id}" ${on ? 'checked' : ''}> ${esc(p.name)} <span class="muted small">${a ? ANSWER_MARK[a][1] : 'ikke svaret'}</span></label>`; }).join('')}</div>
+            return `<label class="check"><input type="checkbox" name="c" value="${p.id}" ${on ? 'checked' : ''}> ${esc(p.name)} <span class="muted small">${a ? ANSWER_MARK[a][1] : 'ikke meldt sig'}</span></label>`; }).join('')}</div>
           <div class="copyrow"><button class="btn btn-primary btn-sm" type="submit">Sæt på kurset</button><button class="btn btn-sm" type="button" data-cancel>Annullér</button></div>
         </form></td></tr>`);
       const row = tr.nextElementSibling;
