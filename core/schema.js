@@ -125,6 +125,17 @@ export function migrate(db) {
     read_at        TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (message_id, consultant_id)
   )`);
+  // Noter: short notes on a course, written by Kompas (user_id) or by the course's consultant (consultant_id).
+  db.exec(`CREATE TABLE IF NOT EXISTS course_notes (
+    id             INTEGER PRIMARY KEY,
+    activity_id    INTEGER NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
+    body           TEXT NOT NULL,
+    user_id        INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    consultant_id  INTEGER REFERENCES consultants(id) ON DELETE SET NULL,
+    author         TEXT NOT NULL,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_course_notes_activity ON course_notes (activity_id)');
   db.exec('CREATE TABLE IF NOT EXISTS app_migrations (name TEXT PRIMARY KEY, ran_at TEXT NOT NULL DEFAULT (datetime(\'now\')))');
   once(db, 'apl-types-2026-10-04', () => resetAplTypes(db));
   allowViewerRole(db);

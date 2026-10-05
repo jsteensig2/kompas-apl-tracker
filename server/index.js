@@ -88,6 +88,18 @@ export function createServer({ dbFile = process.env.DB_FILE || fileURLToPath(new
     }
   });
 
+  // Noter: the consultant writes or deletes a short note on one of their own courses.
+  const kRoute = (fn) => (req, res) => {
+    try {
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(fn(req));
+    } catch (err) {
+      res.status(err.status || 500).json({ error: err.status ? err.message : 'Der opstod en fejl på serveren.' });
+    }
+  };
+  app.post('/k/:token/courses/:id/notes', kRoute((req) => api.consultantNotes(req.params.token, Number(req.params.id), req.body || {})));
+  app.delete('/k/:token/notes/:id', kRoute((req) => api.deleteConsultantNote(req.params.token, Number(req.params.id))));
+
   // Fetches the admin's own calendar (saved iCal link) and returns events to register.
   app.get('/api/calendar/events', async (req, res) => {
     try {

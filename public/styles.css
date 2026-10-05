@@ -530,3 +530,29 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 .pill-new { background: var(--accent); color: var(--accent-ink); }
 .msg-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
 .msg-form textarea { width: 100%; min-height: 140px; font: inherit; font-size: 16px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); resize: vertical; }
+
+/* Noter: short notes on a course. Only a small speech bubble shows in the lists. */
+.note-count, .note-btn { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; vertical-align: middle;
+  font: 600 0.78rem var(--font); color: var(--accent); white-space: nowrap; }
+.note-count svg, .note-btn svg { width: 14px; height: 14px; fill: currentColor; }
+.note-btn { padding: 2px 6px; border: 1px solid transparent; border-radius: 99px; background: none; cursor: pointer; color: var(--muted); opacity: 0.7; }
+.note-btn svg { fill: none; stroke: currentColor; stroke-width: 1.4; }
+.note-btn.has-notes { color: var(--accent); opacity: 1; background: var(--accent-soft); }
+.note-btn.has-notes svg { fill: currentColor; stroke: none; }
+.note-btn:hover, .note-btn:focus-visible { opacity: 1; border-color: var(--line); }
+dt .note-btn { margin-left: 0; opacity: 1; cursor: default; }
+.notes-card { margin-top: 20px; }
+.note-list { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.note { padding: 10px 12px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: var(--r-sm); background: var(--surface-2); }
+.note-body { margin: 0; white-space: pre-line; overflow-wrap: anywhere; }
+.note-meta { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 4px; }
+.note-meta .linkbtn { padding: 0; font-size: 0.8rem; }
+.note-empty { margin: 0 0 12px; }
+.note-form { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.note-form textarea, .notes-dlg textarea { flex: 1 1 260px; width: 100%; font: inherit; font-size: 16px; padding: 8px 10px; border: 1px solid var(--line);
+  border-radius: var(--r-sm); background: var(--surface); color: var(--ink); resize: vertical; }
+.dialog { width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 20px; border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+.dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
+.notes-dlg .card-head { align-items: flex-start; }
+.notes-dlg .card-head h2 { margin: 0 0 2px; }
