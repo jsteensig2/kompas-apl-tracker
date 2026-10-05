@@ -248,6 +248,10 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
   border-radius: 99px; border: 0; background: var(--accent); color: var(--accent-ink); font: 600 1rem var(--font); box-shadow: 0 6px 18px rgb(0 0 0 / 20%); cursor: pointer; }
 .show-sm { display: none; }
 
+/* With every admin tab the menu no longer fits beside the logo; it gets its own row on every screen. */
+.topbar-inner { flex-wrap: wrap; gap: 4px 12px; padding-top: 10px; }
+.mainnav { order: 3; flex-basis: 100%; overflow-x: auto; margin: 0 -8px; padding-bottom: 6px; }
+.userbox { margin-left: auto; }
 @media (max-width: 960px) {
   .dash-grid { grid-template-columns: minmax(0, 1fr); }
 }
@@ -515,3 +519,16 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 .su-choices .check input { width: 18px; height: 18px; accent-color: var(--accent); }
 .signup-grid tbody tr:not(.su-assign) td:first-child, .signup-grid th:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); min-width: 190px; }
 .su-assign-form { position: sticky; left: 14px; max-width: calc(100vw - 60px); }
+
+/* Beskeder: notices from Kompas on the consultant page, and the admin's list of sent ones. */
+.msg-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.msg { padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); }
+.msg.is-new { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.msg-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.msg-head h3 { margin: 0; font-size: 1rem; }
+.msg-body { margin: 8px 0 0; white-space: pre-line; overflow-wrap: anywhere; }
+.msg-older { margin-top: 12px; }
+.msg-older .msg-list { margin-top: 10px; }
+.pill-new { background: var(--accent); color: var(--accent-ink); }
+.msg-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.msg-form textarea { width: 100%; min-height: 140px; font: inherit; font-size: 16px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); resize: vertical; }

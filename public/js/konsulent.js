@@ -45,6 +45,32 @@ function table(rows, planned) {
       </li>`).join('')}</ul>`;
 }
 
+// Beskeder: notices from Kompas, newest first. New ones are marked "Ny" on this visit only.
+const SHOW_MESSAGES = 3;
+const fmtStamp = (ts) => new Date(`${ts.replace(' ', 'T')}Z`).toLocaleDateString('da-DK', { day: 'numeric', month: 'long', year: 'numeric' });
+// Plain text with line breaks; web addresses become links.
+const richText = (t) => esc(t).replace(/https?:\/\/[^\s<]+[^\s<.,;:!?)]/g, (u) => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`);
+
+function messageItem(m) {
+  return `<li class="msg ${m.unread ? 'is-new' : ''}">
+    <div class="msg-head"><h3>${esc(m.title)}</h3>${m.unread ? '<span class="pill pill-new">Ny</span>' : ''}</div>
+    <div class="muted small">${esc(fmtStamp(m.created_at))}${m.personal ? ' · Kun til dig' : ''}</div>
+    ${m.body ? `<p class="msg-body">${richText(m.body)}</p>` : ''}
+  </li>`;
+}
+
+function messagesSection() {
+  if (!data.messages?.length) return '';
+  const fresh = data.messages.filter((m) => m.unread).length;
+  const first = data.messages.slice(0, Math.max(SHOW_MESSAGES, fresh));
+  const older = data.messages.slice(first.length);
+  return `<section class="card" id="messages"><div class="card-head"><h2>Beskeder fra Kompas</h2>
+      <span class="muted small">${fresh ? `${fresh} ${fresh === 1 ? 'ny besked' : 'nye beskeder'}` : 'Ingen nye beskeder'}</span></div>
+    <ul class="msg-list">${first.map(messageItem).join('')}</ul>
+    ${older.length ? `<details class="howto msg-older"><summary>Vis ${older.length} ældre ${older.length === 1 ? 'besked' : 'beskeder'}</summary>
+      <ul class="msg-list">${older.map(messageItem).join('')}</ul></details>` : ''}</section>`;
+}
+
 // Tilmelding: Foreløbig courses without a consultant yet. Like a Doodle, the consultant answers
 // Kan, Måske or Kan ikke; Kompas sees the answers and puts consultants on the courses.
 const ANSWERS = [['yes', 'Kan'], ['maybe', 'Måske'], ['no', 'Kan ikke']];
@@ -128,6 +154,8 @@ function render() {
         <div class="kpi"><div class="kpi-num">${data.held.length}</div><div class="kpi-label">Afholdte kurser i alt</div></div>
       </div>
 
+      ${messagesSection()}
+
       ${signupSection()}
 
       <section class="card apple-card">
@@ -153,6 +181,9 @@ function render() {
     </main>`;
 
   bindSignup();
+  if (data.messages?.some((m) => m.unread)) {
+    fetch(`/k/${encodeURIComponent(token)}/messages/read`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).catch(() => {});
+  }
   document.getElementById('copy-survey').onclick = async () => {
     try { await navigator.clipboard.writeText(APPLE_SURVEY); toast('Link kopieret'); } catch { window.open(APPLE_SURVEY, '_blank', 'noopener'); }
   };

@@ -78,6 +78,16 @@ export function createServer({ dbFile = process.env.DB_FILE || fileURLToPath(new
     }
   });
 
+  // The consultant page has shown the messages from Kompas (Beskeder).
+  app.post('/k/:token/messages/read', (req, res) => {
+    try {
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(api.markMessagesRead(req.params.token));
+    } catch (err) {
+      res.status(err.status || 500).json({ error: err.status ? err.message : 'Der opstod en fejl på serveren.' });
+    }
+  });
+
   // Fetches the admin's own calendar (saved iCal link) and returns events to register.
   app.get('/api/calendar/events', async (req, res) => {
     try {

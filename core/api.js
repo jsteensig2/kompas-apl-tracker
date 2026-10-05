@@ -554,7 +554,7 @@ export function createApi(db, { XLSX } = {}) {
     const planned = rows.filter((a) => a.status === 'planned').sort((x, y) => x.date.localeCompare(y.date));
     const byYear = {};
     for (const a of held) byYear[a.date.slice(0, 4)] = (byYear[a.date.slice(0, 4)] || 0) + a.sessions;
-    return { name: c.name, today: todayIso(), feedPath: `/calendar/feed/${c.feed_token}.ics`, held, planned, sessionsByYear: byYear, signup: signupList(c.id) };
+    return { name: c.name, today: todayIso(), feedPath: `/calendar/feed/${c.feed_token}.ics`, held, planned, sessionsByYear: byYear, signup: signupList(c.id), messages: messagesFor(c.id) };
   }
 
   // --- Tilmelding ---------------------------------------------------------------------------
@@ -641,6 +641,57 @@ export function createApi(db, { XLSX } = {}) {
     return { assigned: ids.length };
   }
 
+  // --- Beskeder ------------------------------------------------------------------------------
+  // One-way notices from Kompas to the consultants, shown at the top of each consultant's page.
+  // A message goes to every consultant or to one; Kompas sees who has read it.
+  const MESSAGES_FOR = '(m.consultant_id IS NULL OR m.consultant_id = ?)';
+
+  function messagesFor(consultantId) {
+    return db.all(`SELECT m.id, m.title, m.body, m.created_at, m.consultant_id IS NOT NULL AS personal,
+        EXISTS (SELECT 1 FROM message_reads r WHERE r.message_id = m.id AND r.consultant_id = ?) AS seen
+      FROM messages m WHERE ${MESSAGES_FOR} ORDER BY m.created_at DESC, m.id DESC`, [consultantId, consultantId])
+      .map((m) => ({ id: m.id, title: m.title, body: m.body, created_at: m.created_at, personal: Boolean(m.personal), unread: !m.seen }));
+  }
+
+  // Called by the consultant page after it has shown the messages, so they are marked "Ny" only once.
+  function markMessagesRead(token) {
+    const c = consultantByToken(token);
+    db.run(`INSERT OR IGNORE INTO message_reads (message_id, consultant_id) SELECT m.id, ? FROM messages m WHERE ${MESSAGES_FOR}`, [c.id, c.id]);
+    return { ok: true };
+  }
+
+  function listMessages(user) {
+    requireAdmin(user);
+    const withLink = db.all('SELECT id, name FROM consultants WHERE feed_token IS NOT NULL ORDER BY name');
+    return db.all(`SELECT m.id, m.title, m.body, m.created_at, m.consultant_id, c.name AS consultant, u.name AS author
+        FROM messages m LEFT JOIN consultants c ON c.id = m.consultant_id LEFT JOIN users u ON u.id = m.created_by
+        ORDER BY m.created_at DESC, m.id DESC`).map((m) => {
+      const read = new Set(db.all('SELECT consultant_id FROM message_reads WHERE message_id = ?', [m.id]).map((r) => r.consultant_id));
+      const audience = m.consultant_id ? [{ id: m.consultant_id, name: m.consultant }] : withLink;
+      return { ...m, read: audience.filter((p) => read.has(p.id)).map((p) => p.name), unread: audience.filter((p) => !read.has(p.id)).map((p) => p.name) };
+    });
+  }
+
+  function createMessage(user, body) {
+    requireAdmin(user);
+    const title = String(body?.title ?? '').trim();
+    const text = String(body?.body ?? '').trim();
+    const to = int(body?.consultant_id) || null;
+    if (!title) throw new HttpError(400, 'Skriv en overskrift.');
+    if (title.length > 200) throw new HttpError(400, 'Overskriften er for lang (højst 200 tegn).');
+    if (text.length > 5000) throw new HttpError(400, 'Beskeden er for lang (højst 5000 tegn).');
+    if (to && !db.get('SELECT id FROM consultants WHERE id = ?', [to])) throw new HttpError(400, 'Konsulenten findes ikke.');
+    const id = Number(db.run('INSERT INTO messages (title, body, consultant_id, created_by) VALUES (?, ?, ?, ?)', [title, text, to, user.id]).lastInsertRowid);
+    return { id };
+  }
+
+  function deleteMessage(user, id) {
+    requireAdmin(user);
+    if (!db.get('SELECT id FROM messages WHERE id = ?', [id])) throw new HttpError(404, 'Beskeden findes ikke.');
+    db.run('DELETE FROM messages WHERE id = ?', [id]);
+    return { ok: true };
+  }
+
   /** Subscription feed: authenticated by the secret token in the link, not by a login. */
   function feed(token) {
     const valid = /^[a-f0-9]{48}$/.test(String(token));
@@ -710,6 +761,9 @@ export function createApi(db, { XLSX } = {}) {
       case 'GET /signups': return { json: signupOverview(user) };
       case 'PUT /signups/:id/needed': return { json: setNeeded(user, int(parts[1]), body) };
       case 'POST /signups/:id/assign': return { json: assignConsultants(user, int(parts[1]), body) };
+      case 'GET /messages': return { json: listMessages(user) };
+      case 'POST /messages': return { json: createMessage(user, body) };
+      case 'DELETE /messages/:id': return { json: deleteMessage(user, id) };
       case 'GET /admin/consultants/:id/feed': return { json: consultantFeed(user, int(parts[2]), false) };
       case 'POST /admin/consultants/:id/feed': return { json: consultantFeed(user, int(parts[2]), true) };
       case `GET /admin/${parts[1]}`: return { json: adminList(user, parts[1]) };
@@ -720,5 +774,5 @@ export function createApi(db, { XLSX } = {}) {
     }
   }
 
-  return { handle, feed, consultantOverview, setSignup, calendarUrlFor: (user) => db.get('SELECT calendar_url FROM users WHERE id = ?', [user.id])?.calendar_url || '' };
+  return { handle, feed, consultantOverview, setSignup, markMessagesRead, calendarUrlFor: (user) => db.get('SELECT calendar_url FROM users WHERE id = ?', [user.id])?.calendar_url || '' };
 }

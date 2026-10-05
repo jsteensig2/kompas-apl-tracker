@@ -110,6 +110,21 @@ export function migrate(db) {
     updated_at     TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (activity_id, consultant_id)
   )`);
+  // Beskeder: Kompas writes to all consultants (consultant_id NULL) or to one; they read it on their page.
+  db.exec(`CREATE TABLE IF NOT EXISTS messages (
+    id             INTEGER PRIMARY KEY,
+    title          TEXT NOT NULL,
+    body           TEXT NOT NULL DEFAULT '',
+    consultant_id  INTEGER REFERENCES consultants(id) ON DELETE CASCADE,
+    created_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  db.exec(`CREATE TABLE IF NOT EXISTS message_reads (
+    message_id     INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    consultant_id  INTEGER NOT NULL REFERENCES consultants(id) ON DELETE CASCADE,
+    read_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (message_id, consultant_id)
+  )`);
   db.exec('CREATE TABLE IF NOT EXISTS app_migrations (name TEXT PRIMARY KEY, ran_at TEXT NOT NULL DEFAULT (datetime(\'now\')))');
   once(db, 'apl-types-2026-10-04', () => resetAplTypes(db));
   allowViewerRole(db);
