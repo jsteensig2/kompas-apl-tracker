@@ -116,6 +116,10 @@ konsulent(er) igen.
 - **Hurtig rettelse af deltagere:** Administratorer kan skrive deltagerantal direkte i listen under Aktiviteter og i Overblik (gemmes ved Enter eller når feltet forlades; `PUT /api/activities/:id/participants`).
 - **Konsulentside og -kalender:** Under Administration › Konsulenter › Konsulentlink får hver konsulent et privat link til sin egen side (`/k/<token>`) med afholdte og kommende kurser, sessioner til Apple (heldag = 2) og linket til Apples Engagement Checkout Survey, samt et kalenderabonnement med kun egne kurser. Siden minder konsulenten om at registrere sine workshops hos Apple og viser antal workshops i år mod målet på 12. Linkene kan fornyes samme sted.
 
+## Tilmelding til foreløbige kurser
+
+Fungerer som en Doodle. Foreløbige kurser fra i dag og frem, som ikke har nogen konsulent, vises øverst på hver konsulents side (`/k/<token>`), hvor konsulenten svarer **Kan**, **Måske** eller **Kan ikke**. Under fanen **Tilmelding** ser Kompas alle svar i et skema (kan filtreres på kommune), skriver hvor mange konsulenter kurset skal bruge, og trykker **Sæt på** for at vælge konsulenterne. Den første valgte overtager kurset, de øvrige får hver deres kopi (én konsulent pr. kursus). Kurserne forbliver Foreløbige, indtil de godkendes, og forsvinder fra tilmeldingen.
+
 ## Senere udvidelser (ikke bygget)
 
 Apple compliance-mål (fx 34 / 40 workshops) er bevidst ikke implementeret. Dashboardets tal

@@ -90,6 +90,7 @@ export function migrate(db) {
   if (!cols('activities').includes('pending')) db.exec('ALTER TABLE activities ADD COLUMN pending INTEGER NOT NULL DEFAULT 0');
   if (!cols('activities').includes('apple_reported_at')) db.exec('ALTER TABLE activities ADD COLUMN apple_reported_at TEXT');
   if (!cols('consultants').includes('feed_token')) db.exec('ALTER TABLE consultants ADD COLUMN feed_token TEXT');
+  if (!cols('activities').includes('consultants_needed')) db.exec('ALTER TABLE activities ADD COLUMN consultants_needed INTEGER');
   // Kompas' own initials (Jakob, 2026-10-03); only filled in where none are set.
   for (const [initials, name] of [['KB', 'kim byrding'], ['TH', 'torben hollensen'], ['SR', 'søren rasmussen'],
     ['RT', 'rasmus toft'], ['JRS', 'jakob steensig'], ['JS', 'jacob schandor']]) {
@@ -100,6 +101,14 @@ export function migrate(db) {
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     uid     TEXT NOT NULL,
     PRIMARY KEY (user_id, uid)
+  )`);
+  // Tilmelding: each consultant answers whether they can take a Foreløbig course that has no consultant yet.
+  db.exec(`CREATE TABLE IF NOT EXISTS course_signups (
+    activity_id    INTEGER NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
+    consultant_id  INTEGER NOT NULL REFERENCES consultants(id) ON DELETE CASCADE,
+    answer         TEXT NOT NULL CHECK (answer IN ('yes', 'maybe', 'no')),
+    updated_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (activity_id, consultant_id)
   )`);
   db.exec('CREATE TABLE IF NOT EXISTS app_migrations (name TEXT PRIMARY KEY, ran_at TEXT NOT NULL DEFAULT (datetime(\'now\')))');
   once(db, 'apl-types-2026-10-04', () => resetAplTypes(db));

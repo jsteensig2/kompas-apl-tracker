@@ -349,7 +349,7 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 .imp-note { min-width: 200px; }
 .imp-err .imp-note { color: var(--danger); font-weight: 500; }
 .imp-warn .imp-note { color: var(--muted); }
-@media (max-width: 760px) { .table-wrap.import-wrap { display: block; } }
+@media (max-width: 760px) { .table-wrap.import-wrap, .table-wrap.signup-wrap { display: block; } }
 
 #dash-body { display: flex; flex-direction: column; gap: 20px; }
 .imp-note { min-width: 220px; max-width: 320px; }
@@ -489,3 +489,29 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 .filter-check { flex-direction: row; align-items: center; gap: 8px; align-self: end; padding-bottom: 10px; white-space: nowrap; }
 .filter-check input { width: 18px; height: 18px; flex: none; padding: 0; accent-color: #c9971a; }
 [hidden] { display: none !important; }
+
+/* Tilmelding: consultants answer whether they can take a Foreløbig course (like a Doodle) */
+.card-pad { padding: 8px 20px 0; margin: 0; }
+.signup-list { list-style: none; margin: 0; padding: 12px 0 4px; }
+.signup-row { display: flex; align-items: center; justify-content: space-between; gap: 12px 20px; flex-wrap: wrap; padding: 14px 20px; border-top: 1px solid var(--line); }
+.signup-info { flex: 1 1 260px; min-width: 0; }
+.signup-info .act-title { margin-top: 2px; }
+.signup-seg button { min-width: 72px; }
+.signup-seg button.ans-yes.on { background: var(--ok); color: var(--surface); }
+.signup-seg button.ans-maybe.on { background: var(--planned); color: #2e1700; }
+.signup-seg button.ans-no.on { background: var(--danger-soft); color: var(--danger); outline: 1px solid var(--danger); }
+.signup-seg button:disabled { opacity: 0.6; cursor: progress; }
+@media (max-width: 560px) { .signup-seg { display: flex; width: 100%; } .signup-seg button { flex: 1; } }
+.signup-grid th.su-person { text-align: center; min-width: 44px; }
+.signup-grid td.su-cell { text-align: center; font-weight: 700; font-size: 1rem; }
+.table.signup-grid td.su-yes { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, var(--surface)); }
+.table.signup-grid td.su-maybe { color: var(--planned-ink, #8a4b0c); background: var(--planned-soft); }
+.table.signup-grid td.su-no { color: var(--muted); background: var(--surface-2); }
+.signup-grid .input-num { width: 64px; min-height: 32px; padding: 0 6px; text-align: right; }
+.signup-grid .su-enough { color: var(--ok); }
+.table.signup-grid tr.su-assign td { background: var(--surface-2); }
+.su-choices { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 8px 0; }
+.su-choices .check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.su-choices .check input { width: 18px; height: 18px; accent-color: var(--accent); }
+.signup-grid tbody tr:not(.su-assign) td:first-child, .signup-grid th:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); min-width: 190px; }
+.su-assign-form { position: sticky; left: 14px; max-width: calc(100vw - 60px); }

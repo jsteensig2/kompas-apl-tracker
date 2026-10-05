@@ -68,6 +68,16 @@ export function createServer({ dbFile = process.env.DB_FILE || fileURLToPath(new
     }
   });
 
+  // The consultant answers whether they can take a Foreløbig course (Tilmelding).
+  app.put('/k/:token/signup/:id', (req, res) => {
+    try {
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(api.setSignup(req.params.token, Number(req.params.id), req.body));
+    } catch (err) {
+      res.status(err.status || 500).json({ error: err.status ? err.message : 'Der opstod en fejl på serveren.' });
+    }
+  });
+
   // Fetches the admin's own calendar (saved iCal link) and returns events to register.
   app.get('/api/calendar/events', async (req, res) => {
     try {

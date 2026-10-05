@@ -39,7 +39,7 @@ function requireAdmin(user) {
 }
 
 const ACTIVITY_SELECT = `
-  SELECT a.id, a.date, a.duration, a.title, a.participants, a.pending, a.reschedule,
+  SELECT a.id, a.date, a.duration, a.title, a.participants, a.pending, a.reschedule, a.consultants_needed,
          a.apl_type_id, t.name AS apl_type,
          a.school_id, s.name AS school,
          a.municipality_id, m.name AS municipality,
@@ -554,7 +554,91 @@ export function createApi(db, { XLSX } = {}) {
     const planned = rows.filter((a) => a.status === 'planned').sort((x, y) => x.date.localeCompare(y.date));
     const byYear = {};
     for (const a of held) byYear[a.date.slice(0, 4)] = (byYear[a.date.slice(0, 4)] || 0) + a.sessions;
-    return { name: c.name, today: todayIso(), feedPath: `/calendar/feed/${c.feed_token}.ics`, held, planned, sessionsByYear: byYear };
+    return { name: c.name, today: todayIso(), feedPath: `/calendar/feed/${c.feed_token}.ics`, held, planned, sessionsByYear: byYear, signup: signupList(c.id) };
+  }
+
+  // --- Tilmelding ---------------------------------------------------------------------------
+  // Works like a Doodle: Foreløbig courses from today on that have no consultant yet are open, and
+  // every consultant answers Kan, Måske or Kan ikke on their own page. Kompas sees all answers and
+  // puts the chosen consultants on the course (one course per consultant, as everywhere else).
+  const ANSWERS = ['yes', 'maybe', 'no'];
+  const OPEN_WHERE = 'a.pending = 1 AND a.consultant_id IS NULL AND a.date >= ?';
+  const openCourses = () => db.all(`${ACTIVITY_SELECT} WHERE ${OPEN_WHERE} ORDER BY a.date, s.name, a.id`, [todayIso()])
+    .map((a) => ({ id: a.id, date: a.date, duration: a.duration, title: a.title, school: a.school || '', municipality: a.municipality || '',
+      reseller: a.reseller, needed: a.consultants_needed ?? null }));
+  const openAnswers = () => db.all(`SELECT cs.activity_id, cs.consultant_id, cs.answer FROM course_signups cs
+    JOIN activities a ON a.id = cs.activity_id WHERE ${OPEN_WHERE}`, [todayIso()]);
+  const openCourse = (id) => {
+    const row = db.get(`SELECT a.id FROM activities a WHERE a.id = ? AND ${OPEN_WHERE}`, [id, todayIso()]);
+    if (!row) throw new HttpError(404, 'Kurset er ikke længere åbent for tilmelding.');
+    return row;
+  };
+
+  function signupList(consultantId) {
+    const answers = openAnswers();
+    return openCourses().map((c) => {
+      const mine = answers.find((x) => x.activity_id === c.id && x.consultant_id === consultantId);
+      return { ...c, answer: mine?.answer || '', yes: answers.filter((x) => x.activity_id === c.id && x.answer === 'yes').length };
+    });
+  }
+
+  function signupOverview(user) {
+    requireAdmin(user);
+    const answers = openAnswers();
+    const consultants = db.all('SELECT id, name, initials, feed_token IS NOT NULL AS has_link FROM consultants ORDER BY name')
+      .map((c) => ({ ...c, has_link: Boolean(c.has_link) }));
+    const courses = openCourses().map((c) => ({ ...c,
+      answers: Object.fromEntries(answers.filter((x) => x.activity_id === c.id).map((x) => [x.consultant_id, x.answer])) }));
+    return { consultants, courses };
+  }
+
+  function setSignup(token, activityId, body) {
+    const c = consultantByToken(token);
+    openCourse(activityId);
+    const answer = String(body?.answer || '');
+    if (answer && !ANSWERS.includes(answer)) throw new HttpError(400, 'Ugyldigt svar.');
+    if (answer) {
+      db.run(`INSERT INTO course_signups (activity_id, consultant_id, answer) VALUES (?, ?, ?)
+              ON CONFLICT (activity_id, consultant_id) DO UPDATE SET answer = excluded.answer, updated_at = datetime('now')`, [activityId, c.id, answer]);
+    } else {
+      db.run('DELETE FROM course_signups WHERE activity_id = ? AND consultant_id = ?', [activityId, c.id]);
+    }
+    return signupList(c.id);
+  }
+
+  function setNeeded(user, id, body) {
+    requireAdmin(user);
+    openCourse(id);
+    const raw = String(body?.needed ?? '').trim();
+    const n = raw === '' ? null : Number(raw);
+    if (n !== null && (!Number.isInteger(n) || n < 1 || n > 50)) throw new HttpError(400, 'Antal konsulenter skal være et helt tal fra 1 til 50.');
+    db.run("UPDATE activities SET consultants_needed = ?, updated_at = datetime('now') WHERE id = ?", [n, id]);
+    return { ok: true };
+  }
+
+  // The first chosen consultant takes the open course; every other one gets a copy of it.
+  // The courses stay Foreløbig until Kompas confirms them.
+  function assignConsultants(user, id, body) {
+    requireAdmin(user);
+    openCourse(id);
+    const ids = [...new Set((Array.isArray(body?.consultant_ids) ? body.consultant_ids : []).map(int).filter(Boolean))];
+    if (!ids.length) throw new HttpError(400, 'Vælg mindst én konsulent.');
+    for (const cid of ids) if (!db.get('SELECT id FROM consultants WHERE id = ?', [cid])) throw new HttpError(400, 'Konsulenten findes ikke.');
+    db.exec('BEGIN');
+    try {
+      db.run("UPDATE activities SET consultant_id = ?, updated_at = datetime('now') WHERE id = ?", [ids[0], id]);
+      for (const cid of ids.slice(1)) {
+        db.run(`INSERT INTO activities (date, duration, apl_type_id, title, school_id, municipality_id, participants, consultant_id,
+                  reseller_id, paid_by_id, pending, reschedule, consultants_needed, created_by)
+                SELECT date, duration, apl_type_id, title, school_id, municipality_id, participants, ?,
+                  reseller_id, paid_by_id, pending, reschedule, consultants_needed, ? FROM activities WHERE id = ?`, [cid, user.id, id]);
+      }
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+    return { assigned: ids.length };
   }
 
   /** Subscription feed: authenticated by the secret token in the link, not by a login. */
@@ -623,6 +707,9 @@ export function createApi(db, { XLSX } = {}) {
       case 'PUT /activities/:id/participants': return { json: setParticipants(user, int(parts[1]), body) };
       case 'PUT /activities/:id/pending': return { json: setPending(user, int(parts[1]), body) };
       case 'DELETE /activities/:id': return { json: deleteActivity(user, id) };
+      case 'GET /signups': return { json: signupOverview(user) };
+      case 'PUT /signups/:id/needed': return { json: setNeeded(user, int(parts[1]), body) };
+      case 'POST /signups/:id/assign': return { json: assignConsultants(user, int(parts[1]), body) };
       case 'GET /admin/consultants/:id/feed': return { json: consultantFeed(user, int(parts[2]), false) };
       case 'POST /admin/consultants/:id/feed': return { json: consultantFeed(user, int(parts[2]), true) };
       case `GET /admin/${parts[1]}`: return { json: adminList(user, parts[1]) };
@@ -633,5 +720,5 @@ export function createApi(db, { XLSX } = {}) {
     }
   }
 
-  return { handle, feed, consultantOverview, calendarUrlFor: (user) => db.get('SELECT calendar_url FROM users WHERE id = ?', [user.id])?.calendar_url || '' };
+  return { handle, feed, consultantOverview, setSignup, calendarUrlFor: (user) => db.get('SELECT calendar_url FROM users WHERE id = ?', [user.id])?.calendar_url || '' };
 }

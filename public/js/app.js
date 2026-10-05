@@ -46,6 +46,7 @@ const state = {
   prefill: null, // values from a calendar event
   calEvents: null,
   calShowAll: false,
+  signupMunicipality: '',
   dashFilters: { year: String(new Date().getFullYear()), reseller: '' },
   listFilters: { q: '', status: '', year: String(new Date().getFullYear()), from: '', to: '', reseller: '', municipality: '', consultant: '', type: '', reschedule: '' },
   importResult: null,
@@ -69,10 +70,10 @@ function toast(msg, kind = 'ok') {
 }
 
 // --- Navigation ----------------------------------------------------------------------------
-const VIEWS = ['dashboard', 'activities', 'register', 'import', 'calendar', 'admin', 'password'];
+const VIEWS = ['dashboard', 'activities', 'register', 'import', 'calendar', 'signup', 'admin', 'password'];
 
 function go(view, { editing = null, prefill = null, copyOf = null } = {}) {
-  if (!isAdmin() && ['register', 'admin', 'import'].includes(view)) view = 'dashboard';
+  if (!isAdmin() && ['register', 'admin', 'import', 'signup'].includes(view)) view = 'dashboard';
   state.view = view;
   state.editing = editing;
   state.prefill = prefill;
@@ -92,7 +93,7 @@ function renderShell() {
   const me = state.me;
   const nav = [['dashboard', 'Overblik'], ['activities', 'Aktiviteter']];
   nav.push(['calendar', 'Kalender']);
-  if (isAdmin()) nav.push(['admin', 'Administration']);
+  if (isAdmin()) nav.push(['signup', 'Tilmelding'], ['admin', 'Administration']);
   $('#app').innerHTML = `
     <header class="topbar">
       <div class="topbar-inner">
@@ -1343,12 +1344,82 @@ async function renderAdmin(root) {
   });
 }
 
+// --- Tilmelding --------------------------------------------------------------------------------
+// Doodle for Foreløbig courses without a consultant: the consultants answer on their own page
+// (Konsulentlink); here Kompas sees every answer and puts the chosen consultants on the course.
+const ANSWER_MARK = { yes: ['✓', 'Kan'], maybe: ['?', 'Måske'], no: ['✕', 'Kan ikke'] };
+
+async function renderSignup(root) {
+  const { consultants, courses } = await api.get('/api/signups');
+  const munis = [...new Set(courses.map((c) => c.municipality).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'da'));
+  if (state.signupMunicipality && !munis.includes(state.signupMunicipality)) state.signupMunicipality = '';
+  const shown = courses.filter((c) => !state.signupMunicipality || c.municipality === state.signupMunicipality);
+  const count = (c, k) => Object.values(c.answers).filter((a) => a === k).length;
+  const silent = consultants.filter((p) => !courses.some((c) => c.answers[p.id]));
+  root.innerHTML = `
+    <div class="pagehead"><div><p class="eyebrow">Foreløbige kurser</p><h1>Tilmelding</h1>
+      <p class="muted">Foreløbige kurser uden konsulent. Konsulenterne svarer Kan, Måske eller Kan ikke på deres konsulentside, og du sætter dem på kurset her.
+        Linket til konsulentsiden finder du under Administration › Konsulenter › Konsulentlink.</p></div></div>
+    ${munis.length > 1 ? `<div class="filters filters-inline"><label class="field field-compact"><span>Kommune</span><select id="su-muni">
+      <option value="">Alle kommuner</option>${munis.map((m) => `<option ${m === state.signupMunicipality ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></label></div>` : ''}
+    ${!shown.length ? `<section class="card"><p class="empty">Der er ingen foreløbige kurser uden konsulent lige nu. Et kursus kommer med her, når det er markeret som Foreløbig og ikke har nogen konsulent.</p></section>` : `
+    <section class="card card-flush"><div class="table-wrap signup-wrap"><table class="table signup-grid">
+      <thead><tr><th>Kursus</th><th class="num">Skal bruges</th><th class="num">Kan</th>
+        ${consultants.map((p) => `<th class="su-person" title="${esc(p.name)}">${esc(p.initials || p.name.split(' ')[0])}</th>`).join('')}<th></th></tr></thead>
+      <tbody>${shown.map((c) => {
+        const yes = count(c, 'yes');
+        return `<tr data-id="${c.id}">
+        <td><span class="nowrap"><b>${fmtDate(c.date)}</b> · ${c.duration === 'full' ? 'Hel dag' : 'Halv dag'}</span>
+          <div><b>${esc(c.title)}</b></div><div class="muted small">${esc(c.school || '–')}${c.municipality ? ` · ${esc(c.municipality)}` : ''} · ${esc(c.reseller)}</div></td>
+        <td class="num"><input class="input-num" type="number" min="1" max="50" value="${c.needed ?? ''}" data-needed aria-label="Konsulenter der skal bruges"></td>
+        <td class="num"><b class="${c.needed && yes >= c.needed ? 'su-enough' : ''}">${yes}</b>${count(c, 'maybe') ? `<div class="muted small">+${count(c, 'maybe')} måske</div>` : ''}</td>
+        ${consultants.map((p) => { const a = c.answers[p.id]; return `<td class="su-cell ${a ? `su-${a}` : ''}" title="${esc(p.name)}: ${a ? ANSWER_MARK[a][1] : 'Har ikke svaret'}">${a ? ANSWER_MARK[a][0] : '<span class="muted">–</span>'}</td>`; }).join('')}
+        <td><button type="button" class="btn btn-sm" data-assign>Sæt på</button></td></tr>`;
+      }).join('')}</tbody></table></div></section>`}
+    <p class="muted small">✓ Kan · ? Måske · ✕ Kan ikke · – har ikke svaret.${silent.length ? ` Har ikke svaret på noget endnu: ${silent.map((p) => `${esc(p.name)}${p.has_link ? '' : ' (har ikke fået et konsulentlink)'}`).join(', ')}.` : ''}</p>`;
+
+  $('#su-muni')?.addEventListener('change', (e) => { state.signupMunicipality = e.target.value; renderSignup(root); });
+  $$('.signup-grid tbody tr').forEach((tr) => {
+    const c = courses.find((x) => String(x.id) === tr.dataset.id);
+    const needed = tr.querySelector('[data-needed]');
+    needed.onchange = async () => {
+      try { await api.put(`/api/signups/${c.id}/needed`, { needed: needed.value }); toast('Gemt'); await renderSignup(root); } catch (ex) { toast(ex.message, 'err'); }
+    };
+    tr.querySelector('[data-assign]').onclick = () => {
+      const next = tr.nextElementSibling;
+      if (next?.classList.contains('su-assign')) { next.remove(); return; }
+      // Those who said Kan come first and are ticked, up to the number needed.
+      const order = { yes: 0, maybe: 1, undefined: 2, no: 3 };
+      const ranked = [...consultants].sort((a, b) => order[c.answers[a.id]] - order[c.answers[b.id]]);
+      const limit = c.needed || Infinity;
+      let ticked = 0;
+      tr.insertAdjacentHTML('afterend', `<tr class="su-assign"><td colspan="${consultants.length + 4}">
+        <form class="su-assign-form"><p class="small"><b>Hvem skal tage kurset?</b> Hver konsulent får sit eget kursus, og kurserne forbliver Foreløbige, indtil du godkender dem.</p>
+          <div class="su-choices">${ranked.map((p) => { const a = c.answers[p.id]; const on = a === 'yes' && ticked < limit; if (on) ticked += 1;
+            return `<label class="check"><input type="checkbox" name="c" value="${p.id}" ${on ? 'checked' : ''}> ${esc(p.name)} <span class="muted small">${a ? ANSWER_MARK[a][1] : 'ikke svaret'}</span></label>`; }).join('')}</div>
+          <div class="copyrow"><button class="btn btn-primary btn-sm" type="submit">Sæt på kurset</button><button class="btn btn-sm" type="button" data-cancel>Annullér</button></div>
+        </form></td></tr>`);
+      const row = tr.nextElementSibling;
+      row.querySelector('[data-cancel]').onclick = () => row.remove();
+      row.querySelector('form').onsubmit = async (e) => {
+        e.preventDefault();
+        const ids = [...e.target.querySelectorAll('input:checked')].map((i) => Number(i.value));
+        try {
+          const { assigned } = await api.post(`/api/signups/${c.id}/assign`, { consultant_ids: ids });
+          toast(`${assigned} ${assigned === 1 ? 'konsulent' : 'konsulenter'} sat på kurset`);
+          await renderSignup(root);
+        } catch (ex) { toast(ex.message, 'err'); }
+      };
+    };
+  });
+}
+
 // --- Boot ----------------------------------------------------------------------------------
 async function render() {
   renderShell();
   const root = $('#view');
   // Long tables get the full screen width.
-  document.body.classList.toggle('is-wide', ['activities', 'import'].includes(state.view));
+  document.body.classList.toggle('is-wide', ['activities', 'import', 'signup'].includes(state.view));
   try {
     if (state.me.must_change_password) return renderChangePassword(root, { forced: true });
     if (state.view === 'password') return renderChangePassword(root, { forced: false });
@@ -1356,6 +1427,7 @@ async function render() {
     else if (state.view === 'register') renderRegister(root);
     else if (state.view === 'admin') await renderAdmin(root);
     else if (state.view === 'calendar') await renderCalendar(root);
+    else if (state.view === 'signup') await renderSignup(root);
     else if (state.view === 'import') renderImport(root);
     else await renderDashboard(root);
   } catch (ex) {
