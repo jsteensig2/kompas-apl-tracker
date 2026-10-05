@@ -499,14 +499,12 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 .signup-seg button { min-width: 72px; }
 .signup-seg button.ans-yes.on { background: var(--ok); color: var(--surface); }
 .signup-seg button.ans-maybe.on { background: var(--planned); color: #2e1700; }
-.signup-seg button.ans-no.on { background: var(--danger-soft); color: var(--danger); outline: 1px solid var(--danger); }
 .signup-seg button:disabled { opacity: 0.6; cursor: progress; }
 @media (max-width: 560px) { .signup-seg { display: flex; width: 100%; } .signup-seg button { flex: 1; } }
 .signup-grid th.su-person { text-align: center; min-width: 44px; }
 .signup-grid td.su-cell { text-align: center; font-weight: 700; font-size: 1rem; }
 .table.signup-grid td.su-yes { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, var(--surface)); }
 .table.signup-grid td.su-maybe { color: var(--planned-ink, #8a4b0c); background: var(--planned-soft); }
-.table.signup-grid td.su-no { color: var(--muted); background: var(--surface-2); }
 .signup-grid .input-num { width: 64px; min-height: 32px; padding: 0 6px; text-align: right; }
 .signup-grid .su-enough { color: var(--ok); }
 .table.signup-grid tr.su-assign td { background: var(--surface-2); }

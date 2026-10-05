@@ -118,7 +118,7 @@ konsulent(er) igen.
 
 ## Tilmelding til foreløbige kurser
 
-Fungerer som en Doodle. Foreløbige kurser fra i dag og frem, som ikke har nogen konsulent, vises øverst på hver konsulents side (`/k/<token>`), hvor konsulenten svarer **Kan**, **Måske** eller **Kan ikke**. Under fanen **Tilmelding** ser Kompas alle svar i et skema (kan filtreres på kommune), skriver hvor mange konsulenter kurset skal bruge, og trykker **Sæt på** for at vælge konsulenterne. Den første valgte overtager kurset, de øvrige får hver deres kopi (én konsulent pr. kursus). Kurserne forbliver Foreløbige, indtil de godkendes, og forsvinder fra tilmeldingen.
+Fungerer som en Doodle. Foreløbige kurser fra i dag og frem, som ikke har nogen konsulent, vises øverst på hver konsulents side (`/k/<token>`), hvor konsulenten klikker **Kan** eller **Måske** ved de kurser, de kan tage (intet svar betyder kan ikke). Under fanen **Tilmelding** ser Kompas alle svar i et skema (kan filtreres på kommune), skriver hvor mange konsulenter kurset skal bruge, og trykker **Sæt på** for at vælge konsulenterne. Den første valgte overtager kurset, de øvrige får hver deres kopi (én konsulent pr. kursus). Kurserne forbliver Foreløbige, indtil de godkendes, og forsvinder fra tilmeldingen.
 
 ## Senere udvidelser (ikke bygget)
 

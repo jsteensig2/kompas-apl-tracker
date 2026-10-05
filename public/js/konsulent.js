@@ -46,17 +46,18 @@ function table(rows, planned) {
 }
 
 // Tilmelding: Foreløbig courses without a consultant yet. Like a Doodle, the consultant answers
-// Kan, Måske or Kan ikke; Kompas sees the answers and puts consultants on the courses.
-const ANSWERS = [['yes', 'Kan'], ['maybe', 'Måske'], ['no', 'Kan ikke']];
+// Kan or Måske (no answer means they cannot); Kompas sees the answers and puts consultants on the courses.
+const ANSWERS = [['yes', 'Kan'], ['maybe', 'Måske']];
 const people = (n) => `${n} ${n === 1 ? 'konsulent' : 'konsulenter'}`;
 const needText = (c) => `${c.needed ? `Skal bruge ${people(c.needed)} · ` : ''}${c.yes ? `${people(c.yes)} har sagt ja` : 'Ingen har sagt ja endnu'}`;
 
+const signedText = () => { const n = data.signup.filter((c) => c.answer).length; return `Du har meldt dig på ${n} af ${data.signup.length}`; };
+
 function signupSection() {
   if (!data.signup.length) return '';
-  const answered = data.signup.filter((c) => c.answer).length;
   return `<section class="card card-flush" id="signup"><div class="card-head card-head-pad"><h2>Kan du tage disse kurser?</h2>
-      <span class="muted small" id="signup-count">${answered} af ${data.signup.length} besvaret</span></div>
-    <p class="card-pad muted">Kurserne er foreløbige og har endnu ingen konsulent. Svar på dem alle, så kan Kompas fordele dem. Du kan altid ændre dit svar. Tryk på dit svar igen for at fjerne det.</p>
+      <span class="muted small" id="signup-count">${signedText()}</span></div>
+    <p class="card-pad muted">Kurserne er foreløbige og har endnu ingen konsulent. Klik Kan eller Måske ved de kurser, du kan tage. Kurser, du ikke klikker på, regner Kompas med, at du ikke kan. Tryk på dit svar igen for at fjerne det.</p>
     <ul class="signup-list">${data.signup.map((c) => `
       <li class="signup-row" data-id="${c.id}">
         <div class="signup-info">
@@ -86,7 +87,7 @@ function bindSignup() {
           if (!next) { li.remove(); toast('Kurset er ikke længere åbent'); return; }
           li.querySelectorAll('[data-answer]').forEach((x) => { const on = x.dataset.answer === next.answer; x.classList.toggle('on', on); x.setAttribute('aria-pressed', on); });
           li.querySelector('[data-need]').textContent = needText(next);
-          document.getElementById('signup-count').textContent = `${data.signup.filter((x) => x.answer).length} af ${data.signup.length} besvaret`;
+          document.getElementById('signup-count').textContent = signedText();
           toast(answer ? 'Svar gemt' : 'Svar fjernet');
         } catch (ex) {
           toast(ex.message);
