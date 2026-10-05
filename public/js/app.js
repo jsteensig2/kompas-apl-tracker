@@ -70,10 +70,10 @@ function toast(msg, kind = 'ok') {
 }
 
 // --- Navigation ----------------------------------------------------------------------------
-const VIEWS = ['dashboard', 'activities', 'register', 'import', 'calendar', 'signup', 'admin', 'password'];
+const VIEWS = ['dashboard', 'activities', 'register', 'import', 'calendar', 'signup', 'messages', 'admin', 'password'];
 
 function go(view, { editing = null, prefill = null, copyOf = null } = {}) {
-  if (!isAdmin() && ['register', 'admin', 'import', 'signup'].includes(view)) view = 'dashboard';
+  if (!isAdmin() && ['register', 'admin', 'import', 'signup', 'messages'].includes(view)) view = 'dashboard';
   state.view = view;
   state.editing = editing;
   state.prefill = prefill;
@@ -93,7 +93,7 @@ function renderShell() {
   const me = state.me;
   const nav = [['dashboard', 'Overblik'], ['activities', 'Aktiviteter']];
   nav.push(['calendar', 'Kalender']);
-  if (isAdmin()) nav.push(['signup', 'Tilmelding'], ['admin', 'Administration']);
+  if (isAdmin()) nav.push(['signup', 'Tilmelding'], ['messages', 'Beskeder'], ['admin', 'Administration']);
   $('#app').innerHTML = `
     <header class="topbar">
       <div class="topbar-inner">
@@ -1414,6 +1414,56 @@ async function renderSignup(root) {
   });
 }
 
+// --- Beskeder ----------------------------------------------------------------------------------
+// One-way notices to the consultants. They read them at the top of their consultant page.
+const fmtStamp = (ts) => new Date(`${ts.replace(' ', 'T')}Z`).toLocaleDateString('da-DK', { day: 'numeric', month: 'long', year: 'numeric' });
+
+async function renderMessages(root) {
+  const messages = await api.get('/api/messages');
+  const consultants = state.options.consultants || [];
+  root.innerHTML = `
+    <div class="pagehead"><div><p class="eyebrow">Til konsulenterne</p><h1>Beskeder</h1>
+      <p class="muted">Beskederne står øverst på konsulentsiden, nyeste først, og nye er markeret med Ny. Konsulenterne får ingen mail eller sms,
+        så de ser beskeden, næste gang de åbner deres konsulentlink.</p></div></div>
+    <section class="card"><form class="msg-form" id="msg-form">
+      <div class="form-grid">
+        <label class="field"><span>Til</span><select name="consultant_id">
+          <option value="">Alle konsulenter</option>${consultants.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></label>
+        <label class="field"><span>Overskrift</span><input name="title" required maxlength="200" placeholder="Fx Nyt materiale til Modul 2"></label>
+        <label class="field field-wide"><span>Besked</span><textarea name="body" maxlength="5000" placeholder="Skriv beskeden her. Links bliver klikbare."></textarea></label>
+      </div>
+      <div class="copyrow"><button class="btn btn-primary" type="submit">Send besked</button></div>
+    </form></section>
+    <section class="card"><div class="card-head"><h2>Sendte beskeder</h2><span class="muted small">${messages.length ? 'Nyeste først' : ''}</span></div>
+      ${!messages.length ? '<p class="empty">Du har ikke sendt nogen beskeder endnu.</p>' : `<ul class="msg-list">${messages.map((m) => `
+        <li class="msg" data-id="${m.id}">
+          <div class="msg-head"><h3>${esc(m.title)}</h3></div>
+          <div class="muted small">${esc(fmtStamp(m.created_at))} · Til ${m.consultant_id ? esc(m.consultant) : 'alle konsulenter'}${m.author ? ` · Fra ${esc(m.author)}` : ''}</div>
+          ${m.body ? `<p class="msg-body">${esc(m.body)}</p>` : ''}
+          <div class="msg-actions"><span class="small" title="${esc(m.read.length ? `Læst af: ${m.read.join(', ')}` : 'Ingen har læst den endnu')}"><b>Læst af ${m.read.length} af ${m.read.length + m.unread.length}</b></span>
+            ${m.unread.length && m.read.length ? `<span class="muted small">Mangler: ${m.unread.map(esc).join(', ')}</span>` : ''}
+            <button type="button" class="linkbtn" data-delete>Slet</button></div>
+        </li>`).join('')}</ul>`}
+      <p class="muted small">Ved beskeder til alle tæller kun konsulenter, der har fået et konsulentlink.</p></section>`;
+
+  $('#msg-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector('[type=submit]');
+    btn.disabled = true;
+    try {
+      await api.post('/api/messages', Object.fromEntries(new FormData(e.target)));
+      toast('Beskeden er sendt');
+      await renderMessages(root);
+    } catch (ex) { toast(ex.message, 'err'); btn.disabled = false; }
+  };
+  $$('[data-delete]').forEach((b) => {
+    b.onclick = async () => {
+      if (!confirm('Slet beskeden? Den forsvinder også fra konsulenternes side.')) return;
+      try { await api.del(`/api/messages/${b.closest('[data-id]').dataset.id}`); toast('Slettet'); await renderMessages(root); } catch (ex) { toast(ex.message, 'err'); }
+    };
+  });
+}
+
 // --- Boot ----------------------------------------------------------------------------------
 async function render() {
   renderShell();
@@ -1428,6 +1478,7 @@ async function render() {
     else if (state.view === 'admin') await renderAdmin(root);
     else if (state.view === 'calendar') await renderCalendar(root);
     else if (state.view === 'signup') await renderSignup(root);
+    else if (state.view === 'messages') await renderMessages(root);
     else if (state.view === 'import') renderImport(root);
     else await renderDashboard(root);
   } catch (ex) {
