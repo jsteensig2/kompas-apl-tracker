@@ -45,6 +45,59 @@ function table(rows, planned) {
       </li>`).join('')}</ul>`;
 }
 
+// Tilmelding: Foreløbig courses without a consultant yet. Like a Doodle, the consultant answers
+// Kan, Måske or Kan ikke; Kompas sees the answers and puts consultants on the courses.
+const ANSWERS = [['yes', 'Kan'], ['maybe', 'Måske'], ['no', 'Kan ikke']];
+const people = (n) => `${n} ${n === 1 ? 'konsulent' : 'konsulenter'}`;
+const needText = (c) => `${c.needed ? `Skal bruge ${people(c.needed)} · ` : ''}${c.yes ? `${people(c.yes)} har sagt ja` : 'Ingen har sagt ja endnu'}`;
+
+function signupSection() {
+  if (!data.signup.length) return '';
+  const answered = data.signup.filter((c) => c.answer).length;
+  return `<section class="card card-flush" id="signup"><div class="card-head card-head-pad"><h2>Kan du tage disse kurser?</h2>
+      <span class="muted small" id="signup-count">${answered} af ${data.signup.length} besvaret</span></div>
+    <p class="card-pad muted">Kurserne er foreløbige og har endnu ingen konsulent. Svar på dem alle, så kan Kompas fordele dem. Du kan altid ændre dit svar. Tryk på dit svar igen for at fjerne det.</p>
+    <ul class="signup-list">${data.signup.map((c) => `
+      <li class="signup-row" data-id="${c.id}">
+        <div class="signup-info">
+          <div class="act-date">${esc(fmtDate(c.date))} · ${c.duration === 'full' ? 'Hel dag' : 'Halv dag'}</div>
+          <div class="act-title">${esc(c.title)}</div>
+          <div class="muted small">${esc(c.school || '–')}${c.municipality ? ` · ${esc(c.municipality)}` : ''} · ${esc(c.reseller)}</div>
+          <div class="muted small" data-need>${needText(c)}</div>
+        </div>
+        <div class="seg signup-seg" role="group" aria-label="Kan du tage kurset?">${ANSWERS.map(([k, l]) => `
+          <button type="button" data-answer="${k}" class="ans-${k} ${c.answer === k ? 'on' : ''}" aria-pressed="${c.answer === k}">${l}</button>`).join('')}</div>
+      </li>`).join('')}</ul></section>`;
+}
+
+function bindSignup() {
+  document.querySelectorAll('.signup-row').forEach((li) => {
+    li.querySelectorAll('[data-answer]').forEach((b) => {
+      b.onclick = async () => {
+        const c = data.signup.find((x) => String(x.id) === li.dataset.id);
+        const answer = c.answer === b.dataset.answer ? '' : b.dataset.answer;
+        li.querySelectorAll('button').forEach((x) => { x.disabled = true; });
+        try {
+          const r = await fetch(`/k/${encodeURIComponent(token)}/signup/${c.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ answer }) });
+          const res = await r.json();
+          if (!r.ok) throw new Error(res.error || 'Svaret kunne ikke gemmes.');
+          data.signup = res;
+          const next = data.signup.find((x) => x.id === c.id);
+          if (!next) { li.remove(); toast('Kurset er ikke længere åbent'); return; }
+          li.querySelectorAll('[data-answer]').forEach((x) => { const on = x.dataset.answer === next.answer; x.classList.toggle('on', on); x.setAttribute('aria-pressed', on); });
+          li.querySelector('[data-need]').textContent = needText(next);
+          document.getElementById('signup-count').textContent = `${data.signup.filter((x) => x.answer).length} af ${data.signup.length} besvaret`;
+          toast(answer ? 'Svar gemt' : 'Svar fjernet');
+        } catch (ex) {
+          toast(ex.message);
+        } finally {
+          li.querySelectorAll('button').forEach((x) => { x.disabled = false; });
+        }
+      };
+    });
+  });
+}
+
 function render() {
   const year = data.today.slice(0, 4);
   const thisYear = data.sessionsByYear[year] || 0; // a full day counts as two workshops
@@ -75,6 +128,8 @@ function render() {
         <div class="kpi"><div class="kpi-num">${data.held.length}</div><div class="kpi-label">Afholdte kurser i alt</div></div>
       </div>
 
+      ${signupSection()}
+
       <section class="card apple-card">
         <div class="card-head"><h2>Registrering hos Apple</h2></div>
         <div class="apple-count">
@@ -97,6 +152,7 @@ function render() {
       <section class="card card-flush"><div class="card-head card-head-pad"><h2>Afholdte kurser</h2><span class="muted small">Nyeste først</span></div>${table(data.held, false)}</section>
     </main>`;
 
+  bindSignup();
   document.getElementById('copy-survey').onclick = async () => {
     try { await navigator.clipboard.writeText(APPLE_SURVEY); toast('Link kopieret'); } catch { window.open(APPLE_SURVEY, '_blank', 'noopener'); }
   };

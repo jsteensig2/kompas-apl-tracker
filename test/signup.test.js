@@ -1,0 +1,82 @@
+// Tilmelding: consultants answer Kan / Måske / Kan ikke on Foreløbig courses without a consultant.
+import { test, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { createServer } from '../server/index.js';
+
+let server, base, opts, kim, soren, course;
+const cookies = {};
+const future = (days) => new Date(Date.now() + days * 864e5).toISOString().slice(0, 10).split('-').reverse().join('.');
+
+before(async () => {
+  const { app } = createServer({ dbFile: ':memory:' });
+  server = app.listen(0);
+  base = `http://localhost:${server.address().port}`;
+  for (const u of await (await fetch(`${base}/auth/demo-users`)).json()) {
+    const r = await fetch(`${base}/auth/demo-login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ userId: u.id }) });
+    cookies[u.reseller || 'admin'] = r.headers.get('set-cookie').split(';')[0];
+  }
+  opts = await json('admin', '/api/options');
+  kim = opts.consultants.find((c) => c.name === 'Kim Byrding');
+  soren = opts.consultants.find((c) => c.name === 'Søren Rasmussen');
+  const rows = [
+    { Dato: future(40), Varighed: 'Halv dag', 'Titel/emne': 'Modul 2 (lærere)', Skole: 'Mølleholmskolen', Kommune: 'Høje-Taastrup', Reseller: 'Atea', Status: 'Foreløbig' },
+    { Dato: future(41), Varighed: 'Halv dag', 'Titel/emne': 'Modul 1 (pædagoger)', Skole: 'Borgerskolen', Kommune: 'Høje-Taastrup', Reseller: 'Atea', Status: 'Foreløbig' },
+  ];
+  const res = await json('admin', '/api/import', { method: 'POST', body: JSON.stringify({ rows, commit: true }) });
+  assert.equal(res.summary.imported, 2);
+});
+after(() => server.close());
+const call = (who, path, opts = {}) => fetch(base + path, { ...opts, headers: { cookie: cookies[who], 'content-type': 'application/json' } });
+const json = async (...a) => (await call(...a)).json();
+const page = async (c) => (await json('admin', `/api/admin/consultants/${c.id}/feed`)).pagePath;
+const answer = (path, id, a) => fetch(`${base}${path}/signup/${id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ answer: a }) });
+
+test('Foreløbig courses without a consultant are open on every consultant page', async () => {
+  const data = await (await fetch(`${base}${await page(kim)}/data`)).json();
+  const titles = data.signup.map((c) => `${c.title} · ${c.school}`);
+  assert.ok(titles.includes('Modul 2 (lærere) · Mølleholmskolen'));
+  assert.ok(titles.includes('Modul 1 (pædagoger) · Borgerskolen'));
+  assert.ok(data.signup.every((c) => c.answer === ''));
+  course = data.signup.find((c) => c.school === 'Mølleholmskolen');
+});
+
+test('consultants answer, change and remove their answer; Kompas sees all answers', async () => {
+  const kp = await page(kim);
+  const sp = await page(soren);
+  assert.equal((await answer(kp, course.id, 'maybe')).status, 200);
+  let list = await (await answer(kp, course.id, 'yes')).json();
+  assert.equal(list.find((c) => c.id === course.id).answer, 'yes');
+  list = await (await answer(sp, course.id, 'no')).json();
+  assert.equal(list.find((c) => c.id === course.id).yes, 1);
+  assert.equal((await answer(sp, course.id, 'perhaps')).status, 400);
+  assert.equal((await answer(`/k/${'0'.repeat(48)}`, course.id, 'yes')).status, 404);
+
+  const overview = await json('admin', '/api/signups');
+  const row = overview.courses.find((c) => c.id === course.id);
+  assert.deepEqual(row.answers, { [kim.id]: 'yes', [soren.id]: 'no' });
+
+  list = await (await answer(sp, course.id, '')).json();
+  assert.equal(list.find((c) => c.id === course.id).answer, '');
+});
+
+test('only Kompas administrators see the overview and can assign', async () => {
+  assert.equal((await call('Atea', '/api/signups')).status, 403);
+  assert.equal((await call('Atea', `/api/signups/${course.id}/assign`, { method: 'POST', body: JSON.stringify({ consultant_ids: [kim.id] }) })).status, 403);
+  assert.equal((await call('admin', `/api/signups/${course.id}/needed`, { method: 'PUT', body: JSON.stringify({ needed: 0 }) })).status, 400);
+  assert.equal((await call('admin', `/api/signups/${course.id}/needed`, { method: 'PUT', body: JSON.stringify({ needed: 2 }) })).status, 200);
+  assert.equal((await json('admin', '/api/signups')).courses.find((c) => c.id === course.id).needed, 2);
+});
+
+test('assigning gives each chosen consultant their own Foreløbig course and closes sign-up', async () => {
+  const res = await json('admin', `/api/signups/${course.id}/assign`, { method: 'POST', body: JSON.stringify({ consultant_ids: [kim.id, soren.id] }) });
+  assert.equal(res.assigned, 2);
+  const acts = (await json('admin', '/api/activities?status=pending')).filter((a) => a.school === 'Mølleholmskolen');
+  assert.deepEqual(acts.map((a) => a.consultant).sort(), ['Kim Byrding', 'Søren Rasmussen']);
+  assert.ok(acts.every((a) => a.pending === 1 && a.title === 'Modul 2 (lærere)'));
+  assert.ok(!(await json('admin', '/api/signups')).courses.some((c) => c.id === course.id));
+  const data = await (await fetch(`${base}${await page(kim)}/data`)).json();
+  assert.ok(data.planned.some((a) => a.school === 'Mølleholmskolen' && a.pending));
+  assert.ok(!data.signup.some((c) => c.id === course.id));
+  assert.equal((await answer(await page(kim), course.id, 'yes')).status, 404);
+  assert.equal((await call('admin', `/api/signups/${course.id}/assign`, { method: 'POST', body: JSON.stringify({ consultant_ids: [kim.id] }) })).status, 404);
+});
