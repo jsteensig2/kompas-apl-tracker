@@ -149,9 +149,16 @@ export function createApi(db, { XLSX } = {}) {
   const nameExists = (table, name, exceptId = 0) =>
     db.get(`SELECT id FROM ${table} WHERE name = ? COLLATE NOCASE AND id <> ?`, [name, exceptId]);
 
+  // Noter are for Kompas and the consultants only, so resellers and viewers never get the count.
+  function withNoteCounts(user, rows) {
+    if (!isAdmin(user) || !rows.length) return rows;
+    const counts = new Map(db.all('SELECT activity_id, COUNT(*) AS n FROM course_notes GROUP BY activity_id').map((r) => [r.activity_id, r.n]));
+    return rows.map((r) => ({ ...r, notes: counts.get(r.id) || 0 }));
+  }
+
   function listActivities(user, f) {
     const { sql, params } = buildWhere(user, f);
-    const rows = db.all(`${ACTIVITY_SELECT}${sql} ORDER BY a.date DESC, a.id DESC`, params).map(withStatus);
+    const rows = withNoteCounts(user, db.all(`${ACTIVITY_SELECT}${sql} ORDER BY a.date DESC, a.id DESC`, params).map(withStatus));
     // Order book first (soonest at the top), then held courses newest first.
     return [...rows.filter((r) => r.status === 'planned').reverse(), ...rows.filter((r) => r.status === 'held')];
   }
@@ -184,7 +191,7 @@ export function createApi(db, { XLSX } = {}) {
         SUM(${HELD_SQL}) AS held, SUM(${PLANNED_SQL}) AS planned, SUM(a.pending) AS pending ${from} GROUP BY month ORDER BY month`, [today, today, ...params]);
     const latest = db.all(`${ACTIVITY_SELECT}${sql}${and} ${HELD_SQL} ORDER BY a.date DESC, a.id DESC LIMIT 6`, [...params, today]).map(withStatus);
     const upcoming = db.all(`${ACTIVITY_SELECT}${ob.sql}${obAnd} ${PLANNED_SQL} ORDER BY a.date ASC, a.id ASC LIMIT 6`, [...ob.params, today]).map(withStatus);
-    return { kpi, orderbook, monthly, latest, upcoming };
+    return { kpi, orderbook, monthly, latest: withNoteCounts(user, latest), upcoming: withNoteCounts(user, upcoming) };
   }
 
   // Filter and form options. Resellers only get values that occur in their own activities.
@@ -549,6 +556,7 @@ export function createApi(db, { XLSX } = {}) {
       id: a.id, date: a.date, duration: a.duration, title: a.title, school: a.school || '', municipality: a.municipality || '',
       apl_type: a.apl_type, participants: a.participants, reseller: a.reseller, status: a.status, pending: a.pending, reschedule: a.reschedule, sessions: a.duration === 'full' ? 2 : 1,
       country: GREENLAND.has(String(a.municipality || '').toLowerCase()) ? 'Grønland' : 'Danmark',
+      notes: notesFor(a.id, { consultantId: c.id }),
     }));
     const held = rows.filter((a) => a.status === 'held').sort((x, y) => y.date.localeCompare(x.date));
     const planned = rows.filter((a) => a.status === 'planned').sort((x, y) => x.date.localeCompare(y.date));
@@ -692,6 +700,60 @@ export function createApi(db, { XLSX } = {}) {
     return { ok: true };
   }
 
+  // --- Noter -------------------------------------------------------------------------------
+  // Short notes on a course ("husk projektor næste gang"). Kompas writes them in the app; the course's
+  // own consultant writes them on their page. Resellers and viewers never see them.
+  // Everyone may delete their own notes; Kompas may delete any note.
+  function notesFor(activityId, { consultantId = null, userId = null, admin = false } = {}) {
+    return db.all('SELECT id, body, author, user_id, consultant_id, created_at FROM course_notes WHERE activity_id = ? ORDER BY created_at, id', [activityId])
+      .map((n) => ({ id: n.id, body: n.body, author: n.author, created_at: n.created_at,
+        mine: admin || (consultantId != null && n.consultant_id === consultantId) || (userId != null && n.user_id === userId) }));
+  }
+
+  const noteText = (body) => {
+    const text = String(body?.body ?? '').trim();
+    if (!text) throw new HttpError(400, 'Skriv en note.');
+    if (text.length > 1000) throw new HttpError(400, 'Noten er for lang (højst 1000 tegn).');
+    return text;
+  };
+
+  function listNotes(user, id) {
+    requireAdmin(user);
+    getActivity(user, id);
+    return notesFor(id, { userId: user.id, admin: true });
+  }
+
+  function addNote(user, id, body) {
+    requireAdmin(user);
+    getActivity(user, id);
+    db.run('INSERT INTO course_notes (activity_id, body, user_id, author) VALUES (?, ?, ?, ?)', [id, noteText(body), user.id, user.name]);
+    return notesFor(id, { userId: user.id, admin: true });
+  }
+
+  function deleteNote(user, id) {
+    requireAdmin(user);
+    const n = db.get('SELECT activity_id FROM course_notes WHERE id = ?', [id]);
+    if (!n) throw new HttpError(404, 'Noten findes ikke.');
+    db.run('DELETE FROM course_notes WHERE id = ?', [id]);
+    return notesFor(n.activity_id, { userId: user.id, admin: true });
+  }
+
+  // From the consultant page: only on the consultant's own courses.
+  function consultantNotes(token, activityId, body) {
+    const c = consultantByToken(token);
+    if (!db.get('SELECT id FROM activities WHERE id = ? AND consultant_id = ?', [activityId, c.id])) throw new HttpError(404, 'Kurset findes ikke på din side.');
+    if (body !== undefined) db.run('INSERT INTO course_notes (activity_id, body, consultant_id, author) VALUES (?, ?, ?, ?)', [activityId, noteText(body), c.id, c.name]);
+    return notesFor(activityId, { consultantId: c.id });
+  }
+
+  function deleteConsultantNote(token, noteId) {
+    const c = consultantByToken(token);
+    const n = db.get('SELECT activity_id FROM course_notes WHERE id = ? AND consultant_id = ?', [noteId, c.id]);
+    if (!n) throw new HttpError(404, 'Noten findes ikke, eller den er skrevet af en anden.');
+    db.run('DELETE FROM course_notes WHERE id = ?', [noteId]);
+    return notesFor(n.activity_id, { consultantId: c.id });
+  }
+
   /** Subscription feed: authenticated by the secret token in the link, not by a login. */
   function feed(token) {
     const valid = /^[a-f0-9]{48}$/.test(String(token));
@@ -758,6 +820,9 @@ export function createApi(db, { XLSX } = {}) {
       case 'PUT /activities/:id/participants': return { json: setParticipants(user, int(parts[1]), body) };
       case 'PUT /activities/:id/pending': return { json: setPending(user, int(parts[1]), body) };
       case 'DELETE /activities/:id': return { json: deleteActivity(user, id) };
+      case 'GET /activities/:id/notes': return { json: listNotes(user, int(parts[1])) };
+      case 'POST /activities/:id/notes': return { json: addNote(user, int(parts[1]), body) };
+      case 'DELETE /notes/:id': return { json: deleteNote(user, id) };
       case 'GET /signups': return { json: signupOverview(user) };
       case 'PUT /signups/:id/needed': return { json: setNeeded(user, int(parts[1]), body) };
       case 'POST /signups/:id/assign': return { json: assignConsultants(user, int(parts[1]), body) };
@@ -774,5 +839,5 @@ export function createApi(db, { XLSX } = {}) {
     }
   }
 
-  return { handle, feed, consultantOverview, setSignup, markMessagesRead, calendarUrlFor: (user) => db.get('SELECT calendar_url FROM users WHERE id = ?', [user.id])?.calendar_url || '' };
+  return { handle, feed, consultantOverview, setSignup, markMessagesRead, consultantNotes, deleteConsultantNote, calendarUrlFor: (user) => db.get('SELECT calendar_url FROM users WHERE id = ?', [user.id])?.calendar_url || '' };
 }

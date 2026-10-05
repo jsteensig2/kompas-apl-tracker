@@ -22,13 +22,21 @@ function toast(msg) {
   clearTimeout(toast.timer); toast.timer = setTimeout(() => { t.hidden = true; }, 2500);
 }
 
+// Noter: a small speech bubble on each course; it opens the notes in a box. Empty bubble = no notes yet.
+const NOTE_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5A1.5 1.5 0 0 1 4 2h8a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 12 11H7l-3 2.5V11a1.5 1.5 0 0 1-1.5-1.5z"/></svg>';
+const noteBtn = (a) => {
+  const n = a.notes.length;
+  const label = n ? `${n} ${n === 1 ? 'note' : 'noter'}` : 'Skriv en note';
+  return ` <button type="button" class="note-btn ${n ? 'has-notes' : ''}" data-notes="${a.id}" title="${label}" aria-label="${label}">${NOTE_ICON}${n || ''}</button>`;
+};
+
 function table(rows, planned) {
   if (!rows.length) return `<p class="empty">${planned ? 'Ingen planlagte kurser lige nu.' : 'Ingen afholdte kurser endnu.'}</p>`;
   return `<div class="table-wrap"><table class="table">
     <thead><tr><th>Dato</th><th>Kursus</th><th>Skole</th><th>Varighed</th>${planned ? '' : '<th class="num">Deltagere</th><th class="num">Apple-workshops</th>'}</tr></thead>
     <tbody>${rows.map((a) => `<tr class="${rowClass(a, planned)}">
       <td class="nowrap">${esc(fmtDate(a.date))}</td>
-      <td>${a.reschedule ? STAR : ''}<b>${esc(a.title)}</b>${a.pending ? ` ${PENDING}` : ''}<div class="muted small">${esc(a.reseller)}</div></td>
+      <td>${a.reschedule ? STAR : ''}<b>${esc(a.title)}</b>${a.pending ? ` ${PENDING}` : ''}${noteBtn(a)}<div class="muted small">${esc(a.reseller)}</div></td>
       <td>${esc(a.school || '–')}${a.municipality ? `<div class="muted small">${esc(a.municipality)}</div>` : ''}</td>
       <td>${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}</td>
       ${planned ? '' : `<td class="num">${a.participants}</td><td class="num">${a.sessions}</td>`}
@@ -36,7 +44,7 @@ function table(rows, planned) {
     <ul class="cards-list k-cards">${rows.map((a) => `
       <li class="card act-card ${rowClass(a, planned)}">
         <div class="act-top"><span class="act-date">${esc(fmtDate(a.date))}</span><span class="tag">${esc(a.reseller)}</span></div>
-        <div class="act-title">${a.reschedule ? STAR : ''}${esc(a.title)}${a.pending ? ` ${PENDING}` : ''}</div>
+        <div class="act-title">${a.reschedule ? STAR : ''}${esc(a.title)}${a.pending ? ` ${PENDING}` : ''}${noteBtn(a)}</div>
         <div class="muted">${esc(a.school || '–')}${a.municipality ? ` · ${esc(a.municipality)}` : ''}</div>
         <dl class="act-meta">
           <div><dt>Varighed</dt><dd>${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}</dd></div>
@@ -125,6 +133,53 @@ function bindSignup() {
   });
 }
 
+// The notes box for one course. Notes from Kompas and from the consultant; they can delete their own.
+const course = (id) => [...data.planned, ...data.held].find((a) => String(a.id) === String(id));
+
+function openNotes(id) {
+  const a = course(id);
+  const dlg = document.getElementById('notes-dialog');
+  const draw = () => {
+    dlg.innerHTML = `<form method="dialog" class="notes-dlg">
+      <div class="card-head"><div><h2>Noter</h2><div class="muted small">${esc(fmtDate(a.date))} · ${esc(a.title)}${a.school ? ` · ${esc(a.school)}` : ''}</div></div>
+        <button class="linkbtn" value="close" aria-label="Luk">Luk</button></div>
+      ${a.notes.length ? `<ul class="note-list">${a.notes.map((n) => `<li class="note">
+          <p class="note-body">${esc(n.body)}</p>
+          <div class="note-meta muted small"><span>${esc(n.author)} · ${esc(fmtStamp(n.created_at))}</span>
+            ${n.mine ? `<button type="button" class="linkbtn danger" data-del="${n.id}">Slet</button>` : ''}</div></li>`).join('')}</ul>`
+        : '<p class="muted small">Ingen noter endnu. Skriv fx noget, man skal huske til næste gang, eller en idé. Noten ses kun af dig og Kompas.</p>'}
+      <textarea name="body" rows="3" maxlength="1000" placeholder="Skriv en kort note…" aria-label="Ny note"></textarea>
+      <div class="msg-actions"><button type="button" class="btn btn-primary" data-add>Gem note</button></div>
+    </form>`;
+    const save = async (url, opts) => {
+      try {
+        const r = await fetch(url, opts);
+        const res = await r.json();
+        if (!r.ok) throw new Error(res.error || 'Noten kunne ikke gemmes.');
+        a.notes = res;
+        document.querySelectorAll(`[data-notes="${a.id}"]`).forEach((b) => { b.outerHTML = noteBtn(a).trim(); });
+        bindNotes();
+        draw();
+        return true;
+      } catch (ex) { toast(ex.message); return false; }
+    };
+    dlg.querySelector('[data-add]').onclick = async () => {
+      const body = dlg.querySelector('textarea').value.trim();
+      if (!body) { dlg.querySelector('textarea').focus(); return; }
+      if (await save(`/k/${encodeURIComponent(token)}/courses/${a.id}/notes`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ body }) })) toast('Note gemt');
+    };
+    dlg.querySelectorAll('[data-del]').forEach((b) => {
+      b.onclick = async () => { if (await save(`/k/${encodeURIComponent(token)}/notes/${b.dataset.del}`, { method: 'DELETE' })) toast('Note slettet'); };
+    });
+  };
+  draw();
+  dlg.showModal();
+}
+
+function bindNotes() {
+  document.querySelectorAll('[data-notes]').forEach((b) => { b.onclick = () => openNotes(b.dataset.notes); });
+}
+
 function render() {
   const year = data.today.slice(0, 4);
   const thisYear = data.sessionsByYear[year] || 0; // a full day counts as two workshops
@@ -175,13 +230,16 @@ function render() {
       <section class="card card-flush"><div class="card-head card-head-pad"><h2>Kommende kurser</h2><span class="muted small">Nærmeste først</span></div>
         <dl class="guide-list k-guide">
           <div><dt><span class="pill pill-planned">Planlagt</span></dt><dd>Kurset er godkendt. Du skal afholde det på datoen.</dd></div>
+          <div><dt><span class="note-btn">${NOTE_ICON}</span></dt><dd>Noter. Tryk for at læse eller skrive en kort note på kurset, fx noget man skal huske til næste gang. Kun du og Kompas kan se noterne.</dd></div>
           <div><dt><span class="star">★</span></dt><dd>Kurset skal have en ny dato. Det står på den gamle dato, indtil en ny er fundet.</dd></div>
           <div><dt>${PENDING}</dt><dd>Datoen er aftalt, men skolen eller kommunen har endnu ikke godkendt kurset endeligt. Hold datoen fri, men regn ikke med kurset, før det skifter til Planlagt. I din kalender står der "(Foreløbig)" foran titlen.</dd></div>
         </dl>${table(data.planned, true)}</section>
       <section class="card card-flush"><div class="card-head card-head-pad"><h2>Afholdte kurser</h2><span class="muted small">Nyeste først</span></div>${table(data.held, false)}</section>
-    </main>`;
+    </main>
+    <dialog id="notes-dialog" class="dialog"></dialog>`;
 
   bindSignup();
+  bindNotes();
   if (data.messages?.some((m) => m.unread)) {
     fetch(`/k/${encodeURIComponent(token)}/messages/read`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).catch(() => {});
   }
