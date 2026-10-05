@@ -559,15 +559,15 @@ export function createApi(db, { XLSX } = {}) {
 
   // --- Tilmelding ---------------------------------------------------------------------------
   // Works like a Doodle: Foreløbig courses from today on that have no consultant yet are open, and
-  // every consultant answers Kan, Måske or Kan ikke on their own page. Kompas sees all answers and
+  // every consultant clicks Kan or Måske on their own page (no answer means they cannot). Kompas sees all answers and
   // puts the chosen consultants on the course (one course per consultant, as everywhere else).
-  const ANSWERS = ['yes', 'maybe', 'no'];
+  const ANSWERS = ['yes', 'maybe'];
   const OPEN_WHERE = 'a.pending = 1 AND a.consultant_id IS NULL AND a.date >= ?';
   const openCourses = () => db.all(`${ACTIVITY_SELECT} WHERE ${OPEN_WHERE} ORDER BY a.date, s.name, a.id`, [todayIso()])
     .map((a) => ({ id: a.id, date: a.date, duration: a.duration, title: a.title, school: a.school || '', municipality: a.municipality || '',
       reseller: a.reseller, needed: a.consultants_needed ?? null }));
   const openAnswers = () => db.all(`SELECT cs.activity_id, cs.consultant_id, cs.answer FROM course_signups cs
-    JOIN activities a ON a.id = cs.activity_id WHERE ${OPEN_WHERE}`, [todayIso()]);
+    JOIN activities a ON a.id = cs.activity_id WHERE cs.answer IN ('yes', 'maybe') AND ${OPEN_WHERE}`, [todayIso()]);
   const openCourse = (id) => {
     const row = db.get(`SELECT a.id FROM activities a WHERE a.id = ? AND ${OPEN_WHERE}`, [id, todayIso()]);
     if (!row) throw new HttpError(404, 'Kurset er ikke længere åbent for tilmelding.');

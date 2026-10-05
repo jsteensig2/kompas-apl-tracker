@@ -1,4 +1,4 @@
-// Tilmelding: consultants answer Kan / Måske / Kan ikke on Foreløbig courses without a consultant.
+// Tilmelding: consultants click Kan or Måske on Foreløbig courses without a consultant.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from '../server/index.js';
@@ -46,14 +46,15 @@ test('consultants answer, change and remove their answer; Kompas sees all answer
   assert.equal((await answer(kp, course.id, 'maybe')).status, 200);
   let list = await (await answer(kp, course.id, 'yes')).json();
   assert.equal(list.find((c) => c.id === course.id).answer, 'yes');
-  list = await (await answer(sp, course.id, 'no')).json();
+  assert.equal((await answer(sp, course.id, 'no')).status, 400);
+  list = await (await answer(sp, course.id, 'maybe')).json();
   assert.equal(list.find((c) => c.id === course.id).yes, 1);
   assert.equal((await answer(sp, course.id, 'perhaps')).status, 400);
   assert.equal((await answer(`/k/${'0'.repeat(48)}`, course.id, 'yes')).status, 404);
 
   const overview = await json('admin', '/api/signups');
   const row = overview.courses.find((c) => c.id === course.id);
-  assert.deepEqual(row.answers, { [kim.id]: 'yes', [soren.id]: 'no' });
+  assert.deepEqual(row.answers, { [kim.id]: 'yes', [soren.id]: 'maybe' });
 
   list = await (await answer(sp, course.id, '')).json();
   assert.equal(list.find((c) => c.id === course.id).answer, '');
