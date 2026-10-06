@@ -8,7 +8,7 @@
 // The same module runs in the Node server (server/index.js) and in the browser preview.
 
 import { parseIcs, suggestFromEvent } from './ical.js';
-import { runImport, TEMPLATE_HEADERS } from './import.js';
+import { runImport, TEMPLATE_HEADERS, parseClock } from './import.js';
 
 export class HttpError extends Error {
   constructor(status, message) {
@@ -39,7 +39,7 @@ function requireAdmin(user) {
 }
 
 const ACTIVITY_SELECT = `
-  SELECT a.id, a.date, a.duration, a.title, a.participants, a.pending, a.reschedule, a.consultants_needed,
+  SELECT a.id, a.date, a.start_time, a.end_time, a.duration, a.title, a.participants, a.pending, a.reschedule, a.consultants_needed,
          a.apl_type_id, t.name AS apl_type,
          a.school_id, s.name AS school,
          a.municipality_id, m.name AS municipality,
@@ -53,6 +53,13 @@ const ACTIVITY_SELECT = `
   LEFT JOIN municipalities m ON m.id = a.municipality_id
   LEFT JOIN consultants c ON c.id = a.consultant_id
   LEFT JOIN paid_by p ON p.id = a.paid_by_id`;
+
+// Dobbeltbooking: two courses the same day clash, unless both have a start and an end time
+// and the times do not overlap (09:00–12:00 and 12:30–15:00 is fine).
+const timed = (x) => Boolean(x.start_time && x.end_time);
+export const clash = (x, y) => !(timed(x) && timed(y)) || (x.start_time < y.end_time && y.start_time < x.end_time);
+// "09:00–12:00", "kl. 09:00" or "".
+export const timeText = (a) => (a.start_time ? (a.end_time ? `${a.start_time}–${a.end_time}` : `kl. ${a.start_time}`) : '');
 
 const truthy = (v) => v === true || v === 1 || /^(1|true|on|ja|yes)$/i.test(String(v ?? '').trim());
 
@@ -118,6 +125,8 @@ const LISTS = {
 
 export const EXPORT_COLUMNS = [
   ['Dato', (a) => a.date],
+  ['Starttid', (a) => a.start_time || ''],
+  ['Sluttid', (a) => a.end_time || ''],
   ['Status', (a) => (a.pending ? 'Foreløbig' : a.status === 'planned' ? 'Planlagt' : 'Afholdt')],
   ['Skal have ny dato', (a) => (a.reschedule ? 'Ja' : '')],
   ['APL-type', (a) => a.apl_type],
@@ -130,6 +139,12 @@ export const EXPORT_COLUMNS = [
   ['Reseller', (a) => a.reseller],
   ['Betalt af', (a) => a.paid_by || ''],
 ];
+
+const TZID = 'Europe/Copenhagen';
+const VTIMEZONE = ['BEGIN:VTIMEZONE', `TZID:${TZID}`,
+  'BEGIN:DAYLIGHT', 'TZOFFSETFROM:+0100', 'TZOFFSETTO:+0200', 'TZNAME:CEST', 'DTSTART:19700329T020000', 'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU', 'END:DAYLIGHT',
+  'BEGIN:STANDARD', 'TZOFFSETFROM:+0200', 'TZOFFSETTO:+0100', 'TZNAME:CET', 'DTSTART:19701025T030000', 'RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU', 'END:STANDARD',
+  'END:VTIMEZONE'];
 
 function toCsv(rows) {
   const cell = (v) => {
@@ -158,28 +173,44 @@ export function createApi(db, { XLSX } = {}) {
 
   // Dobbeltbooking: a consultant on more than one course the same day. Only Kompas is warned;
   // it never blocks saving, as two half days the same day can be fine.
-  function withDoubleBookings(user, rows) {
-    if (!isAdmin(user) || !rows.length) return rows;
-    const counts = new Map(db.all(`SELECT consultant_id, date, COUNT(*) AS n FROM activities
-        WHERE consultant_id IS NOT NULL GROUP BY consultant_id, date HAVING n > 1`).map((r) => [`${r.consultant_id}|${r.date}`, r.n]));
-    return rows.map((r) => ({ ...r, double_booked: r.consultant_id ? (counts.get(`${r.consultant_id}|${r.date}`) || 1) - 1 : 0 }));
+  // Courses that share a consultant and a day with another course, and the ids of those they clash with.
+  const SAME_DAY = `a.consultant_id IS NOT NULL AND EXISTS (SELECT 1 FROM activities b
+      WHERE b.consultant_id = a.consultant_id AND b.date = a.date AND b.id <> a.id)`;
+  function clashesOf(rows) {
+    const byDay = new Map();
+    for (const r of rows) byDay.set(`${r.consultant_id}|${r.date}`, [...(byDay.get(`${r.consultant_id}|${r.date}`) || []), r]);
+    const out = new Map();
+    for (const list of byDay.values()) {
+      for (const r of list) {
+        const others = list.filter((o) => o.id !== r.id && clash(r, o)).map((o) => o.id);
+        if (others.length) out.set(r.id, others);
+      }
+    }
+    return out;
   }
 
-  // Other courses the given consultants already have on a date (for the warning in the form).
+  function withDoubleBookings(user, rows) {
+    if (!isAdmin(user) || !rows.length) return rows;
+    const clashes = clashesOf(db.all(`SELECT a.id, a.consultant_id, a.date, a.start_time, a.end_time FROM activities a WHERE ${SAME_DAY}`));
+    return rows.map((r) => ({ ...r, double_booked: clashes.get(r.id)?.length || 0 }));
+  }
+
+  // Other courses the given consultants already have on a date at a clashing time (for the warning in the form).
   function sameDayCourses(user, f) {
     requireAdmin(user);
     const date = String(f.date || '');
     const ids = String(f.consultants || '').split(',').map(int).filter(Boolean);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !ids.length) return [];
+    const mine = { start_time: parseClock(f.start), end_time: parseClock(f.start) && parseClock(f.end) };
     return db.all(`${ACTIVITY_SELECT} WHERE a.date = ? AND a.consultant_id IN (${ids.map(() => '?').join(', ')}) AND a.id <> ?
-        ORDER BY c.name, a.id`, [date, ...ids, int(f.exclude) || 0]).map(withStatus);
+        ORDER BY c.name, a.start_time, a.id`, [date, ...ids, int(f.exclude) || 0]).filter((r) => clash(mine, r)).map(withStatus);
   }
 
-  // Upcoming days where a consultant has more than one course, across all resellers.
+  // Upcoming days where a consultant has courses at clashing times, across all resellers.
   function upcomingDoubleBookings() {
-    const rows = db.all(`${ACTIVITY_SELECT} JOIN (SELECT consultant_id, date FROM activities WHERE consultant_id IS NOT NULL AND date >= ?
-        GROUP BY consultant_id, date HAVING COUNT(*) > 1) d ON d.consultant_id = a.consultant_id AND d.date = a.date
-        ORDER BY a.date, c.name, a.id`, [todayIso()]).map(withStatus);
+    const all = db.all(`${ACTIVITY_SELECT} WHERE a.date >= ? AND ${SAME_DAY} ORDER BY a.date, c.name, a.start_time, a.id`, [todayIso()]);
+    const clashes = clashesOf(all);
+    const rows = all.filter((r) => clashes.has(r.id)).map(withStatus);
     const groups = new Map();
     for (const r of rows) {
       const key = `${r.date}|${r.consultant_id}`;
@@ -207,7 +238,7 @@ export function createApi(db, { XLSX } = {}) {
 
   function listActivities(user, f) {
     const { sql, params } = buildWhere(user, f);
-    const rows = withDoubleBookings(user, withNoteCounts(user, db.all(`${ACTIVITY_SELECT}${sql} ORDER BY a.date DESC, a.id DESC`, params).map(withStatus)));
+    const rows = withDoubleBookings(user, withNoteCounts(user, db.all(`${ACTIVITY_SELECT}${sql} ORDER BY a.date DESC, a.start_time DESC, a.id DESC`, params).map(withStatus)));
     // Order book first (soonest at the top), then held courses newest first.
     return [...rows.filter((r) => r.status === 'planned').reverse(), ...rows.filter((r) => r.status === 'held')];
   }
@@ -238,8 +269,8 @@ export function createApi(db, { XLSX } = {}) {
         COALESCE(SUM(a.pending), 0) AS pending FROM activities a${ob.sql}${obAnd} ${PLANNED_SQL}`, [...ob.params, today]);
     const monthly = db.all(`SELECT substr(a.date, 1, 7) AS month, COUNT(*) AS activities,
         SUM(${HELD_SQL}) AS held, SUM(${PLANNED_SQL}) AS planned, SUM(a.pending) AS pending ${from} GROUP BY month ORDER BY month`, [today, today, ...params]);
-    const latest = db.all(`${ACTIVITY_SELECT}${sql}${and} ${HELD_SQL} ORDER BY a.date DESC, a.id DESC LIMIT 6`, [...params, today]).map(withStatus);
-    const upcoming = db.all(`${ACTIVITY_SELECT}${ob.sql}${obAnd} ${PLANNED_SQL} ORDER BY a.date ASC, a.id ASC LIMIT 6`, [...ob.params, today]).map(withStatus);
+    const latest = db.all(`${ACTIVITY_SELECT}${sql}${and} ${HELD_SQL} ORDER BY a.date DESC, a.start_time DESC, a.id DESC LIMIT 6`, [...params, today]).map(withStatus);
+    const upcoming = db.all(`${ACTIVITY_SELECT}${ob.sql}${obAnd} ${PLANNED_SQL} ORDER BY a.date ASC, a.start_time ASC, a.id ASC LIMIT 6`, [...ob.params, today]).map(withStatus);
     const result = { kpi, orderbook, monthly, latest: withNoteCounts(user, latest), upcoming: withDoubleBookings(user, withNoteCounts(user, upcoming)) };
     if (isAdmin(user)) {
       result.consultants = consultantLoad(from, and, params, ob, obAnd, today);
@@ -308,18 +339,29 @@ export function createApi(db, { XLSX } = {}) {
     } else if (schoolName) {
       school_id = 'new';
     }
+    // Optional times on a 24-hour clock; an end time needs a start time.
+    const clock = (v, label) => {
+      if (String(v ?? '').trim() === '') return null;
+      const t = parseClock(String(v));
+      if (!t) errors.push(`${label} skal skrives som tt:mm med 24-timers ur, fx 09:00 eller 15:30.`);
+      return t;
+    };
+    const start_time = clock(b.start_time, 'Starttidspunktet');
+    const end_time = clock(b.end_time, 'Sluttidspunktet');
+    if (end_time && !start_time && String(b.start_time ?? '').trim() === '') errors.push('Skriv også et starttidspunkt, når der er et sluttidspunkt.');
+    if (start_time && end_time && end_time <= start_time) errors.push('Sluttidspunktet skal være efter starttidspunktet.');
     if (errors.length) throw new HttpError(400, errors.join(' '));
     if (school_id === 'new') {
       const existing = db.get('SELECT id FROM schools WHERE name = ? COLLATE NOCASE AND municipality_id IS ?', [schoolName, municipality_id]);
       school_id = existing ? existing.id
         : db.run('INSERT INTO schools (name, municipality_id) VALUES (?, ?)', [schoolName, municipality_id]).lastInsertRowid;
     }
-    return { date: b.date, duration: b.duration, apl_type_id, title, school_id: school_id || null, municipality_id,
+    return { date: b.date, start_time, end_time, duration: b.duration, apl_type_id, title, school_id: school_id || null, municipality_id,
       participants, consultant_id, reseller_id, paid_by_id, pending: truthy(b.pending) ? 1 : 0,
       reschedule: truthy(b.reschedule) ? 1 : 0 };
   }
 
-  const ACTIVITY_FIELDS = ['date', 'duration', 'apl_type_id', 'title', 'school_id', 'municipality_id',
+  const ACTIVITY_FIELDS = ['date', 'start_time', 'end_time', 'duration', 'apl_type_id', 'title', 'school_id', 'municipality_id',
     'participants', 'consultant_id', 'reseller_id', 'paid_by_id', 'pending', 'reschedule'];
 
   function createActivity(user, body) {
@@ -380,7 +422,7 @@ export function createApi(db, { XLSX } = {}) {
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     // Real dates in Excel
     rows.forEach((a, i) => { ws[XLSX.utils.encode_cell({ r: i + 1, c: 0 })] = { t: 'd', v: new Date(`${a.date}T00:00:00Z`), z: 'dd.mm.yyyy' }; });
-    ws['!cols'] = [12, 14, 22, 24, 18, 12, 10, 20, 12, 22].map((wch) => ({ wch }));
+    ws['!cols'] = [12, 8, 8, 14, 22, 24, 18, 12, 10, 20, 12, 22].map((wch) => ({ wch }));
     ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(rows.length, 1), c: EXPORT_COLUMNS.length - 1 } }) };
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'APL-aktiviteter');
@@ -565,15 +607,25 @@ export function createApi(db, { XLSX } = {}) {
     const next = (d) => new Date(Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10) + 1)).toISOString().slice(0, 10).replace(/-/g, '');
     const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Kompas ApS//APL Tracker//DA', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
       `X-WR-CALNAME:${esc(name)}`, 'X-WR-TIMEZONE:Europe/Copenhagen'];
+    // Courses with a start time are timed events in Danish time; the others stay all-day events.
+    // Without an end time a half day is shown as 3 hours and a full day as 7.
+    if (rows.some((a) => a.start_time)) lines.push(...VTIMEZONE);
+    const local = (d, t) => `${d.replace(/-/g, '')}T${t.replace(':', '')}00`;
+    const plus = (t, hours) => {
+      const m = Math.min(+t.slice(0, 2) * 60 + +t.slice(3, 5) + hours * 60, 23 * 60 + 59);
+      return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+    };
     for (const a of rows) {
       const where = [a.school, a.municipality].filter(Boolean).join(', ');
-      lines.push('BEGIN:VEVENT', `UID:apl-${a.id}@kompas-apl-tracker`, `DTSTAMP:${stamp}`,
-        `DTSTART;VALUE=DATE:${a.date.replace(/-/g, '')}`, `DTEND;VALUE=DATE:${next(a.date)}`,
+      const when = a.start_time
+        ? [`DTSTART;TZID=${TZID}:${local(a.date, a.start_time)}`, `DTEND;TZID=${TZID}:${local(a.date, a.end_time || plus(a.start_time, a.duration === 'full' ? 7 : 3))}`]
+        : [`DTSTART;VALUE=DATE:${a.date.replace(/-/g, '')}`, `DTEND;VALUE=DATE:${next(a.date)}`];
+      lines.push('BEGIN:VEVENT', `UID:apl-${a.id}@kompas-apl-tracker`, `DTSTAMP:${stamp}`, ...when,
         `SUMMARY:${a.reschedule ? '★ ' : ''}${a.pending ? '(Foreløbig) ' : ''}${esc(filter.consultant ? `${a.title}${a.school ? ` · ${a.school}` : ''}` : `${a.apl_type} · ${a.title}${a.school ? ` · ${a.school}` : ''}`)}`,
         `LOCATION:${esc(where)}`,
-        `DESCRIPTION:${esc([`Varighed: ${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}`, `Deltagere: ${a.participants}`,
+        `DESCRIPTION:${esc([...(a.start_time ? [`Tid: ${timeText(a)}`] : []), `Varighed: ${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}`, `Deltagere: ${a.participants}`,
           `Konsulent: ${a.consultant || '–'}`, `Reseller: ${a.reseller}`, `Betalt af: ${a.paid_by || '–'}`].join('\n'))}`,
-        'TRANSP:TRANSPARENT', 'END:VEVENT');
+        `TRANSP:${a.start_time ? 'OPAQUE' : 'TRANSPARENT'}`, 'END:VEVENT');
     }
     lines.push('END:VCALENDAR');
     return lines.map(fold).join('\r\n') + '\r\n';
@@ -607,13 +659,15 @@ export function createApi(db, { XLSX } = {}) {
     const c = consultantByToken(token);
     db.run("UPDATE consultants SET page_seen_at = datetime('now') WHERE id = ?", [c.id]);
     const rows = listActivities({ role: 'admin' }, { consultant: c.id }).map((a) => ({
-      id: a.id, date: a.date, duration: a.duration, title: a.title, school: a.school || '', municipality: a.municipality || '',
+      id: a.id, date: a.date, start_time: a.start_time, end_time: a.end_time, duration: a.duration, title: a.title, school: a.school || '', municipality: a.municipality || '',
       apl_type: a.apl_type, participants: a.participants, reseller: a.reseller, status: a.status, pending: a.pending, reschedule: a.reschedule, sessions: a.duration === 'full' ? 2 : 1,
       country: GREENLAND.has(String(a.municipality || '').toLowerCase()) ? 'Grønland' : 'Danmark',
       notes: notesFor(a.id, { consultantId: c.id }),
     }));
-    const held = rows.filter((a) => a.status === 'held').sort((x, y) => y.date.localeCompare(x.date));
-    const planned = rows.filter((a) => a.status === 'planned').sort((x, y) => x.date.localeCompare(y.date));
+    const held = rows.filter((a) => a.status === 'held')
+      .sort((x, y) => y.date.localeCompare(x.date) || (y.start_time || '').localeCompare(x.start_time || ''));
+    const planned = rows.filter((a) => a.status === 'planned')
+      .sort((x, y) => x.date.localeCompare(y.date) || (x.start_time || '').localeCompare(y.start_time || ''));
     const byYear = {};
     for (const a of held) byYear[a.date.slice(0, 4)] = (byYear[a.date.slice(0, 4)] || 0) + a.sessions;
     return { name: c.name, today: todayIso(), feedPath: `/calendar/feed/${c.feed_token}.ics`, held, planned, sessionsByYear: byYear, signup: signupList(c.id), messages: messagesFor(c.id) };
@@ -625,8 +679,8 @@ export function createApi(db, { XLSX } = {}) {
   // puts the chosen consultants on the course (one course per consultant, as everywhere else).
   const ANSWERS = ['yes', 'maybe'];
   const OPEN_WHERE = 'a.pending = 1 AND a.consultant_id IS NULL AND a.date >= ?';
-  const openCourses = () => db.all(`${ACTIVITY_SELECT} WHERE ${OPEN_WHERE} ORDER BY a.date, s.name, a.id`, [todayIso()])
-    .map((a) => ({ id: a.id, date: a.date, duration: a.duration, title: a.title, school: a.school || '', municipality: a.municipality || '',
+  const openCourses = () => db.all(`${ACTIVITY_SELECT} WHERE ${OPEN_WHERE} ORDER BY a.date, a.start_time, s.name, a.id`, [todayIso()])
+    .map((a) => ({ id: a.id, date: a.date, start_time: a.start_time, end_time: a.end_time, duration: a.duration, title: a.title, school: a.school || '', municipality: a.municipality || '',
       reseller: a.reseller, needed: a.consultants_needed ?? null }));
   const openAnswers = () => db.all(`SELECT cs.activity_id, cs.consultant_id, cs.answer FROM course_signups cs
     JOIN activities a ON a.id = cs.activity_id WHERE cs.answer IN ('yes', 'maybe') AND ${OPEN_WHERE}`, [todayIso()]);
@@ -652,7 +706,8 @@ export function createApi(db, { XLSX } = {}) {
     const courses = openCourses().map((c) => ({ ...c,
       answers: Object.fromEntries(answers.filter((x) => x.activity_id === c.id).map((x) => [x.consultant_id, x.answer])),
       // Consultants who already have a course that day (Dobbeltbooking warning when assigning).
-      busy: db.all('SELECT DISTINCT consultant_id AS id FROM activities WHERE date = ? AND consultant_id IS NOT NULL', [c.date]).map((r) => r.id) }));
+      busy: [...new Set(db.all('SELECT consultant_id AS id, start_time, end_time FROM activities WHERE date = ? AND consultant_id IS NOT NULL', [c.date])
+        .filter((r) => clash(c, r)).map((r) => r.id))] }));
     return { consultants, courses };
   }
 
@@ -692,9 +747,9 @@ export function createApi(db, { XLSX } = {}) {
     try {
       db.run("UPDATE activities SET consultant_id = ?, updated_at = datetime('now') WHERE id = ?", [ids[0], id]);
       for (const cid of ids.slice(1)) {
-        db.run(`INSERT INTO activities (date, duration, apl_type_id, title, school_id, municipality_id, participants, consultant_id,
+        db.run(`INSERT INTO activities (date, start_time, end_time, duration, apl_type_id, title, school_id, municipality_id, participants, consultant_id,
                   reseller_id, paid_by_id, pending, reschedule, consultants_needed, created_by)
-                SELECT date, duration, apl_type_id, title, school_id, municipality_id, participants, ?,
+                SELECT date, start_time, end_time, duration, apl_type_id, title, school_id, municipality_id, participants, ?,
                   reseller_id, paid_by_id, pending, reschedule, consultants_needed, ? FROM activities WHERE id = ?`, [cid, user.id, id]);
       }
       db.exec('COMMIT');

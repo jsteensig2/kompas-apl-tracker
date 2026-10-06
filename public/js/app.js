@@ -17,6 +17,17 @@ const fmtDate = (iso, short = false) => {
   const [y, m, d] = String(iso).split('-');
   return short ? `${d}.${m}.${y.slice(2)}` : `${d}.${m}.${y}`;
 };
+// Optional times, 24-hour clock: "09:00–12:00", "kl. 09:00" or "".
+const timeText = (a) => (a.start_time ? (a.end_time ? `${a.start_time}–${a.end_time}` : `kl. ${a.start_time}`) : '');
+const withTime = (a, sep = ' · ') => (timeText(a) ? `${sep}${timeText(a)}` : '');
+const timeSub = (a) => (timeText(a) ? `<div class="muted small nowrap">${timeText(a)}</div>` : '');
+// What people type in the time fields: "9", "930", "9.30", "9,30" -> "09:30". Unknown input is left as typed.
+const normClock = (v) => {
+  const s = String(v || '').trim().replace(/^kl\.?\s*/i, '');
+  const m = /^(\d{1,2})(?:[:.,]?(\d{2}))?$/.exec(s);
+  if (!m || +m[1] > 23 || +(m[2] || 0) > 59) return s;
+  return `${m[1].padStart(2, '0')}:${m[2] || '00'}`;
+};
 const todayIso = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -410,7 +421,7 @@ function bindParticipants(scope, onSaved) {
 function activityLine(a) {
   return `
     <li class="latest-item ${rowState(a)}">
-      <div class="latest-date">${fmtDate(a.date, true)}</div>
+      <div class="latest-date">${fmtDate(a.date, true)}${a.start_time ? `<div class="muted small">${a.start_time}</div>` : ''}</div>
       <div class="latest-body">
         <div class="latest-title">${star(a)}${esc(a.apl_type)} · ${esc(a.title)}${a.pending ? ` ${statusPill(a)}` : ''}${a.notes ? noteMark(a) : ''}</div>
         <div class="muted">${esc(a.school || '–')}${a.municipality ? ` · ${esc(a.municipality)}` : ''}</div>
@@ -429,8 +440,8 @@ function doubleBookingCard(list) {
     <div class="card-head"><h2><span class="dbl" aria-hidden="true">⚠</span> Dobbeltbookinger</h2><span class="muted small">Kommende dage, hvor en konsulent står på mere end ét kursus</span></div>
     <ul class="dbl-list">${list.map((g) => `<li>
       <b class="nowrap">${fmtDate(g.date)} · ${esc(g.consultant)}</b>
-      <span>${g.courses.map((c) => `<button type="button" class="linkbtn" data-dbl-edit="${c.id}">${esc(c.title)}</button> <span class="muted">(${esc(c.school || c.municipality || '')}${c.school || c.municipality ? ', ' : ''}${durText(c)}${c.pending ? ', foreløbig' : ''})</span>`).join('<span class="muted"> og </span>')}</span>
-      ${g.courses.length === 2 && g.courses.every((c) => c.duration === 'half') ? '<span class="muted small">To halve dage, så det kan godt passe.</span>' : ''}
+      <span>${g.courses.map((c) => `<button type="button" class="linkbtn" data-dbl-edit="${c.id}">${esc(c.title)}</button> <span class="muted">(${esc(c.school || c.municipality || '')}${c.school || c.municipality ? ', ' : ''}${timeText(c) ? `${timeText(c)}, ` : ''}${durText(c)}${c.pending ? ', foreløbig' : ''})</span>`).join('<span class="muted"> og </span>')}</span>
+      ${g.courses.length === 2 && g.courses.every((c) => c.duration === 'half' && !(c.start_time && c.end_time)) ? '<span class="muted small">To halve dage, så det kan godt passe.</span>' : ''}
     </li>`).join('')}</ul>
   </section>`;
 }
@@ -628,7 +639,7 @@ async function loadList() {
           <th class="num">Deltagere</th><th>Varighed</th><th>Konsulent</th><th>Reseller</th><th>Betalt af</th>${admin ? '<th><span class="sr">Redigér</span></th>' : ''}</tr></thead>
         <tbody>${rows.map((a) => `
           <tr class="${rowState(a)} ${admin ? 'clickable' : ''}" ${admin ? `data-edit="${a.id}"` : ''}>
-            <td class="nowrap">${fmtDate(a.date)}</td><td>${statusCell(a)}</td><td>${esc(a.apl_type)}</td><td>${star(a)}<b>${esc(a.title)}</b>${noteMark(a)}</td>
+            <td class="nowrap">${fmtDate(a.date)}${timeSub(a)}</td><td>${statusCell(a)}</td><td>${esc(a.apl_type)}</td><td>${star(a)}<b>${esc(a.title)}</b>${noteMark(a)}</td>
             <td>${esc(a.school || '–')}</td><td>${esc(a.municipality || '–')}</td><td class="num">${participantsCell(a)}</td>
             <td class="nowrap">${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}</td><td>${esc(a.consultant || '–')}${dblMark(a)}</td>
             <td><span class="tag">${esc(a.reseller)}</span></td><td>${esc(a.paid_by || '–')}</td>
@@ -638,7 +649,7 @@ async function loadList() {
     </div>
     <ul class="cards-list">${rows.map((a) => `
       <li class="card act-card ${rowState(a)} ${admin ? 'clickable' : ''}" ${admin ? `data-edit="${a.id}" role="button" tabindex="0"` : ''}>
-        <div class="act-top"><span class="act-date">${fmtDate(a.date)} ${statusCell(a)}</span><span class="tag">${esc(a.reseller)}</span></div>
+        <div class="act-top"><span class="act-date">${fmtDate(a.date)}${withTime(a)} ${statusCell(a)}</span><span class="tag">${esc(a.reseller)}</span></div>
         <div class="act-title">${star(a)}${esc(a.apl_type)} · ${esc(a.title)}${noteMark(a)}</div>
         <div class="muted">${esc(a.school || '–')}${a.municipality ? ` · ${esc(a.municipality)}` : ''}</div>
         <dl class="act-meta">
@@ -690,6 +701,13 @@ function renderRegister(root) {
     <form id="act-form" class="card form" novalidate autocomplete="off">
       <div class="form-grid">
         <label class="field"><span>Dato</span><input id="a-date" name="date" type="date" required value="${esc(v.date)}"></label>
+        <div class="field"><span id="time-label">Tidspunkt <small class="muted">· valgfrit, 24-timers ur</small></span>
+          <div class="time-range" role="group" aria-labelledby="time-label">
+            <input id="a-start" name="start_time" type="text" inputmode="decimal" maxlength="5" placeholder="09:00" value="${esc(v.start_time || '')}" aria-label="Starttidspunkt">
+            <span aria-hidden="true">til</span>
+            <input id="a-end" name="end_time" type="text" inputmode="decimal" maxlength="5" placeholder="12:00" value="${esc(v.end_time || '')}" aria-label="Sluttidspunkt">
+          </div>
+        </div>
         <div class="field"><span id="dur-label">Varighed</span>
           <div class="seg seg-lg" role="radiogroup" aria-labelledby="dur-label">
             <label><input type="radio" name="duration" value="half" ${v.duration !== 'full' ? 'checked' : ''}><span>Halv dag</span></label>
@@ -748,6 +766,7 @@ function renderRegister(root) {
     ${a ? '<section class="card notes-card" id="notes" aria-live="polite"></section>' : ''}`;
 
   const form = $('#act-form');
+  ['#a-start', '#a-end'].forEach((sel) => $(sel).addEventListener('blur', (e) => { e.target.value = normClock(e.target.value); }));
   const chosen = () => (a ? [] : $$('input[name="consultant_ids"]:checked').map((x) => x.value));
   const planHint = () => {
     const parts = [];
@@ -771,18 +790,21 @@ function renderRegister(root) {
     const req = ++sameDayReq;
     if (!date || !ids.length) { box.hidden = true; return; }
     let rows = [];
-    try { rows = await api.get(`/api/activities/same-day${qs({ date, consultants: ids.join(','), exclude: a?.id || '' })}`); } catch { /* the warning is only a help */ }
+    const start = normClock($('#a-start').value);
+    const end = normClock($('#a-end').value);
+    try { rows = await api.get(`/api/activities/same-day${qs({ date, start, end, consultants: ids.join(','), exclude: a?.id || '' })}`); } catch { /* the warning is only a help */ }
     if (req !== sameDayReq) return;
     const byName = new Map();
     rows.forEach((r) => byName.set(r.consultant, [...(byName.get(r.consultant) || []), r]));
     box.innerHTML = [...byName].map(([name, list]) => `<span><b>⚠ ${esc(name)}</b> har allerede ${list.length === 1 ? 'et kursus' : `${list.length} kurser`} ${fmtDate(date)}:
-      ${list.map((r) => `${esc(r.title)}${r.school ? `, ${esc(r.school)}` : ''} (${durText(r)}${r.pending ? ', foreløbig' : ''})`).join('; ')}.</span>`).join('')
-      + (rows.length ? '<span class="muted small">Du kan godt gemme alligevel, fx hvis det er to halve dage.</span>' : '');
+      ${list.map((r) => `${esc(r.title)}${r.school ? `, ${esc(r.school)}` : ''} (${timeText(r) ? `${timeText(r)}, ` : ''}${durText(r)}${r.pending ? ', foreløbig' : ''})`).join('; ')}.</span>`).join('')
+      + (rows.length ? `<span class="muted small">Du kan godt gemme alligevel, fx hvis det er to halve dage.${rows.some((r) => !(r.start_time && r.end_time)) || !(start && end) ? ' Skriv start- og sluttid på begge kurser, så advarer vi kun, når tiderne overlapper.' : ''}</span>` : '');
     box.hidden = !rows.length;
   };
   $$('input[name="consultant_ids"]').forEach((x) => x.addEventListener('change', checkSameDay));
   $('#a-consultant')?.addEventListener('change', checkSameDay);
   $('#a-date').addEventListener('change', checkSameDay);
+  ['#a-start', '#a-end'].forEach((sel) => $(sel).addEventListener('change', checkSameDay));
   checkSameDay();
   $('#a-pending').addEventListener('change', planHint);
   planHint();
@@ -854,6 +876,8 @@ function renderRegister(root) {
   form.onsubmit = async (e) => {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(form));
+    data.start_time = normClock(data.start_time);
+    data.end_time = normClock(data.end_time);
     const consultantIds = a ? [data.consultant_id].filter(Boolean) : chosen();
     delete data.consultant_ids;
     const note = String(data.note || '').trim();
@@ -964,7 +988,7 @@ async function openNotesDialog(id) {
   }
   try {
     const a = await api.get(`/api/activities/${id}`);
-    dlg.innerHTML = `<div class="dlg-head"><div class="muted small">${fmtDate(a.date)} · ${esc(a.title)}${a.school ? ` · ${esc(a.school)}` : ''}${a.consultant ? ` · ${esc(a.consultant)}` : ''}</div>
+    dlg.innerHTML = `<div class="dlg-head"><div class="muted small">${fmtDate(a.date)}${withTime(a)} · ${esc(a.title)}${a.school ? ` · ${esc(a.school)}` : ''}${a.consultant ? ` · ${esc(a.consultant)}` : ''}</div>
         <button type="button" class="linkbtn" data-close>Luk</button></div><div class="notes-box"></div>`;
     $('[data-close]', dlg).onclick = () => dlg.close();
     await renderNotes($('.notes-box', dlg), a.id, null, (notes) => {
@@ -1005,7 +1029,8 @@ async function readSpreadsheet(file) {
     if (text.includes('\uFFFD')) text = new TextDecoder('windows-1252').decode(buf);
     wb = window.XLSX.read(text.replace(/^\uFEFF/, ''), { type: 'string', raw: true });
   } else {
-    wb = window.XLSX.read(await file.arrayBuffer(), { cellDates: true });
+    // Dates and times stay Excel numbers (days since 1900, a time is the fraction of a day); the server reads them.
+    wb = window.XLSX.read(await file.arrayBuffer());
   }
   // Every sheet goes to the server as a raw grid; it finds the header rows and skips sheets without any.
   return wb.SheetNames.map((name) => ({
@@ -1091,7 +1116,7 @@ function renderImport(root) {
     const sm = res.summary;
     const box = $('#imp-preview');
     showErr(res.missingColumns.length ? 'Der blev ikke fundet en kolonne med datoer. Vælg under "Hvilken kolonne er hvad?", hvilken kolonne der er Dato.' : '');
-    const FIELD_LABELS = { date: 'Dato', duration: 'Varighed', type: 'APL-type', title: 'Titel/emne', school: 'Skole', municipality: 'Kommune',
+    const FIELD_LABELS = { date: 'Dato', start: 'Starttid', end: 'Sluttid', duration: 'Varighed', type: 'APL-type', title: 'Titel/emne', school: 'Skole', municipality: 'Kommune',
       participants: 'Deltagere', consultant: 'Konsulent', reseller: 'Reseller', paidBy: 'Betalt af', status: 'Status (foreløbig)' };
     const colPick = (f) => `<label class="field field-compact"><span>${FIELD_LABELS[f]}</span><select data-field="${f}">
       <option value="">(ikke i filen)</option>${res.headers.filter((h) => !/^Kolonne \d+$/.test(h) || h === res.columns[f])
@@ -1125,7 +1150,7 @@ function renderImport(root) {
             <tr class="imp-${rowState(r)} ${r.selected ? '' : 'imp-off'}">
               <td>${r.errors.length || r.duplicate ? '' : `<input type="checkbox" data-rid="${esc(r.rid)}" ${r.selected ? 'checked' : ''} aria-label="Medtag række ${r.line}">`}</td>
               ${res.rows.some((x) => x.sheet) ? `<td>${esc(r.sheet)}</td>` : ''}
-              <td class="num">${r.line}</td><td class="imp-note">${esc(note(r)) || '<span class="muted">OK</span>'}</td><td class="nowrap">${r.date ? fmtDate(r.date) : '–'}</td>
+              <td class="num">${r.line}</td><td class="imp-note">${esc(note(r)) || '<span class="muted">OK</span>'}</td><td class="nowrap">${r.date ? fmtDate(r.date) : '–'}${timeSub(r)}</td>
               <td>${r.date ? statusPill(r) : ''}</td><td>${esc(r.title)}</td><td>${esc(r.school || '–')}</td><td>${esc(r.municipality || '–')}</td>
               <td class="num">${r.status === 'planned' && !r.participants ? '–' : num(r.participants)}</td><td class="nowrap">${r.duration === 'full' ? 'Hel dag' : r.duration === 'half' ? 'Halv dag' : '–'}</td>
               <td>${esc(r.consultant || '–')}</td><td>${esc(r.reseller || '–')}</td><td>${esc(r.paidBy || '–')}</td>
@@ -1245,7 +1270,7 @@ async function renderCalendar(root) {
     box.innerHTML = `
       ${shown.length ? `<ul class="cal-list">${shown.map((ev) => `
         <li>
-          <div class="latest-date">${fmtDate(ev.date, true)}</div>
+          <div class="latest-date">${fmtDate(ev.date, true)}${ev.start ? `<div class="muted small">${ev.start}</div>` : ''}</div>
           <div class="cal-body"><b>${esc(ev.title)}</b>
             <span class="muted">${esc(ev.location || '')}</span>
             <span class="muted small">${[ev.suggestion.school && `Skole: ${esc(ev.suggestion.school)}`, ev.hours != null && `${ev.hours.toLocaleString('da-DK')} timer`].filter(Boolean).join(' · ')}</span></div>
@@ -1302,7 +1327,7 @@ async function renderMonth() {
   const byDay = {};
   for (const a of acts) {
     const list = (byDay[a.date] ||= { courses: [], events: [] }).courses;
-    const k = `${a.title}|${a.school || ''}|${a.reseller}`;
+    const k = `${a.title}|${a.school || ''}|${a.reseller}|${a.start_time || ''}`;
     const hit = list.find((g) => g.key === k);
     if (hit) hit.items.push(a); else list.push({ key: k, items: [a] });
   }
@@ -1319,8 +1344,8 @@ async function renderMonth() {
     const label = [count && `${count} ${count === 1 ? 'kursus' : 'kurser'}`, day.events.length && `${day.events.length} ${day.events.length === 1 ? 'aftale' : 'aftaler'}`].filter(Boolean).join(', ');
     cells.push(`<button type="button" class="mday ${iso === today ? 'is-today' : ''} ${iso === state.calDay ? 'is-sel' : ''}" data-day="${iso}" aria-label="${d}. ${MONTHS_DA[m - 1]}${label ? `: ${label}` : ''}">
       <span class="mday-n">${d}</span>
-      <span class="mday-items">${day.courses.map((g) => `<span class="mchip ${g.items.some((x) => x.pending) ? 'is-planned is-pending' : g.items[0].status === 'planned' ? 'is-planned' : 'is-held'}">${g.items.some((x) => x.reschedule) ? '★ ' : ''}${esc(g.items[0].title)}${g.items.length > 1 ? ` <b>×${g.items.length}</b>` : ''}</span>`).join('')}
-        ${day.events.map((ev) => `<span class="mchip is-event">${esc(ev.title)}</span>`).join('')}</span>
+      <span class="mday-items">${day.courses.map((g) => `<span class="mchip ${g.items.some((x) => x.pending) ? 'is-planned is-pending' : g.items[0].status === 'planned' ? 'is-planned' : 'is-held'}">${g.items.some((x) => x.reschedule) ? '★ ' : ''}${g.items[0].start_time ? `<time>${g.items[0].start_time}</time> ` : ''}${esc(g.items[0].title)}${g.items.length > 1 ? ` <b>×${g.items.length}</b>` : ''}</span>`).join('')}
+        ${day.events.map((ev) => `<span class="mchip is-event">${ev.start ? `<time>${ev.start}</time> ` : ''}${esc(ev.title)}</span>`).join('')}</span>
       <span class="mday-dots">${count ? `<i class="${day.courses.some((g) => g.items.some((x) => x.status === 'planned')) ? 'is-planned' : 'is-held'}"></i>` : ''}${day.events.length ? '<i class="is-event"></i>' : ''}</span>
     </button>`);
   }
@@ -1349,7 +1374,7 @@ async function renderMonth() {
   const sel = state.calDay && state.calDay.startsWith(ym) ? state.calDay : null;
   if (!sel) return;
   const day = byDay[sel] || { courses: [], events: [] };
-  const items = day.courses.flatMap((g) => g.items);
+  const items = day.courses.flatMap((g) => g.items).sort((x, y) => (x.start_time || '').localeCompare(y.start_time || ''));
   $('#mday-detail').innerHTML = `
     <div class="mday-detail">
       <div class="card-head"><h3>${fmtDate(sel)}</h3>
@@ -1357,10 +1382,10 @@ async function renderMonth() {
       ${items.length ? `<ul class="latest">${items.map((a) => `
         <li class="latest-item ${rowState(a)} ${isAdmin() ? 'clickable' : ''}" ${isAdmin() ? `data-open="${a.id}" role="button" tabindex="0"` : ''}>
           <div class="latest-body"><div class="latest-title">${star(a)}${esc(a.title)} ${statusPill(a)}</div>
-          <div class="latest-meta"><span>${esc(a.school || '–')}</span><span>${esc(a.consultant || '')}</span><span>${participantsText(a)}</span><span class="tag">${esc(a.reseller)}</span></div></div>
+          <div class="latest-meta">${timeText(a) ? `<span class="nowrap"><b>${timeText(a)}</b></span>` : ''}<span>${esc(a.school || '–')}</span><span>${esc(a.consultant || '')}</span><span>${participantsText(a)}</span><span class="tag">${esc(a.reseller)}</span></div></div>
         </li>`).join('')}</ul>` : '<p class="muted">Ingen registrerede kurser denne dag.</p>'}
       ${day.events.length ? `<p class="section-label mday-ev-label">Fra din kalender</p><ul class="cal-list">${day.events.map((ev) => `
-        <li><div class="cal-body"><b>${esc(ev.title)}</b><span class="muted">${esc(ev.location || '')}</span></div>
+        <li><div class="cal-body"><b>${ev.start ? `${ev.start}${ev.end ? `–${ev.end}` : ''} · ` : ''}${esc(ev.title)}</b><span class="muted">${esc(ev.location || '')}</span></div>
           <div class="cal-actions"><button type="button" class="btn btn-sm" data-reg-ev="${esc(ev.uid)}">Registrér</button></div></li>`).join('')}</ul>` : ''}
     </div>`;
   $$('[data-open]', box).forEach((li) => {
@@ -1536,7 +1561,7 @@ async function renderSignup(root) {
       <tbody>${shown.map((c) => {
         const yes = count(c, 'yes');
         return `<tr data-id="${c.id}">
-        <td><span class="nowrap"><b>${fmtDate(c.date)}</b> · ${c.duration === 'full' ? 'Hel dag' : 'Halv dag'}</span>
+        <td><span class="nowrap"><b>${fmtDate(c.date)}</b>${withTime(c)} · ${c.duration === 'full' ? 'Hel dag' : 'Halv dag'}</span>
           <div><b>${esc(c.title)}</b></div><div class="muted small">${esc(c.school || '–')}${c.municipality ? ` · ${esc(c.municipality)}` : ''} · ${esc(c.reseller)}</div></td>
         <td class="num"><input class="input-num" type="number" min="1" max="50" value="${c.needed ?? ''}" data-needed aria-label="Konsulenter der skal bruges"></td>
         <td class="num"><b class="${c.needed && yes >= c.needed ? 'su-enough' : ''}">${yes}</b>${count(c, 'maybe') ? `<div class="muted small">+${count(c, 'maybe')} måske</div>` : ''}</td>
@@ -1563,7 +1588,7 @@ async function renderSignup(root) {
       tr.insertAdjacentHTML('afterend', `<tr class="su-assign"><td colspan="${consultants.length + 4}">
         <form class="su-assign-form"><p class="small"><b>Hvem skal tage kurset?</b> Hver konsulent får sit eget kursus, og kurserne forbliver Foreløbige, indtil du godkender dem.</p>
           <div class="su-choices">${ranked.map((p) => { const a = c.answers[p.id]; const on = a === 'yes' && ticked < limit; if (on) ticked += 1;
-            return `<label class="check"><input type="checkbox" name="c" value="${p.id}" ${on ? 'checked' : ''}> ${esc(p.name)} <span class="muted small">${a ? ANSWER_MARK[a][1] : 'ikke meldt sig'}</span>${c.busy.includes(p.id) ? ' <span class="dbl small" title="Dobbeltbooking">⚠ har et andet kursus den dag</span>' : ''}</label>`; }).join('')}</div>
+            return `<label class="check"><input type="checkbox" name="c" value="${p.id}" ${on ? 'checked' : ''}> ${esc(p.name)} <span class="muted small">${a ? ANSWER_MARK[a][1] : 'ikke meldt sig'}</span>${c.busy.includes(p.id) ? ' <span class="dbl small" title="Dobbeltbooking">⚠ har et andet kursus på det tidspunkt</span>' : ''}</label>`; }).join('')}</div>
           <div class="copyrow"><button class="btn btn-primary btn-sm" type="submit">Sæt på kurset</button><button class="btn btn-sm" type="button" data-cancel>Annullér</button></div>
         </form></td></tr>`);
       const row = tr.nextElementSibling;

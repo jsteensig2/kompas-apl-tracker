@@ -342,6 +342,10 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 .import-summary .is-warn b { color: var(--muted); }
 /* Dobbeltbooking: a consultant on two courses the same day (a warning, never a block). */
 .dbl { color: var(--planned-ink); font-weight: 600; cursor: help; }
+.time-range { display: flex; align-items: center; gap: 8px; }
+.time-range input { width: 6.5em; font-variant-numeric: tabular-nums; text-align: center; }
+.time-range span { color: var(--muted); }
+.mchip time { font: inherit; font-weight: 600; font-variant-numeric: tabular-nums; }
 .dbl-warn { margin: 0; padding: 10px 14px; border-radius: var(--r-sm); background: var(--planned-soft); border-left: 4px solid var(--planned); display: flex; flex-direction: column; gap: 4px; }
 .dbl-card { border-left: 4px solid var(--planned); }
 .dbl-card h2 .dbl { cursor: default; }

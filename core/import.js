@@ -20,6 +20,8 @@ const HEADERS = {
   reseller: ['reseller', 'partner', 'reseller partner', 'forhandler'],
   paidBy: ['betalt af', 'paid by', 'betaler', 'betaling'],
   status: ['status', 'godkendelse', 'godkendt'],
+  start: ['starttid', 'starttidspunkt', 'start', 'fra', 'fra kl', 'tid', 'tidspunkt', 'klokkeslæt', 'kl', 'start time', 'time'],
+  end: ['sluttid', 'sluttidspunkt', 'slut', 'til', 'til kl', 'end time'],
 };
 
 // A "Status" cell saying the course still awaits approval marks it as pending ("Foreløbig").
@@ -28,7 +30,7 @@ const PENDING_HINT = /afvent|forel[øo]b|ikke godkendt|ej godkendt|pending|tenta
 const norm = (s) => String(s ?? '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 
 export const FIELDS = Object.keys(HEADERS);
-export const TEMPLATE_HEADERS = ['Dato', 'Varighed', 'Type', 'Titel/emne', 'Skole', 'Kommune', 'Deltagere', 'Konsulent', 'Reseller', 'Betalt af'];
+export const TEMPLATE_HEADERS = ['Dato', 'Starttid', 'Sluttid', 'Varighed', 'Type', 'Titel/emne', 'Skole', 'Kommune', 'Deltagere', 'Konsulent', 'Reseller', 'Betalt af'];
 
 // Names too vague to match inside a longer header ("Antal timer" is not participants).
 const TOO_VAGUE = new Set(['antal', 'afholdt']);
@@ -104,7 +106,7 @@ const MONTHS = ['jan', 'feb', 'mar', 'apr', 'maj|may', 'jun', 'jul', 'aug', 'sep
 export function parseDate(v) {
   if (v == null || v === '') return null;
   if (typeof v === 'number' && v > 20000 && v < 80000) {
-    return new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 864e5).toISOString().slice(0, 10);
+    return new Date(Date.UTC(1899, 11, 30) + Math.floor(v + 1e-9) * 864e5).toISOString().slice(0, 10);
   }
   const s = String(v).trim().toLowerCase().replace(/^(man|tirs|ons|tors|fre|lør|søn)dag\s*(d\.|den)?\s*/, '');
   let m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s);
@@ -129,6 +131,39 @@ function valid(y, mo, d) {
   const dt = new Date(Date.UTC(y, mo - 1, d));
   if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null;
   return dt.toISOString().slice(0, 10);
+}
+
+// Times are written with a 24-hour clock: "9", "9.30", "09:30", "0930", "kl. 9", "9,30" and
+// Excel times (a fraction of a day, or the fraction of a date and time) all become "09:30".
+const clockText = (minutes) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+export function parseClock(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') {
+    const frac = v > 20000 ? v - Math.floor(v) : v;
+    if (frac >= 0 && frac < 1 && (v > 20000 || !Number.isInteger(v))) {
+      const m = Math.round(frac * 1440);
+      return m > 0 && m < 1440 ? clockText(m) : v > 20000 ? null : clockText(m % 1440);
+    }
+    return Number.isInteger(v) && v >= 0 && v <= 23 ? clockText(v * 60) : null;
+  }
+  const s = String(v).trim().toLowerCase().replace(/^(kl\.?|klokken)\s*/, '').replace(/\s*(h|timer?)$/, '');
+  const m = /^(\d{1,2})(?:[:.,](\d{2}))?(?::\d{2})?$/.exec(s) || /^(\d{2})(\d{2})$/.exec(s);
+  if (!m) return null;
+  const h = +m[1];
+  const mi = m[2] ? +m[2] : 0;
+  return h <= 23 && mi <= 59 ? clockText(h * 60 + mi) : null;
+}
+// "09:00-12:00", "9-12", "9.00 til 15.30": a start and an end in one cell.
+export function parseClockRange(v) {
+  const parts = typeof v === 'string' ? v.trim().split(/\s*(?:[-–—]|\btil\b)\s*/i).filter(Boolean) : [v];
+  if (parts.length === 2) return { start: parseClock(parts[0]), end: parseClock(parts[1]) };
+  return { start: parts.length === 1 ? parseClock(parts[0]) : null, end: null };
+}
+// A date cell may hold a time too ("19.02.2026 09:00", "2026-02-19T09:00", an Excel date and time).
+function timeInDate(v) {
+  if (typeof v === 'number') return v > 20000 && v % 1 ? parseClock(v) : null;
+  const m = /\d[\sT]+(?:kl\.?\s*)?(\d{1,2}[:.]\d{2})\b/i.exec(String(v ?? ''));
+  return m ? parseClock(m[1]) : null;
 }
 
 export function parseDuration(v) {
@@ -223,6 +258,14 @@ export function runImport({ db, today, user }, body) {
       warnings.push(`Datoen "${text('date')}" er skrevet med måned først og læst som ${date.split('-').reverse().join('.')}`);
     }
     if (!date) errors.push(text('date') ? `Ukendt dato "${text('date')}"` : 'Mangler dato');
+    // Times are optional; a start without an end is fine, an end without a start is dropped.
+    const range = parseClockRange(get('start'));
+    let startTime = range.start ?? timeInDate(get('date'));
+    let endTime = rowCols.end ? parseClock(get('end')) : range.end;
+    if (text('start') && !range.start) warnings.push(`Starttid "${text('start')}" ikke genkendt (skriv fx 09:00), udeladt`);
+    if (text('end') && !endTime) warnings.push(`Sluttid "${text('end')}" ikke genkendt (skriv fx 15:30), udeladt`);
+    if (endTime && !startTime) { warnings.push('Sluttid uden starttid er udeladt'); endTime = null; }
+    if (startTime && endTime && endTime <= startTime) { warnings.push(`Sluttid ${endTime} er før starttid ${startTime}, udeladt`); endTime = null; }
     let duration = parseDuration(get('duration'));
     if (!duration) { warnings.push(`Varighed "${text('duration')}" ikke genkendt, sat til halv dag`); duration = 'half'; }
 
@@ -310,7 +353,7 @@ export function runImport({ db, today, user }, body) {
         similar: Boolean(looksLike),
         sheet: raw?._group || '',
         line: raw?._line ?? i + 2, // row number in the spreadsheet
-        date, duration, title, status, pending, participants,
+        date, start_time: startTime, end_time: endTime, duration, title, status, pending, participants,
         type: type?.name || '', consultant: consultant?.name || '', reseller: reseller?.name || '', paidBy: paidBy?.name || '',
         school: school?.name || schoolName, municipality: municipality?.name || (municipalityId ? db.get('SELECT name FROM municipalities WHERE id = ?', [municipalityId])?.name : ''),
         errors, warnings: rowWarnings, duplicate,
@@ -360,9 +403,9 @@ export function runImport({ db, today, user }, body) {
           const k = `${sk}|${ids.municipality ?? ''}`;
           ids.school = created.schools[k] ||= Number(db.run('INSERT INTO schools (name, municipality_id) VALUES (?, ?)', [schoolNames[sk], ids.municipality]).lastInsertRowid);
         }
-        db.run(`INSERT INTO activities (date, duration, apl_type_id, title, school_id, municipality_id, participants,
-                  consultant_id, reseller_id, paid_by_id, pending, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [r.date, r.duration, ids.type, r.title, ids.school ?? null, ids.municipality, r.participants,
+        db.run(`INSERT INTO activities (date, start_time, end_time, duration, apl_type_id, title, school_id, municipality_id, participants,
+                  consultant_id, reseller_id, paid_by_id, pending, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [r.date, r.start_time, r.end_time, r.duration, ids.type, r.title, ids.school ?? null, ids.municipality, r.participants,
             consultantId, ids.reseller, ids.paidBy ?? null, r.pending ? 1 : 0, user.id]);
       }
       db.exec('COMMIT');

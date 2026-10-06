@@ -12,7 +12,8 @@ function unescapeText(v) {
   return v.replace(/\\n/gi, '\n').replace(/\\([,;\\])/g, '$1').trim();
 }
 
-// Parses DTSTART/DTEND values. Returns { date: 'yyyy-mm-dd', minutes: minutes since epoch or null }.
+// Parses DTSTART/DTEND values. Returns { date: 'yyyy-mm-dd', time: 'HH:MM' (Danish time) or null,
+// minutes: minutes since epoch or null }.
 function parseTime(params, value) {
   const m = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})?(Z)?)?$/.exec(value.trim());
   if (!m) return null;
@@ -21,10 +22,11 @@ function parseTime(params, value) {
   if (z) {
     const utc = new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi));
     const local = new Intl.DateTimeFormat('sv-SE', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(utc);
-    return { date: local, minutes: utc.getTime() / 60000 };
+    const time = new Intl.DateTimeFormat('sv-SE', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(utc);
+    return { date: local, time, minutes: utc.getTime() / 60000 };
   }
   // Floating or TZID time: treat as local wall-clock time.
-  return { date: `${y}-${mo}-${d}`, minutes: Date.UTC(+y, +mo - 1, +d, +h, +mi) / 60000 };
+  return { date: `${y}-${mo}-${d}`, time: `${h}:${mi}`, minutes: Date.UTC(+y, +mo - 1, +d, +h, +mi) / 60000 };
 }
 
 export function parseIcs(text) {
@@ -43,6 +45,8 @@ export function parseIcs(text) {
           notes: cur.description || '',
           hours,
           allDay: Boolean(cur.start.allDay),
+          start: cur.start.time || null,
+          end: cur.start.time && cur.end?.time && cur.end.date === cur.start.date ? cur.end.time : null,
         });
       }
       cur = null;
@@ -89,6 +93,8 @@ export function suggestFromEvent(ev, { schools = [], municipalities = [], titles
   const consultant = longestFirst(consultants).find((c) => has(c.name)) || null;
   return {
     date: ev.date,
+    start_time: ev.start || '',
+    end_time: ev.start && ev.end && ev.end > ev.start ? ev.end : '',
     duration: ev.hours != null && ev.hours >= 5 ? 'full' : 'half',
     title: title || ev.title,
     school_id: school?.id || '',

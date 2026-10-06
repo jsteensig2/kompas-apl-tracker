@@ -90,6 +90,9 @@ export function migrate(db) {
   if (!cols('activities').includes('pending')) db.exec('ALTER TABLE activities ADD COLUMN pending INTEGER NOT NULL DEFAULT 0');
   if (!cols('activities').includes('apple_reported_at')) db.exec('ALTER TABLE activities ADD COLUMN apple_reported_at TEXT');
   if (!cols('consultants').includes('feed_token')) db.exec('ALTER TABLE consultants ADD COLUMN feed_token TEXT');
+  // Optional start and end time, "HH:MM" on a 24-hour clock (Jakob, 2026-10-06).
+  if (!cols('activities').includes('start_time')) db.exec('ALTER TABLE activities ADD COLUMN start_time TEXT');
+  if (!cols('activities').includes('end_time')) db.exec('ALTER TABLE activities ADD COLUMN end_time TEXT');
   if (!cols('activities').includes('consultants_needed')) db.exec('ALTER TABLE activities ADD COLUMN consultants_needed INTEGER');
   // Kompas' own initials (Jakob, 2026-10-03); only filled in where none are set.
   for (const [initials, name] of [['KB', 'kim byrding'], ['TH', 'torben hollensen'], ['SR', 'søren rasmussen'],
