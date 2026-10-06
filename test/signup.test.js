@@ -103,8 +103,20 @@ test('a course closes for sign-up when enough consultants have said Kan', async 
   const row = (await json('admin', '/api/signups')).courses.find((c) => c.id === borger.id);
   assert.deepEqual([row.yes, row.full], [2, true]);
 
-  // When someone steps down to Måske the course opens again.
-  await answer(sp, borger.id, 'maybe');
+  // When Kompas removes a sign-up the course opens again.
+  await call('admin', `/api/signups/${borger.id}/consultants/${soren.id}`, { method: 'DELETE' });
   const again = (await (await fetch(`${base}${fp}/data`)).json()).signup.find((c) => c.id === borger.id);
   assert.deepEqual([again.yes, again.full], [1, false]);
+});
+
+test('a consultant cannot withdraw a Kan; only Kompas can remove it', async () => {
+  const kp = await page(kim);
+  const open = (await (await fetch(`${base}${kp}/data`)).json()).signup.find((c) => c.school === 'Borgerskolen');
+  assert.equal(open.answer, 'yes');
+  assert.equal((await answer(kp, open.id, '')).status, 409);
+  assert.equal((await answer(kp, open.id, 'maybe')).status, 409);
+  assert.equal((await call('Atea', `/api/signups/${open.id}/consultants/${kim.id}`, { method: 'DELETE' })).status, 403);
+  assert.equal((await call('admin', `/api/signups/${open.id}/consultants/${kim.id}`, { method: 'DELETE' })).status, 200);
+  const after = (await (await fetch(`${base}${kp}/data`)).json()).signup.find((c) => c.id === open.id);
+  assert.equal(after.answer, '');
 });

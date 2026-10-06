@@ -1565,10 +1565,10 @@ async function renderSignup(root) {
           <div><b>${esc(c.title)}</b></div><div class="muted small">${esc(c.school || '–')}${c.municipality ? ` · ${esc(c.municipality)}` : ''} · ${esc(c.reseller)}</div></td>
         <td class="num"><input class="input-num" type="number" min="1" max="50" value="${c.needed ?? ''}" data-needed aria-label="Konsulenter der skal bruges"></td>
         <td class="num"><b class="nowrap ${c.full ? 'su-enough' : ''}">${c.yes}${c.needed ? `/${c.needed}` : ''}</b>${c.full ? '<div class="small su-enough">Fuld · lukket</div>' : c.needed ? `<div class="muted small">mangler ${c.needed - c.yes}</div>` : ''}${count(c, 'maybe') ? `<div class="muted small">+${count(c, 'maybe')} måske</div>` : ''}</td>
-        ${consultants.map((p) => { const a = c.answers[p.id]; return `<td class="su-cell ${a ? `su-${a}` : ''}" title="${esc(p.name)}: ${a ? ANSWER_MARK[a][1] : 'Har ikke meldt sig'}">${a ? ANSWER_MARK[a][0] : '<span class="muted">–</span>'}</td>`; }).join('')}
+        ${consultants.map((p) => { const a = c.answers[p.id]; return `<td class="su-cell ${a ? `su-${a}` : ''}" title="${esc(p.name)}: ${a ? ANSWER_MARK[a][1] : 'Har ikke meldt sig'}">${a ? `<button type="button" class="su-remove" data-remove="${p.id}" aria-label="Fjern ${esc(p.name)}s tilmelding">${ANSWER_MARK[a][0]}</button>` : '<span class="muted">–</span>'}</td>`; }).join('')}
         <td><button type="button" class="btn btn-sm" data-assign>Sæt på</button></td></tr>`;
       }).join('')}</tbody></table></div></section>`}
-    <p class="muted small">✓ Kan · ? Måske · – kan ikke (har ikke meldt sig).${silent.length ? ` Har ikke meldt sig på noget endnu: ${silent.map((p) => `${esc(p.name)}${p.has_link ? '' : ' (har ikke fået et konsulentlink)'}`).join(', ')}.` : ''}</p>`;
+    <p class="muted small">✓ Kan · ? Måske · – kan ikke (har ikke meldt sig). Klik på et ✓ eller ? for at fjerne tilmeldingen.${silent.length ? ` Har ikke meldt sig på noget endnu: ${silent.map((p) => `${esc(p.name)}${p.has_link ? '' : ' (har ikke fået et konsulentlink)'}`).join(', ')}.` : ''}</p>`;
 
   $('#su-muni')?.addEventListener('change', (e) => { state.signupMunicipality = e.target.value; renderSignup(root); });
   $$('.signup-grid tbody tr').forEach((tr) => {
@@ -1577,6 +1577,14 @@ async function renderSignup(root) {
     needed.onchange = async () => {
       try { await api.put(`/api/signups/${c.id}/needed`, { needed: needed.value }); toast('Gemt'); await renderSignup(root); } catch (ex) { toast(ex.message, 'err'); }
     };
+    // Consultants cannot withdraw a Kan themselves; Kompas removes it here.
+    tr.querySelectorAll('[data-remove]').forEach((b) => {
+      b.onclick = async () => {
+        const p = consultants.find((x) => String(x.id) === b.dataset.remove);
+        if (!confirm(`Fjern ${p.name}s tilmelding (${ANSWER_MARK[c.answers[p.id]][1]}) til ${c.title}, ${c.school || ''} ${fmtDate(c.date)}?`)) return;
+        try { await api.del(`/api/signups/${c.id}/consultants/${p.id}`); toast('Tilmelding fjernet'); await renderSignup(root); } catch (ex) { toast(ex.message, 'err'); }
+      };
+    });
     tr.querySelector('[data-assign]').onclick = () => {
       const next = tr.nextElementSibling;
       if (next?.classList.contains('su-assign')) { next.remove(); return; }

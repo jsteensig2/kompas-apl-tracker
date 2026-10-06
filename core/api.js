@@ -723,7 +723,8 @@ export function createApi(db, { XLSX } = {}) {
     const answer = String(body?.answer || '');
     if (answer && !ANSWERS.includes(answer)) throw new HttpError(400, 'Ugyldigt svar.');
     const course = signupList(c.id).find((x) => x.id === activityId);
-    // On a full course a consultant may withdraw or step down to Måske, but nobody new can say Kan.
+    // Kan is a commitment: only Kompas can take it back (Jakob, 2026-10-06). A full course takes no new Kan.
+    if (course?.answer === 'yes' && answer !== 'yes') throw new HttpError(409, 'Du er tilmeldt kurset. Kontakt Kompas, hvis du skal melde fra.');
     if (!course || (answer === 'yes' && course.full && course.answer !== 'yes')) {
       throw new HttpError(409, 'Kurset har allerede fået de konsulenter, der skal bruges.');
     }
@@ -734,6 +735,14 @@ export function createApi(db, { XLSX } = {}) {
       db.run('DELETE FROM course_signups WHERE activity_id = ? AND consultant_id = ?', [activityId, c.id]);
     }
     return signupList(c.id);
+  }
+
+  // Kompas takes a consultant's answer back (consultants cannot withdraw a Kan themselves).
+  function removeSignup(user, id, consultantId) {
+    requireAdmin(user);
+    openCourse(id);
+    db.run('DELETE FROM course_signups WHERE activity_id = ? AND consultant_id = ?', [id, consultantId]);
+    return { ok: true };
   }
 
   function setNeeded(user, id, body) {
@@ -949,6 +958,7 @@ export function createApi(db, { XLSX } = {}) {
       case 'GET /signups': return { json: signupOverview(user) };
       case 'PUT /signups/:id/needed': return { json: setNeeded(user, int(parts[1]), body) };
       case 'POST /signups/:id/assign': return { json: assignConsultants(user, int(parts[1]), body) };
+      case 'DELETE /signups/:id/consultants/:id': return { json: removeSignup(user, int(parts[1]), int(parts[3])) };
       case 'GET /messages': return { json: listMessages(user) };
       case 'POST /messages': return { json: createMessage(user, body) };
       case 'DELETE /messages/:id': return { json: deleteMessage(user, id) };
