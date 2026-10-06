@@ -690,12 +690,18 @@ export function createApi(db, { XLSX } = {}) {
     return row;
   };
 
+  // Only Kan counts towards the number needed. A full course closes for sign-up: it disappears from
+  // the pages of consultants who have not answered it, while those who have still see their answer.
+  const yesCount = (answers, id) => answers.filter((x) => x.activity_id === id && x.answer === 'yes').length;
+  const isFull = (c, yes) => Boolean(c.needed) && yes >= c.needed;
+
   function signupList(consultantId) {
     const answers = openAnswers();
     return openCourses().map((c) => {
       const mine = answers.find((x) => x.activity_id === c.id && x.consultant_id === consultantId);
-      return { ...c, answer: mine?.answer || '', yes: answers.filter((x) => x.activity_id === c.id && x.answer === 'yes').length };
-    });
+      const yes = yesCount(answers, c.id);
+      return { ...c, answer: mine?.answer || '', yes, full: isFull(c, yes) };
+    }).filter((c) => !c.full || c.answer);
   }
 
   function signupOverview(user) {
@@ -703,7 +709,7 @@ export function createApi(db, { XLSX } = {}) {
     const answers = openAnswers();
     const consultants = db.all('SELECT id, name, initials, feed_token IS NOT NULL AS has_link FROM consultants ORDER BY name')
       .map((c) => ({ ...c, has_link: Boolean(c.has_link) }));
-    const courses = openCourses().map((c) => ({ ...c,
+    const courses = openCourses().map((c) => ({ ...c, yes: yesCount(answers, c.id), full: isFull(c, yesCount(answers, c.id)),
       answers: Object.fromEntries(answers.filter((x) => x.activity_id === c.id).map((x) => [x.consultant_id, x.answer])),
       // Consultants who already have a course that day (Dobbeltbooking warning when assigning).
       busy: [...new Set(db.all('SELECT consultant_id AS id, start_time, end_time FROM activities WHERE date = ? AND consultant_id IS NOT NULL', [c.date])
@@ -716,6 +722,12 @@ export function createApi(db, { XLSX } = {}) {
     openCourse(activityId);
     const answer = String(body?.answer || '');
     if (answer && !ANSWERS.includes(answer)) throw new HttpError(400, 'Ugyldigt svar.');
+    const course = signupList(c.id).find((x) => x.id === activityId);
+    // Kan is a commitment: only Kompas can take it back (Jakob, 2026-10-06). A full course takes no new Kan.
+    if (course?.answer === 'yes' && answer !== 'yes') throw new HttpError(409, 'Du er tilmeldt kurset. Kontakt Kompas, hvis du skal melde fra.');
+    if (!course || (answer === 'yes' && course.full && course.answer !== 'yes')) {
+      throw new HttpError(409, 'Kurset har allerede fået de konsulenter, der skal bruges.');
+    }
     if (answer) {
       db.run(`INSERT INTO course_signups (activity_id, consultant_id, answer) VALUES (?, ?, ?)
               ON CONFLICT (activity_id, consultant_id) DO UPDATE SET answer = excluded.answer, updated_at = datetime('now')`, [activityId, c.id, answer]);
@@ -723,6 +735,14 @@ export function createApi(db, { XLSX } = {}) {
       db.run('DELETE FROM course_signups WHERE activity_id = ? AND consultant_id = ?', [activityId, c.id]);
     }
     return signupList(c.id);
+  }
+
+  // Kompas takes a consultant's answer back (consultants cannot withdraw a Kan themselves).
+  function removeSignup(user, id, consultantId) {
+    requireAdmin(user);
+    openCourse(id);
+    db.run('DELETE FROM course_signups WHERE activity_id = ? AND consultant_id = ?', [id, consultantId]);
+    return { ok: true };
   }
 
   function setNeeded(user, id, body) {
@@ -938,6 +958,7 @@ export function createApi(db, { XLSX } = {}) {
       case 'GET /signups': return { json: signupOverview(user) };
       case 'PUT /signups/:id/needed': return { json: setNeeded(user, int(parts[1]), body) };
       case 'POST /signups/:id/assign': return { json: assignConsultants(user, int(parts[1]), body) };
+      case 'DELETE /signups/:id/consultants/:id': return { json: removeSignup(user, int(parts[1]), int(parts[3])) };
       case 'GET /messages': return { json: listMessages(user) };
       case 'POST /messages': return { json: createMessage(user, body) };
       case 'DELETE /messages/:id': return { json: deleteMessage(user, id) };
