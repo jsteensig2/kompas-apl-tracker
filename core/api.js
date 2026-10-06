@@ -678,10 +678,20 @@ export function createApi(db, { XLSX } = {}) {
   // every consultant clicks Kan or Måske on their own page (no answer means they cannot). Kompas sees all answers and
   // puts the chosen consultants on the course (one course per consultant, as everywhere else).
   const ANSWERS = ['yes', 'maybe'];
-  const OPEN_WHERE = 'a.pending = 1 AND a.consultant_id IS NULL AND a.date >= ?';
+  // "Sæt på" gives each consultant their own copy of the course (same date, title, school and reseller).
+  // The first row of that group carries the sign-ups. The course stays open until as many consultants
+  // as needed are on it (Jakob, 2026-10-06: putting one consultant on a course that needs three must
+  // not close it). Without a number needed it closes once anyone is on it, as before.
+  const SAME_COURSE = (x) => `${x}.pending = 1 AND ${x}.date = a.date AND ${x}.title = a.title AND ${x}.reseller_id = a.reseller_id AND ${x}.school_id IS a.school_id`;
+  const ASSIGNED = `(SELECT COUNT(*) FROM activities g WHERE ${SAME_COURSE('g')} AND g.consultant_id IS NOT NULL)`;
+  const OPEN_WHERE = `a.pending = 1 AND a.date >= ? AND NOT EXISTS (SELECT 1 FROM activities f WHERE ${SAME_COURSE('f')} AND f.id < a.id)
+    AND (a.consultant_id IS NULL OR COALESCE(a.consultants_needed, 1) > ${ASSIGNED})`;
+  const assignedTo = (c) => db.all(`SELECT g.consultant_id AS id FROM activities a JOIN activities g ON ${SAME_COURSE('g')}
+    WHERE a.id = ? AND g.consultant_id IS NOT NULL ORDER BY g.id`, [c.id]).map((r) => r.id);
   const openCourses = () => db.all(`${ACTIVITY_SELECT} WHERE ${OPEN_WHERE} ORDER BY a.date, a.start_time, s.name, a.id`, [todayIso()])
     .map((a) => ({ id: a.id, date: a.date, start_time: a.start_time, end_time: a.end_time, duration: a.duration, title: a.title, school: a.school || '', municipality: a.municipality || '',
-      reseller: a.reseller, needed: a.consultants_needed ?? null }));
+      reseller: a.reseller, needed: a.consultants_needed ?? null, lead_consultant: a.consultant_id }))
+    .map((c) => ({ ...c, assigned: c.lead_consultant ? assignedTo(c) : [] }));
   const openAnswers = () => db.all(`SELECT cs.activity_id, cs.consultant_id, cs.answer FROM course_signups cs
     JOIN activities a ON a.id = cs.activity_id WHERE cs.answer IN ('yes', 'maybe') AND ${OPEN_WHERE}`, [todayIso()]);
   const openCourse = (id) => {
@@ -692,14 +702,16 @@ export function createApi(db, { XLSX } = {}) {
 
   // Only Kan counts towards the number needed. A full course closes for sign-up: it disappears from
   // the pages of consultants who have not answered it, while those who have still see their answer.
-  const yesCount = (answers, id) => answers.filter((x) => x.activity_id === id && x.answer === 'yes').length;
+  // Consultants already put on the course count as signed up too.
+  const yesCount = (answers, c) => new Set([...answers.filter((x) => x.activity_id === c.id && x.answer === 'yes').map((x) => x.consultant_id), ...c.assigned]).size;
   const isFull = (c, yes) => Boolean(c.needed) && yes >= c.needed;
 
   function signupList(consultantId) {
     const answers = openAnswers();
-    return openCourses().map((c) => {
+    // A course the consultant is already on is under their coming courses, not here.
+    return openCourses().filter((c) => !c.assigned.includes(consultantId)).map(({ assigned, lead_consultant, ...c }) => {
       const mine = answers.find((x) => x.activity_id === c.id && x.consultant_id === consultantId);
-      const yes = yesCount(answers, c.id);
+      const yes = yesCount(answers, { ...c, assigned });
       return { ...c, answer: mine?.answer || '', yes, full: isFull(c, yes) };
     }).filter((c) => !c.full || c.answer);
   }
@@ -709,7 +721,7 @@ export function createApi(db, { XLSX } = {}) {
     const answers = openAnswers();
     const consultants = db.all('SELECT id, name, initials, feed_token IS NOT NULL AS has_link FROM consultants ORDER BY name')
       .map((c) => ({ ...c, has_link: Boolean(c.has_link) }));
-    const courses = openCourses().map((c) => ({ ...c, yes: yesCount(answers, c.id), full: isFull(c, yesCount(answers, c.id)),
+    const courses = openCourses().map(({ lead_consultant, ...c }) => ({ ...c, yes: yesCount(answers, c), full: isFull(c, yesCount(answers, c)),
       answers: Object.fromEntries(answers.filter((x) => x.activity_id === c.id).map((x) => [x.consultant_id, x.answer])),
       // Consultants who already have a course that day (Dobbeltbooking warning when assigning).
       busy: [...new Set(db.all('SELECT consultant_id AS id, start_time, end_time FROM activities WHERE date = ? AND consultant_id IS NOT NULL', [c.date])
@@ -755,18 +767,20 @@ export function createApi(db, { XLSX } = {}) {
     return { ok: true };
   }
 
-  // The first chosen consultant takes the open course; every other one gets a copy of it.
-  // The courses stay Foreløbig until Kompas confirms them.
+  // If nobody is on the course yet, the first chosen consultant takes it; every other one gets a copy.
+  // Consultants already on the course are skipped. The courses stay Foreløbig until Kompas confirms them.
   function assignConsultants(user, id, body) {
     requireAdmin(user);
     openCourse(id);
-    const ids = [...new Set((Array.isArray(body?.consultant_ids) ? body.consultant_ids : []).map(int).filter(Boolean))];
-    if (!ids.length) throw new HttpError(400, 'Vælg mindst én konsulent.');
+    const lead = db.get('SELECT consultant_id FROM activities WHERE id = ?', [id]);
+    const already = lead.consultant_id ? assignedTo({ id }) : [];
+    const ids = [...new Set((Array.isArray(body?.consultant_ids) ? body.consultant_ids : []).map(int).filter(Boolean))].filter((cid) => !already.includes(cid));
+    if (!ids.length) throw new HttpError(400, 'Vælg mindst én konsulent, der ikke allerede er sat på.');
     for (const cid of ids) if (!db.get('SELECT id FROM consultants WHERE id = ?', [cid])) throw new HttpError(400, 'Konsulenten findes ikke.');
     db.exec('BEGIN');
     try {
-      db.run("UPDATE activities SET consultant_id = ?, updated_at = datetime('now') WHERE id = ?", [ids[0], id]);
-      for (const cid of ids.slice(1)) {
+      if (!lead.consultant_id) db.run("UPDATE activities SET consultant_id = ?, updated_at = datetime('now') WHERE id = ?", [ids[0], id]);
+      for (const cid of lead.consultant_id ? ids : ids.slice(1)) {
         db.run(`INSERT INTO activities (date, start_time, end_time, duration, apl_type_id, title, school_id, municipality_id, participants, consultant_id,
                   reseller_id, paid_by_id, pending, reschedule, consultants_needed, created_by)
                 SELECT date, start_time, end_time, duration, apl_type_id, title, school_id, municipality_id, participants, ?,

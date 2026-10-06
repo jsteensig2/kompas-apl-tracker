@@ -531,6 +531,7 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 .signup-seg button:disabled { opacity: 0.6; cursor: not-allowed; }
 @media (max-width: 560px) { .signup-seg { display: flex; width: 100%; } .signup-seg button { flex: 1; } }
 .signup-grid th.su-person { text-align: center; min-width: 44px; }
+.su-on-list { color: var(--ok); margin-top: 2px; }
 .signup-grid td.su-cell { text-align: center; font-weight: 700; font-size: 1rem; }
 .table.signup-grid td.su-yes { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, var(--surface)); }
 .table.signup-grid td.su-maybe { color: var(--planned-ink, #8a4b0c); background: var(--planned-soft); }
@@ -595,3 +596,4 @@ dt .note-btn { margin-left: 0; opacity: 1; cursor: default; }
 .signup-seg button.ans-yes.on:disabled { opacity: 1; cursor: default; }
 .su-cell button.su-remove { background: none; border: 0; padding: 2px 6px; font: inherit; color: inherit; cursor: pointer; border-radius: 4px; }
 .su-cell button.su-remove:hover, .su-cell button.su-remove:focus-visible { outline: 2px solid var(--danger); }
+.signup-grid td.su-cell.su-on { background: var(--ok); color: var(--surface); font-size: 0.75rem; }

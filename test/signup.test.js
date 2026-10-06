@@ -120,3 +120,34 @@ test('a consultant cannot withdraw a Kan; only Kompas can remove it', async () =
   const after = (await (await fetch(`${base}${kp}/data`)).json()).signup.find((c) => c.id === open.id);
   assert.equal(after.answer, '');
 });
+
+test('a course that needs several consultants stays open after "Sæt på" until enough are on it', async () => {
+  const rows = [{ Dato: future(50), Varighed: 'Halv dag', 'Titel/emne': 'Modul 3 (lærere)', Skole: 'Torstorp Skole', Kommune: 'Høje-Taastrup', Reseller: 'Atea', Status: 'Foreløbig' }];
+  await json('admin', '/api/import', { method: 'POST', body: JSON.stringify({ rows, commit: true }) });
+  const open = async () => (await json('admin', '/api/signups')).courses.find((c) => c.title === 'Modul 3 (lærere)');
+  const lead = await open();
+  await call('admin', `/api/signups/${lead.id}/needed`, { method: 'PUT', body: JSON.stringify({ needed: 3 }) });
+  const rasmus = opts.consultants.find((c) => c.name === 'Rasmus Toft');
+  const rp = await page(rasmus);
+  await answer(rp, lead.id, 'yes');
+  // Kompas puts only Rasmus on it: the course stays open, 1/3, with Rasmus marked as on it.
+  await json('admin', `/api/signups/${lead.id}/assign`, { method: 'POST', body: JSON.stringify({ consultant_ids: [rasmus.id] }) });
+  let c = await open();
+  assert.equal(c.id, lead.id);
+  assert.deepEqual(c.assigned, [rasmus.id]);
+  assert.deepEqual([c.yes, c.full], [1, false]);
+  // Rasmus sees it under his coming courses, the others can still sign up.
+  const rd = await (await fetch(`${base}${rp}/data`)).json();
+  assert.ok(!rd.signup.some((x) => x.id === lead.id) && rd.planned.some((x) => x.id === lead.id));
+  const kp = await page(kim);
+  assert.equal((await answer(kp, lead.id, 'yes')).status, 200);
+  // Putting Rasmus on again does not make a second course for him.
+  assert.equal((await call('admin', `/api/signups/${lead.id}/assign`, { method: 'POST', body: JSON.stringify({ consultant_ids: [rasmus.id] }) })).status, 400);
+  await json('admin', `/api/signups/${lead.id}/assign`, { method: 'POST', body: JSON.stringify({ consultant_ids: [kim.id, rasmus.id] }) });
+  c = await open();
+  assert.deepEqual(c.assigned, [rasmus.id, kim.id]);
+  await json('admin', `/api/signups/${lead.id}/assign`, { method: 'POST', body: JSON.stringify({ consultant_ids: [soren.id] }) });
+  assert.equal(await open(), undefined); // 3 of 3: closed
+  const acts = (await json('admin', '/api/activities?status=pending')).filter((a) => a.title === 'Modul 3 (lærere)');
+  assert.deepEqual(acts.map((a) => a.consultant).sort(), ['Kim Byrding', 'Rasmus Toft', 'Søren Rasmussen']);
+});
