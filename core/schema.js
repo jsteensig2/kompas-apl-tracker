@@ -141,6 +141,7 @@ export function migrate(db) {
   db.exec('CREATE INDEX IF NOT EXISTS idx_course_notes_activity ON course_notes (activity_id)');
   db.exec('CREATE TABLE IF NOT EXISTS app_migrations (name TEXT PRIMARY KEY, ran_at TEXT NOT NULL DEFAULT (datetime(\'now\')))');
   once(db, 'apl-types-2026-10-04', () => resetAplTypes(db));
+  once(db, 'htk-times-2026-10-06', () => setHtkTimes(db));
   allowViewerRole(db);
 }
 
@@ -168,6 +169,22 @@ function allowViewerRole(db) {
   } finally {
     db.exec('PRAGMA foreign_keys = ON');
   }
+}
+
+// Jakob (2026-10-06): coming Høje-Taastrup courses without a time get the usual times,
+// teachers ("lærere") 14:00–16:30 and pedagogues ("pædagoger") 09:00–11:30. Other courses are left alone.
+function setHtkTimes(db) {
+  const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Copenhagen' }).format(new Date());
+  const htk = `start_time IS NULL AND date >= ? AND id IN (SELECT a2.id FROM activities a2
+    LEFT JOIN schools s ON s.id = a2.school_id
+    JOIN municipalities m ON m.id = COALESCE(a2.municipality_id, s.municipality_id)
+    WHERE lower(m.name) LIKE 'høje%taastrup%')`;
+  const set = (pattern, start, end) => db.run(`UPDATE activities SET start_time = ?, end_time = ?, updated_at = datetime('now')
+    WHERE ${htk} AND lower(title) LIKE ?`, [start, end, today, pattern]).changes;
+  const teachers = set('%lærer%', '14:00', '16:30');
+  const pedagogues = set('%pædagog%', '09:00', '11:30');
+  if (teachers || pedagogues) console.log(`Tidspunkter sat på Høje-Taastrup-kurser: ${teachers} for lærere, ${pedagogues} for pædagoger.`);
+  return true;
 }
 
 // Runs a data change a single time; it is skipped until there is data to change.
