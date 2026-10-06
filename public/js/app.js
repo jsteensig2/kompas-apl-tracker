@@ -1539,7 +1539,8 @@ async function renderAdmin(root) {
 // --- Tilmelding --------------------------------------------------------------------------------
 // Doodle for Foreløbig courses without a consultant: the consultants answer on their own page
 // (Konsulentlink); here Kompas sees every answer and puts the chosen consultants on the course.
-const ANSWER_MARK = { yes: ['✓', 'Kan'], maybe: ['?', 'Måske'] };
+// Måske is no longer offered (Jakob, 2026-10-06), but older Måske answers still show.
+const ANSWER_MARK = { yes: ['✓', 'Det kan jeg'], maybe: ['?', 'Måske'] };
 
 async function renderSignup(root) {
   const { consultants, courses } = await api.get('/api/signups');
@@ -1550,8 +1551,8 @@ async function renderSignup(root) {
   const silent = consultants.filter((p) => !courses.some((c) => c.answers[p.id]));
   root.innerHTML = `
     <div class="pagehead"><div><p class="eyebrow">Foreløbige kurser</p><h1>Tilmelding</h1>
-      <p class="muted">Foreløbige kurser, der mangler konsulenter. Konsulenterne klikker Kan eller Måske på deres konsulentside, og du sætter dem på kurset her.
-        Kun Kan og konsulenter, du har sat på, tæller med i tilmeldt. Kurset bliver her, indtil du har sat så mange på, som der skal bruges. Når et kursus har fået de konsulenter, der skal bruges, lukker det for tilmelding.
+      <p class="muted">Foreløbige kurser, der mangler konsulenter. Konsulenterne trykker Det kan jeg på deres konsulentside, og du sætter dem på kurset her.
+        Kun Det kan jeg og konsulenter, du har sat på, tæller med i tilmeldt. Kurset bliver her, indtil du har sat så mange på, som der skal bruges. Når et kursus har fået de konsulenter, der skal bruges, lukker det for tilmelding.
         Linket til konsulentsiden finder du under Administration › Konsulenter › Konsulentlink.</p></div></div>
     ${munis.length > 1 ? `<div class="filters filters-inline"><label class="field field-compact"><span>Kommune</span><select id="su-muni">
       <option value="">Alle kommuner</option>${munis.map((m) => `<option ${m === state.signupMunicipality ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></label></div>` : ''}
@@ -1569,7 +1570,7 @@ async function renderSignup(root) {
         ${consultants.map((p) => { const a = c.answers[p.id]; if (c.assigned.includes(p.id)) return `<td class="su-cell su-on" title="${esc(p.name)}: sat på kurset">På</td>`; return `<td class="su-cell ${a ? `su-${a}` : ''}" title="${esc(p.name)}: ${a ? ANSWER_MARK[a][1] : 'Har ikke meldt sig'}">${a ? `<button type="button" class="su-remove" data-remove="${p.id}" aria-label="Fjern ${esc(p.name)}s tilmelding">${ANSWER_MARK[a][0]}</button>` : '<span class="muted">–</span>'}</td>`; }).join('')}
         <td><button type="button" class="btn btn-sm" data-assign>Sæt på</button></td></tr>`;
       }).join('')}</tbody></table></div></section>`}
-    <p class="muted small">På = sat på kurset · ✓ Kan · ? Måske · – kan ikke (har ikke meldt sig). Klik på et ✓ eller ? for at fjerne tilmeldingen.${silent.length ? ` Har ikke meldt sig på noget endnu: ${silent.map((p) => `${esc(p.name)}${p.has_link ? '' : ' (har ikke fået et konsulentlink)'}`).join(', ')}.` : ''}</p>`;
+    <p class="muted small">På = sat på kurset · ✓ Det kan jeg · – kan ikke (har ikke meldt sig)${courses.some((c) => count(c, 'maybe')) ? ' · ? Måske (ældre svar, før Måske blev fjernet)' : ''}. Klik på et ✓${courses.some((c) => count(c, 'maybe')) ? ' eller ?' : ''} for at fjerne tilmeldingen.${silent.length ? ` Har ikke meldt sig på noget endnu: ${silent.map((p) => `${esc(p.name)}${p.has_link ? '' : ' (har ikke fået et konsulentlink)'}`).join(', ')}.` : ''}</p>`;
 
   $('#su-muni')?.addEventListener('change', (e) => { state.signupMunicipality = e.target.value; renderSignup(root); });
   $$('.signup-grid tbody tr').forEach((tr) => {

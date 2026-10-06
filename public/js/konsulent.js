@@ -81,20 +81,21 @@ function messagesSection() {
 }
 
 // Tilmelding: Foreløbig courses without a consultant yet. Like a Doodle, the consultant answers
-// Kan or Måske (no answer means they cannot); Kompas sees the answers and puts consultants on the courses.
-const ANSWERS = [['yes', 'Kan'], ['maybe', 'Måske']];
+// "Det kan jeg" (no answer means they cannot; Måske was dropped, Jakob 2026-10-06). Kompas sees the
+// answers and puts consultants on the courses.
+const ANSWERS = [['yes', 'Det kan jeg']];
 const people = (n) => `${n} ${n === 1 ? 'konsulent' : 'konsulenter'}`;
 const needText = (c) => (c.needed
   ? `Tilmeldt ${c.yes}/${c.needed}${c.full ? ' · fuldt, lukket for tilmelding' : ` · mangler ${people(c.needed - c.yes)}`}`
-  : (c.yes ? `${people(c.yes)} har sagt Kan` : 'Ingen har sagt Kan endnu'));
+  : (c.yes ? `${people(c.yes)} har meldt sig` : 'Ingen har meldt sig endnu'));
 
-const signedText = () => { const n = data.signup.filter((c) => c.answer).length; return `Du har meldt dig på ${n} af ${data.signup.length}`; };
+const signedText = () => { const n = data.signup.filter((c) => c.answer === 'yes').length; return `Du har meldt dig på ${n} af ${data.signup.length}`; };
 
 function signupSection() {
   if (!data.signup.length) return '';
   return `<section class="card card-flush" id="signup"><div class="card-head card-head-pad"><h2>Kan du tage disse kurser?</h2>
       <span class="muted small" id="signup-count">${signedText()}</span></div>
-    <p class="card-pad muted">Kurserne er foreløbige og har endnu ingen konsulent. Klik Kan eller Måske ved de kurser, du kan tage. Kurser, du ikke klikker på, regner Kompas med, at du ikke kan. Et Måske kan du fjerne igen ved at trykke på det. Har du trykket Kan, er du tilmeldt, og skal du melde fra, så kontakt Kompas.</p>
+    <p class="card-pad muted">Kurserne er foreløbige og har endnu ingen konsulent. Tryk Det kan jeg ved de kurser, du kan tage. Kurser, du ikke trykker på, regner Kompas med, at du ikke kan. Har du trykket Det kan jeg, er du tilmeldt, og skal du melde fra, så kontakt Kompas.</p>
     <ul class="signup-list">${data.signup.map((c) => `
       <li class="signup-row" data-id="${c.id}">
         <div class="signup-info">
@@ -109,9 +110,9 @@ function signupSection() {
       </li>`).join('')}</ul></section>`;
 }
 
-// A full course takes no new Kan; those who said Kan can still withdraw or change to Måske.
+// A full course takes no new sign-ups.
 const lockedText = (c) => (c.answer === 'yes' ? 'Du er tilmeldt. Kontakt Kompas, hvis du skal melde fra.' : '');
-// After Kan only Kompas can take the sign-up back, so both buttons lock.
+// After Det kan jeg only Kompas can take the sign-up back, so the button locks.
 const locked = (c, k) => c.answer === 'yes' || (k === 'yes' && c.full);
 
 function bindSignup() {

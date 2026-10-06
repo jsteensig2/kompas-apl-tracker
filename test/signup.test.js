@@ -1,4 +1,4 @@
-// Tilmelding: consultants click Kan or Måske on Foreløbig courses without a consultant.
+// Tilmelding: consultants click "Det kan jeg" on Foreløbig courses without a consultant (Måske was dropped).
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from '../server/index.js';
@@ -40,23 +40,22 @@ test('Foreløbig courses without a consultant are open on every consultant page'
   course = data.signup.find((c) => c.school === 'Mølleholmskolen');
 });
 
-test('consultants answer, change and remove their answer; Kompas sees all answers', async () => {
+test('consultants can only say "Det kan jeg"; Kompas sees all answers', async () => {
   const kp = await page(kim);
   const sp = await page(soren);
-  assert.equal((await answer(kp, course.id, 'maybe')).status, 200);
+  assert.equal((await answer(kp, course.id, 'maybe')).status, 400);
   let list = await (await answer(kp, course.id, 'yes')).json();
   assert.equal(list.find((c) => c.id === course.id).answer, 'yes');
   assert.equal((await answer(sp, course.id, 'no')).status, 400);
-  list = await (await answer(sp, course.id, 'maybe')).json();
+  assert.equal((await answer(sp, course.id, 'maybe')).status, 400);
+  list = await (await answer(sp, course.id, '')).json();
   assert.equal(list.find((c) => c.id === course.id).yes, 1);
   assert.equal((await answer(sp, course.id, 'perhaps')).status, 400);
   assert.equal((await answer(`/k/${'0'.repeat(48)}`, course.id, 'yes')).status, 404);
 
   const overview = await json('admin', '/api/signups');
   const row = overview.courses.find((c) => c.id === course.id);
-  assert.deepEqual(row.answers, { [kim.id]: 'yes', [soren.id]: 'maybe' });
-
-  list = await (await answer(sp, course.id, '')).json();
+  assert.deepEqual(row.answers, { [kim.id]: 'yes' });
   assert.equal(list.find((c) => c.id === course.id).answer, '');
 });
 
@@ -87,14 +86,13 @@ test('a course closes for sign-up when enough consultants have said Kan', async 
   const [kp, sp, tp] = [await page(kim), await page(soren), await page(third)];
   const borger = (await (await fetch(`${base}${kp}/data`)).json()).signup.find((c) => c.school === 'Borgerskolen');
   await call('admin', `/api/signups/${borger.id}/needed`, { method: 'PUT', body: JSON.stringify({ needed: 2 }) });
-  await answer(tp, borger.id, 'maybe');
   let list = await (await answer(kp, borger.id, 'yes')).json();
   let mine = list.find((c) => c.id === borger.id);
   assert.deepEqual([mine.yes, mine.needed, mine.full], [1, 2, false]);
   list = await (await answer(sp, borger.id, 'yes')).json();
   assert.equal(list.find((c) => c.id === borger.id).full, true);
 
-  // Måske does not count, and a full course takes no new Kan.
+  // A full course takes no new sign-ups.
   assert.equal((await answer(tp, borger.id, 'yes')).status, 409);
   const fourth = opts.consultants.find((c) => ![kim.id, soren.id, third.id].includes(c.id));
   const fp = await page(fourth);
@@ -114,7 +112,7 @@ test('a consultant cannot withdraw a Kan; only Kompas can remove it', async () =
   const open = (await (await fetch(`${base}${kp}/data`)).json()).signup.find((c) => c.school === 'Borgerskolen');
   assert.equal(open.answer, 'yes');
   assert.equal((await answer(kp, open.id, '')).status, 409);
-  assert.equal((await answer(kp, open.id, 'maybe')).status, 409);
+  assert.equal((await answer(kp, open.id, 'maybe')).status, 400);
   assert.equal((await call('Atea', `/api/signups/${open.id}/consultants/${kim.id}`, { method: 'DELETE' })).status, 403);
   assert.equal((await call('admin', `/api/signups/${open.id}/consultants/${kim.id}`, { method: 'DELETE' })).status, 200);
   const after = (await (await fetch(`${base}${kp}/data`)).json()).signup.find((c) => c.id === open.id);

@@ -675,9 +675,10 @@ export function createApi(db, { XLSX } = {}) {
 
   // --- Tilmelding ---------------------------------------------------------------------------
   // Works like a Doodle: Foreløbig courses from today on that have no consultant yet are open, and
-  // every consultant clicks Kan or Måske on their own page (no answer means they cannot). Kompas sees all answers and
+  // every consultant clicks "Det kan jeg" on their own page (no answer means they cannot). Kompas sees all answers and
   // puts the chosen consultants on the course (one course per consultant, as everywhere else).
-  const ANSWERS = ['yes', 'maybe'];
+  // Consultants only say yes now (Jakob, 2026-10-06). Older Måske answers stay visible to Kompas.
+  const ANSWERS = ['yes'];
   // "Sæt på" gives each consultant their own copy of the course (same date, title, school and reseller).
   // The first row of that group carries the sign-ups. The course stays open until as many consultants
   // as needed are on it (Jakob, 2026-10-06: putting one consultant on a course that needs three must
