@@ -1550,25 +1550,26 @@ async function renderSignup(root) {
   const silent = consultants.filter((p) => !courses.some((c) => c.answers[p.id]));
   root.innerHTML = `
     <div class="pagehead"><div><p class="eyebrow">Foreløbige kurser</p><h1>Tilmelding</h1>
-      <p class="muted">Foreløbige kurser uden konsulent. Konsulenterne klikker Kan eller Måske på deres konsulentside, og du sætter dem på kurset her.
-        Kun Kan tæller med i tilmeldt. Når et kursus har fået de konsulenter, der skal bruges, lukker det for tilmelding.
+      <p class="muted">Foreløbige kurser, der mangler konsulenter. Konsulenterne klikker Kan eller Måske på deres konsulentside, og du sætter dem på kurset her.
+        Kun Kan og konsulenter, du har sat på, tæller med i tilmeldt. Kurset bliver her, indtil du har sat så mange på, som der skal bruges. Når et kursus har fået de konsulenter, der skal bruges, lukker det for tilmelding.
         Linket til konsulentsiden finder du under Administration › Konsulenter › Konsulentlink.</p></div></div>
     ${munis.length > 1 ? `<div class="filters filters-inline"><label class="field field-compact"><span>Kommune</span><select id="su-muni">
       <option value="">Alle kommuner</option>${munis.map((m) => `<option ${m === state.signupMunicipality ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></label></div>` : ''}
-    ${!shown.length ? `<section class="card"><p class="empty">Der er ingen foreløbige kurser uden konsulent lige nu. Et kursus kommer med her, når det er markeret som Foreløbig og ikke har nogen konsulent.</p></section>` : `
+    ${!shown.length ? `<section class="card"><p class="empty">Der er ingen foreløbige kurser, der mangler konsulenter, lige nu. Et kursus kommer med her, når det er markeret som Foreløbig og ikke har fået alle de konsulenter, der skal bruges.</p></section>` : `
     <section class="card card-flush"><div class="table-wrap signup-wrap"><table class="table signup-grid">
       <thead><tr><th>Kursus</th><th class="num">Skal bruges</th><th class="num">Tilmeldt</th>
         ${consultants.map((p) => `<th class="su-person" title="${esc(p.name)}">${esc(p.initials || p.name.split(' ')[0])}</th>`).join('')}<th></th></tr></thead>
       <tbody>${shown.map((c) => {
         return `<tr data-id="${c.id}">
         <td><span class="nowrap"><b>${fmtDate(c.date)}</b>${withTime(c)} · ${c.duration === 'full' ? 'Hel dag' : 'Halv dag'}</span>
-          <div><b>${esc(c.title)}</b></div><div class="muted small">${esc(c.school || '–')}${c.municipality ? ` · ${esc(c.municipality)}` : ''} · ${esc(c.reseller)}</div></td>
+          <div><b>${esc(c.title)}</b></div><div class="muted small">${esc(c.school || '–')}${c.municipality ? ` · ${esc(c.municipality)}` : ''} · ${esc(c.reseller)}</div>
+          ${c.assigned.length ? `<div class="small su-on-list">Sat på: ${c.assigned.map((id) => esc(consultants.find((p) => p.id === id)?.name || '')).join(', ')}</div>` : ''}</td>
         <td class="num"><input class="input-num" type="number" min="1" max="50" value="${c.needed ?? ''}" data-needed aria-label="Konsulenter der skal bruges"></td>
-        <td class="num"><b class="nowrap ${c.full ? 'su-enough' : ''}">${c.yes}${c.needed ? `/${c.needed}` : ''}</b>${c.full ? '<div class="small su-enough">Fuld · lukket</div>' : c.needed ? `<div class="muted small">mangler ${c.needed - c.yes}</div>` : ''}${count(c, 'maybe') ? `<div class="muted small">+${count(c, 'maybe')} måske</div>` : ''}</td>
-        ${consultants.map((p) => { const a = c.answers[p.id]; return `<td class="su-cell ${a ? `su-${a}` : ''}" title="${esc(p.name)}: ${a ? ANSWER_MARK[a][1] : 'Har ikke meldt sig'}">${a ? `<button type="button" class="su-remove" data-remove="${p.id}" aria-label="Fjern ${esc(p.name)}s tilmelding">${ANSWER_MARK[a][0]}</button>` : '<span class="muted">–</span>'}</td>`; }).join('')}
+        <td class="num"><b class="nowrap ${c.full ? 'su-enough' : ''}">${c.yes}${c.needed ? `/${c.needed}` : ''}</b>${c.full ? '<div class="small su-enough">Fuld · lukket</div>' : c.needed ? `<div class="muted small">mangler ${Math.max(c.needed - c.yes, 0)}</div>` : ''}${count(c, 'maybe') ? `<div class="muted small">+${count(c, 'maybe')} måske</div>` : ''}</td>
+        ${consultants.map((p) => { const a = c.answers[p.id]; if (c.assigned.includes(p.id)) return `<td class="su-cell su-on" title="${esc(p.name)}: sat på kurset">På</td>`; return `<td class="su-cell ${a ? `su-${a}` : ''}" title="${esc(p.name)}: ${a ? ANSWER_MARK[a][1] : 'Har ikke meldt sig'}">${a ? `<button type="button" class="su-remove" data-remove="${p.id}" aria-label="Fjern ${esc(p.name)}s tilmelding">${ANSWER_MARK[a][0]}</button>` : '<span class="muted">–</span>'}</td>`; }).join('')}
         <td><button type="button" class="btn btn-sm" data-assign>Sæt på</button></td></tr>`;
       }).join('')}</tbody></table></div></section>`}
-    <p class="muted small">✓ Kan · ? Måske · – kan ikke (har ikke meldt sig). Klik på et ✓ eller ? for at fjerne tilmeldingen.${silent.length ? ` Har ikke meldt sig på noget endnu: ${silent.map((p) => `${esc(p.name)}${p.has_link ? '' : ' (har ikke fået et konsulentlink)'}`).join(', ')}.` : ''}</p>`;
+    <p class="muted small">På = sat på kurset · ✓ Kan · ? Måske · – kan ikke (har ikke meldt sig). Klik på et ✓ eller ? for at fjerne tilmeldingen.${silent.length ? ` Har ikke meldt sig på noget endnu: ${silent.map((p) => `${esc(p.name)}${p.has_link ? '' : ' (har ikke fået et konsulentlink)'}`).join(', ')}.` : ''}</p>`;
 
   $('#su-muni')?.addEventListener('change', (e) => { state.signupMunicipality = e.target.value; renderSignup(root); });
   $$('.signup-grid tbody tr').forEach((tr) => {
@@ -1590,11 +1591,11 @@ async function renderSignup(root) {
       if (next?.classList.contains('su-assign')) { next.remove(); return; }
       // Those who said Kan come first and are ticked, up to the number needed.
       const order = { yes: 0, maybe: 1, undefined: 2 };
-      const ranked = [...consultants].sort((a, b) => order[c.answers[a.id]] - order[c.answers[b.id]]);
-      const limit = c.needed || Infinity;
+      const ranked = [...consultants].filter((p) => !c.assigned.includes(p.id)).sort((a, b) => order[c.answers[a.id]] - order[c.answers[b.id]]);
+      const limit = c.needed ? c.needed - c.assigned.length : Infinity;
       let ticked = 0;
       tr.insertAdjacentHTML('afterend', `<tr class="su-assign"><td colspan="${consultants.length + 4}">
-        <form class="su-assign-form"><p class="small"><b>Hvem skal tage kurset?</b> Hver konsulent får sit eget kursus, og kurserne forbliver Foreløbige, indtil du godkender dem.</p>
+        <form class="su-assign-form"><p class="small"><b>Hvem skal tage kurset?</b> Hver konsulent får sit eget kursus, og kurserne forbliver Foreløbige, indtil du godkender dem.${c.assigned.length ? ` Allerede sat på: ${c.assigned.map((id) => esc(consultants.find((p) => p.id === id)?.name || '')).join(', ')}.` : ''}</p>
           <div class="su-choices">${ranked.map((p) => { const a = c.answers[p.id]; const on = a === 'yes' && ticked < limit; if (on) ticked += 1;
             return `<label class="check"><input type="checkbox" name="c" value="${p.id}" ${on ? 'checked' : ''}> ${esc(p.name)} <span class="muted small">${a ? ANSWER_MARK[a][1] : 'ikke meldt sig'}</span>${c.busy.includes(p.id) ? ' <span class="dbl small" title="Dobbeltbooking">⚠ har et andet kursus på det tidspunkt</span>' : ''}</label>`; }).join('')}</div>
           <div class="copyrow"><button class="btn btn-primary btn-sm" type="submit">Sæt på kurset</button><button class="btn btn-sm" type="button" data-cancel>Annullér</button></div>
