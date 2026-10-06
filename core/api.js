@@ -156,9 +156,58 @@ export function createApi(db, { XLSX } = {}) {
     return rows.map((r) => ({ ...r, notes: counts.get(r.id) || 0 }));
   }
 
+  // Dobbeltbooking: a consultant on more than one course the same day. Only Kompas is warned;
+  // it never blocks saving, as two half days the same day can be fine.
+  function withDoubleBookings(user, rows) {
+    if (!isAdmin(user) || !rows.length) return rows;
+    const counts = new Map(db.all(`SELECT consultant_id, date, COUNT(*) AS n FROM activities
+        WHERE consultant_id IS NOT NULL GROUP BY consultant_id, date HAVING n > 1`).map((r) => [`${r.consultant_id}|${r.date}`, r.n]));
+    return rows.map((r) => ({ ...r, double_booked: r.consultant_id ? (counts.get(`${r.consultant_id}|${r.date}`) || 1) - 1 : 0 }));
+  }
+
+  // Other courses the given consultants already have on a date (for the warning in the form).
+  function sameDayCourses(user, f) {
+    requireAdmin(user);
+    const date = String(f.date || '');
+    const ids = String(f.consultants || '').split(',').map(int).filter(Boolean);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !ids.length) return [];
+    return db.all(`${ACTIVITY_SELECT} WHERE a.date = ? AND a.consultant_id IN (${ids.map(() => '?').join(', ')}) AND a.id <> ?
+        ORDER BY c.name, a.id`, [date, ...ids, int(f.exclude) || 0]).map(withStatus);
+  }
+
+  // Upcoming days where a consultant has more than one course, across all resellers.
+  function upcomingDoubleBookings() {
+    const rows = db.all(`${ACTIVITY_SELECT} JOIN (SELECT consultant_id, date FROM activities WHERE consultant_id IS NOT NULL AND date >= ?
+        GROUP BY consultant_id, date HAVING COUNT(*) > 1) d ON d.consultant_id = a.consultant_id AND d.date = a.date
+        ORDER BY a.date, c.name, a.id`, [todayIso()]).map(withStatus);
+    const groups = new Map();
+    for (const r of rows) {
+      const key = `${r.date}|${r.consultant_id}`;
+      if (!groups.has(key)) groups.set(key, { date: r.date, consultant_id: r.consultant_id, consultant: r.consultant, courses: [] });
+      groups.get(key).courses.push(r);
+    }
+    return [...groups.values()];
+  }
+
+  // Konsulentoverblik: held courses in the chosen year, and every coming course split into
+  // Planlagt and Foreløbig, per consultant, so Kompas can see whether the work is shared fairly.
+  function consultantLoad(from, and, params, ob, obAnd, today) {
+    const held = new Map(db.all(`SELECT a.consultant_id AS id, COUNT(*) AS held,
+        SUM(CASE a.duration WHEN 'full' THEN 2 ELSE 1 END) AS workshops ${from}${and} ${HELD_SQL} AND a.consultant_id IS NOT NULL
+        GROUP BY a.consultant_id`, [...params, today]).map((r) => [r.id, r]));
+    const coming = db.all(`SELECT a.consultant_id AS id, SUM(a.pending = 0) AS planned, SUM(a.pending) AS pending, MIN(a.date) AS next
+        FROM activities a${ob.sql}${obAnd} ${PLANNED_SQL} GROUP BY a.consultant_id`, [...ob.params, today]);
+    const byId = new Map(coming.filter((r) => r.id).map((r) => [r.id, r]));
+    const unassigned = coming.find((r) => !r.id);
+    const rows = db.all('SELECT id, name, initials FROM consultants ORDER BY name').map((c) => ({ ...c,
+      held: held.get(c.id)?.held || 0, workshops: held.get(c.id)?.workshops || 0,
+      planned: byId.get(c.id)?.planned || 0, pending: byId.get(c.id)?.pending || 0, next: byId.get(c.id)?.next || null }));
+    return { rows, unassigned: unassigned ? (unassigned.planned || 0) + (unassigned.pending || 0) : 0 };
+  }
+
   function listActivities(user, f) {
     const { sql, params } = buildWhere(user, f);
-    const rows = withNoteCounts(user, db.all(`${ACTIVITY_SELECT}${sql} ORDER BY a.date DESC, a.id DESC`, params).map(withStatus));
+    const rows = withDoubleBookings(user, withNoteCounts(user, db.all(`${ACTIVITY_SELECT}${sql} ORDER BY a.date DESC, a.id DESC`, params).map(withStatus)));
     // Order book first (soonest at the top), then held courses newest first.
     return [...rows.filter((r) => r.status === 'planned').reverse(), ...rows.filter((r) => r.status === 'held')];
   }
@@ -191,7 +240,12 @@ export function createApi(db, { XLSX } = {}) {
         SUM(${HELD_SQL}) AS held, SUM(${PLANNED_SQL}) AS planned, SUM(a.pending) AS pending ${from} GROUP BY month ORDER BY month`, [today, today, ...params]);
     const latest = db.all(`${ACTIVITY_SELECT}${sql}${and} ${HELD_SQL} ORDER BY a.date DESC, a.id DESC LIMIT 6`, [...params, today]).map(withStatus);
     const upcoming = db.all(`${ACTIVITY_SELECT}${ob.sql}${obAnd} ${PLANNED_SQL} ORDER BY a.date ASC, a.id ASC LIMIT 6`, [...ob.params, today]).map(withStatus);
-    return { kpi, orderbook, monthly, latest: withNoteCounts(user, latest), upcoming: withNoteCounts(user, upcoming) };
+    const result = { kpi, orderbook, monthly, latest: withNoteCounts(user, latest), upcoming: withDoubleBookings(user, withNoteCounts(user, upcoming)) };
+    if (isAdmin(user)) {
+      result.consultants = consultantLoad(from, and, params, ob, obAnd, today);
+      result.doubleBookings = upcomingDoubleBookings();
+    }
+    return result;
   }
 
   // Filter and form options. Resellers only get values that occur in their own activities.
@@ -596,7 +650,9 @@ export function createApi(db, { XLSX } = {}) {
     const consultants = db.all('SELECT id, name, initials, feed_token IS NOT NULL AS has_link FROM consultants ORDER BY name')
       .map((c) => ({ ...c, has_link: Boolean(c.has_link) }));
     const courses = openCourses().map((c) => ({ ...c,
-      answers: Object.fromEntries(answers.filter((x) => x.activity_id === c.id).map((x) => [x.consultant_id, x.answer])) }));
+      answers: Object.fromEntries(answers.filter((x) => x.activity_id === c.id).map((x) => [x.consultant_id, x.answer])),
+      // Consultants who already have a course that day (Dobbeltbooking warning when assigning).
+      busy: db.all('SELECT DISTINCT consultant_id AS id FROM activities WHERE date = ? AND consultant_id IS NOT NULL', [c.date]).map((r) => r.id) }));
     return { consultants, courses };
   }
 
@@ -814,6 +870,7 @@ export function createApi(db, { XLSX } = {}) {
       case 'GET /dashboard': return { json: dashboard(user, query) };
       case 'GET /activities': return { json: listActivities(user, query) };
       case 'GET /activities/export': return { file: exportActivities(user, query) };
+      case 'GET /activities/same-day': return { json: sameDayCourses(user, query) };
       case 'GET /activities/:id': return { json: getActivity(user, id) };
       case 'POST /activities': return { json: createActivity(user, body) };
       case 'PUT /activities/:id': return { json: updateActivity(user, id, body) };

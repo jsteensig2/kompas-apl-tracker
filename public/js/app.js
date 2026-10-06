@@ -340,6 +340,9 @@ const noteMark = (a) => {
   const label = a.notes ? `${a.notes} ${a.notes === 1 ? 'note' : 'noter'}` : 'Skriv en note';
   return ` <button type="button" class="note-btn ${a.notes ? 'has-notes' : ''}" data-note-open="${a.id}" title="${label}" aria-label="${label}">${NOTE_ICON}${a.notes || ''}</button>`;
 };
+// ⚠ Dobbeltbooking: the consultant has another course the same day (admins only; a warning, never a block).
+const dblMark = (a) => (a.double_booked ? ` <span class="dbl" title="${esc(a.consultant)} har ${a.double_booked === 1 ? 'et andet kursus' : `${a.double_booked} andre kurser`} samme dag" aria-label="Dobbeltbooking">⚠</span>` : '');
+const durText = (a) => (a.duration === 'full' ? 'hel dag' : 'halv dag');
 const star = (a) => (a.reschedule ? '<span class="star" title="Skal have ny dato. Står på den gamle dato, indtil en ny er fundet" aria-label="Skal have ny dato">★</span> ' : '');
 
 // Short explanation of the three statuses, shown on Overblik and Aktiviteter.
@@ -412,11 +415,51 @@ function activityLine(a) {
         <div class="latest-title">${star(a)}${esc(a.apl_type)} · ${esc(a.title)}${a.pending ? ` ${statusPill(a)}` : ''}${a.notes ? noteMark(a) : ''}</div>
         <div class="muted">${esc(a.school || '–')}${a.municipality ? ` · ${esc(a.municipality)}` : ''}</div>
         <div class="latest-meta">
-          <span>${participantsCell(a, true)}</span><span>${esc(a.consultant || '')}</span>
+          <span>${participantsCell(a, true)}</span><span>${esc(a.consultant || '')}${dblMark(a)}</span>
           ${seesAll() ? `<span class="tag">${esc(a.reseller)}</span>` : ''}
         </div>
       </div>
     </li>`;
+}
+
+// Upcoming days where a consultant is on more than one course.
+function doubleBookingCard(list) {
+  if (!list.length) return '';
+  return `<section class="card dbl-card" aria-label="Dobbeltbookinger">
+    <div class="card-head"><h2><span class="dbl" aria-hidden="true">⚠</span> Dobbeltbookinger</h2><span class="muted small">Kommende dage, hvor en konsulent står på mere end ét kursus</span></div>
+    <ul class="dbl-list">${list.map((g) => `<li>
+      <b class="nowrap">${fmtDate(g.date)} · ${esc(g.consultant)}</b>
+      <span>${g.courses.map((c) => `<button type="button" class="linkbtn" data-dbl-edit="${c.id}">${esc(c.title)}</button> <span class="muted">(${esc(c.school || c.municipality || '')}${c.school || c.municipality ? ', ' : ''}${durText(c)}${c.pending ? ', foreløbig' : ''})</span>`).join('<span class="muted"> og </span>')}</span>
+      ${g.courses.length === 2 && g.courses.every((c) => c.duration === 'half') ? '<span class="muted small">To halve dage, så det kan godt passe.</span>' : ''}
+    </li>`).join('')}</ul>
+  </section>`;
+}
+
+// Konsulentoverblik: how the courses are shared between the consultants (admins only).
+function consultantOverview({ rows, unassigned }, year) {
+  const sum = (r) => r.held + r.planned + r.pending;
+  const sorted = [...rows].sort((x, y) => sum(y) - sum(x) || x.name.localeCompare(y.name, 'da'));
+  const max = Math.max(1, ...rows.map(sum));
+  const total = (key) => rows.reduce((n, r) => n + r[key], 0);
+  const pct = (n) => `${(n / max) * 100}%`;
+  return `<section class="card consult-card">
+    <div class="card-head"><h2>Konsulentoverblik</h2><span class="muted small">Afholdt ${year ? `i ${esc(year)}` : 'i alt'} · kommende kurser på alle datoer</span></div>
+    <div class="table-wrap consult-wrap"><table class="table consult-table">
+      <thead><tr><th>Konsulent</th><th class="num">Afholdt</th><th class="num hide-sm">Apple-workshops</th><th class="num">Planlagt</th><th class="num">Foreløbig</th>
+        <th class="hide-sm">Næste kursus</th><th class="consult-barcol"><span class="sr">Fordeling</span></th></tr></thead>
+      <tbody>${sorted.map((r) => `<tr class="${sum(r) ? '' : 'is-empty'}">
+        <td><button type="button" class="linkbtn consult-name" data-consultant="${r.id}" title="Se ${esc(r.name)}s kurser">${esc(r.name)}</button></td>
+        <td class="num"><b>${num(r.held)}</b></td><td class="num hide-sm">${num(r.workshops)}</td>
+        <td class="num">${num(r.planned)}</td><td class="num">${r.pending ? num(r.pending) : '<span class="muted">0</span>'}</td>
+        <td class="nowrap hide-sm">${r.next ? fmtDate(r.next) : '<span class="muted">–</span>'}</td>
+        <td class="consult-barcol"><div class="cbar" aria-hidden="true"><i class="cb-held" data-w="${pct(r.held)}"></i><i class="cb-planned" data-w="${pct(r.planned)}"></i><i class="cb-pending" data-w="${pct(r.pending)}"></i></div></td>
+      </tr>`).join('')}</tbody>
+      <tfoot><tr><td>I alt</td><td class="num">${num(total('held'))}</td><td class="num hide-sm">${num(total('workshops'))}</td><td class="num">${num(total('planned'))}</td><td class="num">${num(total('pending'))}</td><td class="hide-sm"></td><td class="consult-barcol"></td></tr></tfoot>
+    </table></div>
+    <div class="legend"><span><i class="sw sw-held"></i>Afholdt</span><span><i class="sw sw-planned"></i>Planlagt</span><span><i class="sw sw-pending"></i>Foreløbig</span></div>
+    ${unassigned ? `<p class="muted small">${num(unassigned)} ${unassigned === 1 ? 'kommende kursus har' : 'kommende kurser har'} ingen konsulent endnu (se <a href="#signup" data-go="signup">Tilmelding</a>).</p>` : ''}
+    <p class="muted small">Foreløbige kurser tæller aldrig som afholdt. Klik på et navn for at se konsulentens kurser.</p>
+  </section>`;
 }
 
 async function renderDashboard(root) {
@@ -441,6 +484,7 @@ async function renderDashboard(root) {
   const d = await api.get(`/api/dashboard${qs(f)}`);
   const k = d.kpi;
   $('#dash-body').innerHTML = `
+    ${d.doubleBookings ? doubleBookingCard(d.doubleBookings) : ''}
     <p class="section-label">Afholdte kurser${f.year ? ` · ${esc(f.year)}` : ''}</p>
     <section class="kpis kpis-5" aria-label="Nøgletal for afholdte kurser">
       <div class="kpi"><div class="kpi-num">${num(k.experiences)}</div><div class="kpi-label">APL-aktiviteter</div></div>
@@ -469,8 +513,18 @@ async function renderDashboard(root) {
       </div>
       ${d.upcoming.length ? `<ul class="latest latest-cols">${d.upcoming.map(activityLine).join('')}</ul>` : '<p class="muted empty">Ingen planlagte kurser i perioden.</p>'}
       ${statusGuide()}
-    </section>`;
+    </section>
+    ${d.consultants ? consultantOverview(d.consultants, f.year) : ''}`;
   bindParticipants(root, () => toast('Deltagere gemt'));
+  // Set from script, as the page's security policy does not allow inline style attributes.
+  $$('.cbar [data-w]', root).forEach((el) => { el.style.width = el.dataset.w; });
+  $$('[data-consultant]', root).forEach((b) => {
+    b.onclick = () => {
+      Object.assign(state.listFilters, { q: '', status: '', year: '', from: '', to: '', municipality: '', type: '', reschedule: '', consultant: b.dataset.consultant });
+      go('activities');
+    };
+  });
+  $$('[data-dbl-edit]', root).forEach((b) => { b.onclick = async () => go('register', { editing: await api.get(`/api/activities/${b.dataset.dblEdit}`) }); });
   $('#ob-all').addEventListener('click', () => { Object.assign(state.listFilters, { status: 'planned', year: '', from: '', to: '' }); }, true);
 }
 
@@ -576,7 +630,7 @@ async function loadList() {
           <tr class="${rowState(a)} ${admin ? 'clickable' : ''}" ${admin ? `data-edit="${a.id}"` : ''}>
             <td class="nowrap">${fmtDate(a.date)}</td><td>${statusCell(a)}</td><td>${esc(a.apl_type)}</td><td>${star(a)}<b>${esc(a.title)}</b>${noteMark(a)}</td>
             <td>${esc(a.school || '–')}</td><td>${esc(a.municipality || '–')}</td><td class="num">${participantsCell(a)}</td>
-            <td class="nowrap">${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}</td><td>${esc(a.consultant || '–')}</td>
+            <td class="nowrap">${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}</td><td>${esc(a.consultant || '–')}${dblMark(a)}</td>
             <td><span class="tag">${esc(a.reseller)}</span></td><td>${esc(a.paid_by || '–')}</td>
             ${admin ? `<td><button type="button" class="linkbtn" data-edit="${a.id}">Redigér</button></td>` : ''}
           </tr>`).join('')}</tbody>
@@ -590,7 +644,7 @@ async function loadList() {
         <dl class="act-meta">
           <div><dt>Deltagere</dt><dd>${participantsCell(a)}</dd></div>
           <div><dt>Varighed</dt><dd>${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}</dd></div>
-          <div><dt>Konsulent</dt><dd>${esc(a.consultant || '–')}</dd></div>
+          <div><dt>Konsulent</dt><dd>${esc(a.consultant || '–')}${dblMark(a)}</dd></div>
           <div><dt>Betalt af</dt><dd>${esc(a.paid_by || '–')}</dd></div>
         </dl>
       </li>`).join('')}</ul>`;
@@ -665,6 +719,7 @@ function renderRegister(root) {
           <div class="seg seg-lg seg-wrap" role="group" aria-labelledby="cons-label">
             ${o.consultants.map((c) => `<label><input type="checkbox" name="consultant_ids" value="${c.id}" ${String(c.id) === String(v.consultant_id) ? 'checked' : ''}><span>${esc(c.name)}</span></label>`).join('')}
           </div></div>`}
+        <p id="same-day" class="dbl-warn field-wide" role="status" hidden></p>
         <div class="field"><span id="res-label">Reseller / partner <small class="muted">· styrer hvem der kan se den</small></span>
           <div class="seg seg-lg seg-wrap" role="radiogroup" aria-labelledby="res-label">
             ${o.resellers.map((r) => `<label><input type="radio" name="reseller_id" value="${r.id}" ${String(r.id) === String(v.reseller_id) ? 'checked' : ''}><span>${esc(r.name)}</span></label>`).join('')}
@@ -706,6 +761,29 @@ function renderRegister(root) {
   };
   $$('input[name="consultant_ids"]').forEach((x) => x.addEventListener('change', planHint));
   $('#a-date').addEventListener('change', planHint);
+
+  // Dobbeltbooking: warn (but allow saving) when a chosen consultant already has a course that day.
+  let sameDayReq = 0;
+  const checkSameDay = async () => {
+    const box = $('#same-day');
+    const ids = a ? [$('#a-consultant').value].filter(Boolean) : chosen();
+    const date = $('#a-date').value;
+    const req = ++sameDayReq;
+    if (!date || !ids.length) { box.hidden = true; return; }
+    let rows = [];
+    try { rows = await api.get(`/api/activities/same-day${qs({ date, consultants: ids.join(','), exclude: a?.id || '' })}`); } catch { /* the warning is only a help */ }
+    if (req !== sameDayReq) return;
+    const byName = new Map();
+    rows.forEach((r) => byName.set(r.consultant, [...(byName.get(r.consultant) || []), r]));
+    box.innerHTML = [...byName].map(([name, list]) => `<span><b>⚠ ${esc(name)}</b> har allerede ${list.length === 1 ? 'et kursus' : `${list.length} kurser`} ${fmtDate(date)}:
+      ${list.map((r) => `${esc(r.title)}${r.school ? `, ${esc(r.school)}` : ''} (${durText(r)}${r.pending ? ', foreløbig' : ''})`).join('; ')}.</span>`).join('')
+      + (rows.length ? '<span class="muted small">Du kan godt gemme alligevel, fx hvis det er to halve dage.</span>' : '');
+    box.hidden = !rows.length;
+  };
+  $$('input[name="consultant_ids"]').forEach((x) => x.addEventListener('change', checkSameDay));
+  $('#a-consultant')?.addEventListener('change', checkSameDay);
+  $('#a-date').addEventListener('change', checkSameDay);
+  checkSameDay();
   $('#a-pending').addEventListener('change', planHint);
   planHint();
   $$('[data-title]').forEach((b) => { b.onclick = () => { $('#a-title').value = b.dataset.title; $('#a-school').focus(); }; });
@@ -1485,7 +1563,7 @@ async function renderSignup(root) {
       tr.insertAdjacentHTML('afterend', `<tr class="su-assign"><td colspan="${consultants.length + 4}">
         <form class="su-assign-form"><p class="small"><b>Hvem skal tage kurset?</b> Hver konsulent får sit eget kursus, og kurserne forbliver Foreløbige, indtil du godkender dem.</p>
           <div class="su-choices">${ranked.map((p) => { const a = c.answers[p.id]; const on = a === 'yes' && ticked < limit; if (on) ticked += 1;
-            return `<label class="check"><input type="checkbox" name="c" value="${p.id}" ${on ? 'checked' : ''}> ${esc(p.name)} <span class="muted small">${a ? ANSWER_MARK[a][1] : 'ikke meldt sig'}</span></label>`; }).join('')}</div>
+            return `<label class="check"><input type="checkbox" name="c" value="${p.id}" ${on ? 'checked' : ''}> ${esc(p.name)} <span class="muted small">${a ? ANSWER_MARK[a][1] : 'ikke meldt sig'}</span>${c.busy.includes(p.id) ? ' <span class="dbl small" title="Dobbeltbooking">⚠ har et andet kursus den dag</span>' : ''}</label>`; }).join('')}</div>
           <div class="copyrow"><button class="btn btn-primary btn-sm" type="submit">Sæt på kurset</button><button class="btn btn-sm" type="button" data-cancel>Annullér</button></div>
         </form></td></tr>`);
       const row = tr.nextElementSibling;
