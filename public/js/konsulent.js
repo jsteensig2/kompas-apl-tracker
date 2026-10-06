@@ -84,7 +84,9 @@ function messagesSection() {
 // Kan or Måske (no answer means they cannot); Kompas sees the answers and puts consultants on the courses.
 const ANSWERS = [['yes', 'Kan'], ['maybe', 'Måske']];
 const people = (n) => `${n} ${n === 1 ? 'konsulent' : 'konsulenter'}`;
-const needText = (c) => `${c.needed ? `Skal bruge ${people(c.needed)} · ` : ''}${c.yes ? `${people(c.yes)} har sagt ja` : 'Ingen har sagt ja endnu'}`;
+const needText = (c) => (c.needed
+  ? `Tilmeldt ${c.yes}/${c.needed}${c.full ? ' · fuldt, lukket for tilmelding' : ` · mangler ${people(c.needed - c.yes)}`}`
+  : (c.yes ? `${people(c.yes)} har sagt Kan` : 'Ingen har sagt Kan endnu'));
 
 const signedText = () => { const n = data.signup.filter((c) => c.answer).length; return `Du har meldt dig på ${n} af ${data.signup.length}`; };
 
@@ -102,9 +104,12 @@ function signupSection() {
           <div class="muted small" data-need>${needText(c)}</div>
         </div>
         <div class="seg signup-seg" role="group" aria-label="Kan du tage kurset?">${ANSWERS.map(([k, l]) => `
-          <button type="button" data-answer="${k}" class="ans-${k} ${c.answer === k ? 'on' : ''}" aria-pressed="${c.answer === k}">${l}</button>`).join('')}</div>
+          <button type="button" data-answer="${k}" class="ans-${k} ${c.answer === k ? 'on' : ''}" aria-pressed="${c.answer === k}"${kanClosed(c, k) ? ' disabled' : ''}>${l}</button>`).join('')}</div>
       </li>`).join('')}</ul></section>`;
 }
+
+// A full course takes no new Kan; those who said Kan can still withdraw or change to Måske.
+const kanClosed = (c, k) => k === 'yes' && c.full && c.answer !== 'yes';
 
 function bindSignup() {
   document.querySelectorAll('.signup-row').forEach((li) => {
@@ -116,6 +121,7 @@ function bindSignup() {
         try {
           const r = await fetch(`/k/${encodeURIComponent(token)}/signup/${c.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ answer }) });
           const res = await r.json();
+          if (r.status === 409) { li.remove(); toast(res.error); return; }
           if (!r.ok) throw new Error(res.error || 'Svaret kunne ikke gemmes.');
           data.signup = res;
           const next = data.signup.find((x) => x.id === c.id);
@@ -127,7 +133,8 @@ function bindSignup() {
         } catch (ex) {
           toast(ex.message);
         } finally {
-          li.querySelectorAll('button').forEach((x) => { x.disabled = false; });
+          const now = data.signup.find((x) => x.id === c.id);
+          li.querySelectorAll('[data-answer]').forEach((x) => { x.disabled = Boolean(now && kanClosed(now, x.dataset.answer)); });
         }
       };
     });

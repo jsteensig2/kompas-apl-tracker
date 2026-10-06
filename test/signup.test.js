@@ -81,3 +81,30 @@ test('assigning gives each chosen consultant their own Foreløbig course and clo
   assert.equal((await answer(await page(kim), course.id, 'yes')).status, 404);
   assert.equal((await call('admin', `/api/signups/${course.id}/assign`, { method: 'POST', body: JSON.stringify({ consultant_ids: [kim.id] }) })).status, 404);
 });
+
+test('a course closes for sign-up when enough consultants have said Kan', async () => {
+  const third = opts.consultants.find((c) => ![kim.id, soren.id].includes(c.id));
+  const [kp, sp, tp] = [await page(kim), await page(soren), await page(third)];
+  const borger = (await (await fetch(`${base}${kp}/data`)).json()).signup.find((c) => c.school === 'Borgerskolen');
+  await call('admin', `/api/signups/${borger.id}/needed`, { method: 'PUT', body: JSON.stringify({ needed: 2 }) });
+  await answer(tp, borger.id, 'maybe');
+  let list = await (await answer(kp, borger.id, 'yes')).json();
+  let mine = list.find((c) => c.id === borger.id);
+  assert.deepEqual([mine.yes, mine.needed, mine.full], [1, 2, false]);
+  list = await (await answer(sp, borger.id, 'yes')).json();
+  assert.equal(list.find((c) => c.id === borger.id).full, true);
+
+  // Måske does not count, and a full course takes no new Kan.
+  assert.equal((await answer(tp, borger.id, 'yes')).status, 409);
+  const fourth = opts.consultants.find((c) => ![kim.id, soren.id, third.id].includes(c.id));
+  const fp = await page(fourth);
+  assert.ok(!(await (await fetch(`${base}${fp}/data`)).json()).signup.some((c) => c.id === borger.id), 'hidden for those who have not answered');
+  assert.equal((await answer(fp, borger.id, 'yes')).status, 409);
+  const row = (await json('admin', '/api/signups')).courses.find((c) => c.id === borger.id);
+  assert.deepEqual([row.yes, row.full], [2, true]);
+
+  // When someone steps down to Måske the course opens again.
+  await answer(sp, borger.id, 'maybe');
+  const again = (await (await fetch(`${base}${fp}/data`)).json()).signup.find((c) => c.id === borger.id);
+  assert.deepEqual([again.yes, again.full], [1, false]);
+});

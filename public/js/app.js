@@ -1551,20 +1551,20 @@ async function renderSignup(root) {
   root.innerHTML = `
     <div class="pagehead"><div><p class="eyebrow">Foreløbige kurser</p><h1>Tilmelding</h1>
       <p class="muted">Foreløbige kurser uden konsulent. Konsulenterne klikker Kan eller Måske på deres konsulentside, og du sætter dem på kurset her.
+        Kun Kan tæller med i tilmeldt. Når et kursus har fået de konsulenter, der skal bruges, lukker det for tilmelding.
         Linket til konsulentsiden finder du under Administration › Konsulenter › Konsulentlink.</p></div></div>
     ${munis.length > 1 ? `<div class="filters filters-inline"><label class="field field-compact"><span>Kommune</span><select id="su-muni">
       <option value="">Alle kommuner</option>${munis.map((m) => `<option ${m === state.signupMunicipality ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></label></div>` : ''}
     ${!shown.length ? `<section class="card"><p class="empty">Der er ingen foreløbige kurser uden konsulent lige nu. Et kursus kommer med her, når det er markeret som Foreløbig og ikke har nogen konsulent.</p></section>` : `
     <section class="card card-flush"><div class="table-wrap signup-wrap"><table class="table signup-grid">
-      <thead><tr><th>Kursus</th><th class="num">Skal bruges</th><th class="num">Kan</th>
+      <thead><tr><th>Kursus</th><th class="num">Skal bruges</th><th class="num">Tilmeldt</th>
         ${consultants.map((p) => `<th class="su-person" title="${esc(p.name)}">${esc(p.initials || p.name.split(' ')[0])}</th>`).join('')}<th></th></tr></thead>
       <tbody>${shown.map((c) => {
-        const yes = count(c, 'yes');
         return `<tr data-id="${c.id}">
         <td><span class="nowrap"><b>${fmtDate(c.date)}</b>${withTime(c)} · ${c.duration === 'full' ? 'Hel dag' : 'Halv dag'}</span>
           <div><b>${esc(c.title)}</b></div><div class="muted small">${esc(c.school || '–')}${c.municipality ? ` · ${esc(c.municipality)}` : ''} · ${esc(c.reseller)}</div></td>
         <td class="num"><input class="input-num" type="number" min="1" max="50" value="${c.needed ?? ''}" data-needed aria-label="Konsulenter der skal bruges"></td>
-        <td class="num"><b class="${c.needed && yes >= c.needed ? 'su-enough' : ''}">${yes}</b>${count(c, 'maybe') ? `<div class="muted small">+${count(c, 'maybe')} måske</div>` : ''}</td>
+        <td class="num"><b class="nowrap ${c.full ? 'su-enough' : ''}">${c.yes}${c.needed ? `/${c.needed}` : ''}</b>${c.full ? '<div class="small su-enough">Fuld · lukket</div>' : c.needed ? `<div class="muted small">mangler ${c.needed - c.yes}</div>` : ''}${count(c, 'maybe') ? `<div class="muted small">+${count(c, 'maybe')} måske</div>` : ''}</td>
         ${consultants.map((p) => { const a = c.answers[p.id]; return `<td class="su-cell ${a ? `su-${a}` : ''}" title="${esc(p.name)}: ${a ? ANSWER_MARK[a][1] : 'Har ikke meldt sig'}">${a ? ANSWER_MARK[a][0] : '<span class="muted">–</span>'}</td>`; }).join('')}
         <td><button type="button" class="btn btn-sm" data-assign>Sæt på</button></td></tr>`;
       }).join('')}</tbody></table></div></section>`}
