@@ -170,10 +170,10 @@ a:hover { text-decoration: underline; }
 .field > span, .field > label { font-size: 0.78rem; font-weight: 600; color: var(--muted); letter-spacing: 0.02em; }
 .field-search { grid-column: span 2; }
 .field-compact { min-width: 150px; }
-input, select { font: 400 1rem var(--font); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm);
+input, select, textarea { font: 400 1rem var(--font); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm);
   min-height: 42px; padding: 0 12px; width: 100%; min-width: 0; }
-input:hover, select:hover { border-color: var(--muted); }
-input:focus, select:focus { outline: 2px solid var(--focus); outline-offset: -1px; border-color: transparent; }
+input:hover, select:hover, textarea:hover { border-color: var(--muted); }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--focus); outline-offset: -1px; border-color: transparent; }
 input[type="date"] { -webkit-appearance: none; appearance: none; }
 input[type="search"] { -webkit-appearance: none; appearance: none; }
 .form { padding: clamp(18px, 3vw, 32px); }
@@ -556,3 +556,12 @@ dt .note-btn { margin-left: 0; opacity: 1; cursor: default; }
 .dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
 .notes-dlg .card-head { align-items: flex-start; }
 .notes-dlg .card-head h2 { margin: 0 0 2px; }
+/* Admin lists: the empty bubble only shows when pointing at the course, so the overview stays calm. */
+@media (hover: hover) {
+  [data-note-open]:not(.has-notes) { opacity: 0; }
+  tr:hover [data-note-open], .latest-item:hover [data-note-open], .act-card:hover [data-note-open], [data-note-open]:focus-visible { opacity: 0.8; }
+}
+@media (hover: none) { [data-note-open]:not(.has-notes) { opacity: 0.45; } }
+.dlg-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+.notes-box .note-form { margin-top: 4px; }
+#a-note { width: 100%; padding: 10px 12px; resize: vertical; line-height: 1.4; }
