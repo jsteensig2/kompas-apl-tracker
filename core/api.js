@@ -145,7 +145,11 @@ function toCsv(rows) {
  * @param db   adapter with all(sql, params), get(sql, params), run(sql, params) -> { lastInsertRowid, changes }
  * @param deps { XLSX } – SheetJS, used to write .xlsx exports
  */
-export function createApi(db, { XLSX } = {}) {
+// Beskeder is paused (Jakob, 2026-10-06): the tab and the messages on the consultant page are hidden,
+// but the code and the saved messages are kept. Set to true to turn it back on.
+export const MESSAGES_ENABLED = false;
+
+export function createApi(db, { XLSX, messages = MESSAGES_ENABLED } = {}) {
   const nameExists = (table, name, exceptId = 0) =>
     db.get(`SELECT id FROM ${table} WHERE name = ? COLLATE NOCASE AND id <> ?`, [name, exceptId]);
 
@@ -562,7 +566,7 @@ export function createApi(db, { XLSX } = {}) {
     const planned = rows.filter((a) => a.status === 'planned').sort((x, y) => x.date.localeCompare(y.date));
     const byYear = {};
     for (const a of held) byYear[a.date.slice(0, 4)] = (byYear[a.date.slice(0, 4)] || 0) + a.sessions;
-    return { name: c.name, today: todayIso(), feedPath: `/calendar/feed/${c.feed_token}.ics`, held, planned, sessionsByYear: byYear, signup: signupList(c.id), messages: messagesFor(c.id) };
+    return { name: c.name, today: todayIso(), feedPath: `/calendar/feed/${c.feed_token}.ics`, held, planned, sessionsByYear: byYear, signup: signupList(c.id), messages: messages ? messagesFor(c.id) : [] };
   }
 
   // --- Tilmelding ---------------------------------------------------------------------------
@@ -662,7 +666,12 @@ export function createApi(db, { XLSX } = {}) {
   }
 
   // Called by the consultant page after it has shown the messages, so they are marked "Ny" only once.
+  const requireMessages = () => {
+    if (!messages) throw new HttpError(404, 'Beskeder er sat på pause.');
+  };
+
   function markMessagesRead(token) {
+    requireMessages();
     const c = consultantByToken(token);
     db.run(`INSERT OR IGNORE INTO message_reads (message_id, consultant_id) SELECT m.id, ? FROM messages m WHERE ${MESSAGES_FOR}`, [c.id, c.id]);
     return { ok: true };
@@ -670,6 +679,7 @@ export function createApi(db, { XLSX } = {}) {
 
   function listMessages(user) {
     requireAdmin(user);
+    requireMessages();
     const withLink = db.all('SELECT id, name FROM consultants WHERE feed_token IS NOT NULL ORDER BY name');
     return db.all(`SELECT m.id, m.title, m.body, m.created_at, m.consultant_id, c.name AS consultant, u.name AS author
         FROM messages m LEFT JOIN consultants c ON c.id = m.consultant_id LEFT JOIN users u ON u.id = m.created_by
@@ -682,6 +692,7 @@ export function createApi(db, { XLSX } = {}) {
 
   function createMessage(user, body) {
     requireAdmin(user);
+    requireMessages();
     const title = String(body?.title ?? '').trim();
     const text = String(body?.body ?? '').trim();
     const to = int(body?.consultant_id) || null;
@@ -695,6 +706,7 @@ export function createApi(db, { XLSX } = {}) {
 
   function deleteMessage(user, id) {
     requireAdmin(user);
+    requireMessages();
     if (!db.get('SELECT id FROM messages WHERE id = ?', [id])) throw new HttpError(404, 'Beskeden findes ikke.');
     db.run('DELETE FROM messages WHERE id = ?', [id]);
     return { ok: true };
@@ -800,7 +812,7 @@ export function createApi(db, { XLSX } = {}) {
       case 'GET /me': {
         const reseller = user.reseller_id ? db.get('SELECT name FROM resellers WHERE id = ?', [user.reseller_id])?.name : null;
         return { json: { id: user.id, name: user.name, email: user.email, role: user.role, reseller_id: user.reseller_id, reseller, must_change_password: Boolean(user.must_change_password),
-          viewed_by: user.viewed_by || null } };
+          viewed_by: user.viewed_by || null, features: { messages } } };
       }
       case 'GET /options': return { json: options(user) };
       case 'POST /import': return { json: importActivities(user, body) };

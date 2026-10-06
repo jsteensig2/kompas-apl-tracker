@@ -5,9 +5,9 @@ import { openDatabase } from './db.js';
 import { authMiddleware, authRoutes, bootstrapAdmin } from './auth.js';
 import { createApi, HttpError } from '../core/api.js';
 
-export function createServer({ dbFile = process.env.DB_FILE || fileURLToPath(new URL('../data/kompas-apl.db', import.meta.url)) } = {}) {
+export function createServer({ dbFile = process.env.DB_FILE || fileURLToPath(new URL('../data/kompas-apl.db', import.meta.url)), messages } = {}) {
   const db = openDatabase(dbFile);
-  const api = createApi(db, { XLSX });
+  const api = createApi(db, { XLSX, ...(messages === undefined ? {} : { messages }) });
   bootstrapAdmin(db);
   const app = express();
   app.disable('x-powered-by');
