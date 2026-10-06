@@ -94,6 +94,12 @@ Alle ark i filen læses (ark uden genkendelige overskrifter springes over). Har 
 (fx "LÆRERE" og "PÆDAGOGER"), sættes den på titlen ("Modul 1 – Lærere"). Øverst på siden kan man vælge reseller, betaler og
 kommune til felter, filen ikke selv udfylder. Kurser, der ligner noget allerede registreret (samme dag, skole og konsulent),
 er fravalgt i forhåndsvisningen og kan vælges til med et flueben. Datoer som 11/26/26 (måned først) læses, når dag-først er umulig.
+Tidspunkter er valgfrie og skrives med 24-timers ur: kolonnerne *Starttid* og *Sluttid*, én kolonne *Tid* med fx "9-12",
+eller et klokkeslæt i datoen ("19.02.2026 09:00").
+
+**Tidspunkter.** Et kursus kan have et valgfrit start- og sluttidspunkt (tt:mm). Med tid bliver kurset en tidsbestemt aftale i
+kalenderabonnementet (uden sluttid: 3 timer for en halv dag, 7 for en hel); uden tid forbliver det en heldagsaftale.
+Dobbeltbooking advarer kun, når tiderne overlapper, eller når et af kurserne mangler start- eller sluttid.
 
 SheetJS 0.18.5 fra npm bruges til Excel. Til drift anbefales den nyeste version fra cdn.sheetjs.com.
 
