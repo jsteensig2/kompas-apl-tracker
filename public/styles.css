@@ -340,6 +340,27 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 .ob-stats b, .import-summary b { font-size: 1.6rem; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
 .ob-stats span, .import-summary span { font-size: 0.8rem; color: var(--muted); }
 .import-summary .is-warn b { color: var(--muted); }
+/* Dobbeltbooking: a consultant on two courses the same day (a warning, never a block). */
+.dbl { color: var(--planned-ink); font-weight: 600; cursor: help; }
+.dbl-warn { margin: 0; padding: 10px 14px; border-radius: var(--r-sm); background: var(--planned-soft); border-left: 4px solid var(--planned); display: flex; flex-direction: column; gap: 4px; }
+.dbl-card { border-left: 4px solid var(--planned); }
+.dbl-card h2 .dbl { cursor: default; }
+.dbl-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.dbl-list li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.dbl-list .linkbtn { padding: 0; }
+/* Konsulentoverblik on Overblik (admins). */
+.consult-card { margin-top: 20px; }
+.consult-table tfoot td { font-weight: 600; border-top: 1px solid var(--line); border-bottom: 0; }
+.consult-table tr.is-empty td { color: var(--muted); }
+.consult-name { padding: 0; font-weight: 600; text-align: left; }
+.consult-barcol { width: 34%; min-width: 90px; }
+.cbar { display: flex; height: 12px; border-radius: 3px; overflow: hidden; background: var(--surface-2); margin-top: 4px; }
+.cbar i { display: block; height: 100%; }
+.cb-held { background: var(--bar); }
+.cb-planned { background: var(--planned); }
+.cb-pending { background: var(--pending-soft); box-shadow: inset 0 0 0 1.5px var(--pending); }
+@media (max-width: 760px) { .table-wrap.consult-wrap { display: block; } .consult-table td, .consult-table th { padding: 10px 6px; } .consult-table th { letter-spacing: 0.02em; font-size: 0.66rem; }
+  .consult-barcol, .consult-card .legend { display: none; } }
 .import-summary .is-err b { color: var(--danger); }
 .latest-cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); column-gap: 32px; margin-top: 12px; }
 .latest-cols .latest-item:first-child { border-top: 1px solid var(--line); padding-top: 12px; }
