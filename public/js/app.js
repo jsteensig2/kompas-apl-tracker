@@ -334,7 +334,12 @@ function consultantState(c) {
 // ★ = the course must be moved; it stays on its current date until a new one is found.
 // Noter: a small speech bubble with the number of notes; the notes themselves are on the course page.
 const NOTE_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5A1.5 1.5 0 0 1 4 2h8a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 12 11H7l-3 2.5V11a1.5 1.5 0 0 1-1.5-1.5z"/></svg>';
-const noteMark = (a) => (a.notes ? ` <span class="note-count" title="${a.notes} ${a.notes === 1 ? 'note' : 'noter'}" aria-label="${a.notes} ${a.notes === 1 ? 'note' : 'noter'}">${NOTE_ICON}${a.notes}</span>` : '');
+// Admins click it to read and write notes without leaving the list; an empty, faint bubble means no notes yet.
+const noteMark = (a) => {
+  if (a.notes == null) return ''; // resellers and viewers never see notes
+  const label = a.notes ? `${a.notes} ${a.notes === 1 ? 'note' : 'noter'}` : 'Skriv en note';
+  return ` <button type="button" class="note-btn ${a.notes ? 'has-notes' : ''}" data-note-open="${a.id}" title="${label}" aria-label="${label}">${NOTE_ICON}${a.notes || ''}</button>`;
+};
 const star = (a) => (a.reschedule ? '<span class="star" title="Skal have ny dato. Står på den gamle dato, indtil en ny er fundet" aria-label="Skal have ny dato">★</span> ' : '');
 
 // Short explanation of the three statuses, shown on Overblik and Aktiviteter.
@@ -404,7 +409,7 @@ function activityLine(a) {
     <li class="latest-item ${rowState(a)}">
       <div class="latest-date">${fmtDate(a.date, true)}</div>
       <div class="latest-body">
-        <div class="latest-title">${star(a)}${esc(a.apl_type)} · ${esc(a.title)}${a.pending ? ` ${statusPill(a)}` : ''}${noteMark(a)}</div>
+        <div class="latest-title">${star(a)}${esc(a.apl_type)} · ${esc(a.title)}${a.pending ? ` ${statusPill(a)}` : ''}${a.notes ? noteMark(a) : ''}</div>
         <div class="muted">${esc(a.school || '–')}${a.municipality ? ` · ${esc(a.municipality)}` : ''}</div>
         <div class="latest-meta">
           <span>${participantsCell(a, true)}</span><span>${esc(a.consultant || '')}</span>
@@ -670,6 +675,8 @@ function renderRegister(root) {
           <span><b>Foreløbig</b><small class="muted">Datoen er aftalt, men kurset er endnu ikke endeligt godkendt af skolen eller kommunen.</small></span></label>
         <label class="field field-wide check-field check-star"><input type="checkbox" id="a-reschedule" name="reschedule" value="1" ${v.reschedule ? 'checked' : ''}>
           <span><b>★ Skal have ny dato</b><small class="muted">Kurset skal flyttes. Det bliver stående på datoen ovenfor, indtil du retter den, og vises med en stjerne.</small></span></label>
+        ${a ? '' : `<label class="field field-wide"><span>Note <small class="muted">· valgfri, ses kun af Kompas og konsulenten</small></span>
+          <textarea id="a-note" name="note" rows="2" maxlength="1000" placeholder="fx detaljer om kurset, noget man skal huske, eller en idé"></textarea></label>`}
       </div>
       <p id="form-error" class="form-error" role="alert" hidden></p>
       <p class="muted small form-tip">Mangler en konsulent, kommune, APL-type eller betaler i listerne? Tilføj den under <a href="#admin" data-go="admin">Administration</a>. Nye skoler kan skrives direkte i feltet.</p>
@@ -771,6 +778,8 @@ function renderRegister(root) {
     const data = Object.fromEntries(new FormData(form));
     const consultantIds = a ? [data.consultant_id].filter(Boolean) : chosen();
     delete data.consultant_ids;
+    const note = String(data.note || '').trim();
+    delete data.note;
     if (!data.school_id) data.school_name = input.value.trim();
     const err = $('#form-error');
     const missing = [];
@@ -784,13 +793,20 @@ function renderRegister(root) {
     const btn = form.querySelector('[type=submit]');
     btn.disabled = true;
     try {
-      if (a) await api.put(`/api/activities/${a.id}`, data);
-      else {
+      if (a) {
+        await api.put(`/api/activities/${a.id}`, data);
+        // A note typed below but not added yet is saved together with the course.
+        const pendingNote = $('#notes .note-form textarea')?.value.trim();
+        if (pendingNote) await api.post(`/api/activities/${a.id}/notes`, { body: pendingNote });
+      } else {
         // One course per consultant. The first call may create a new school; the rest reuse it.
         const first = await api.post('/api/activities', { ...data, consultant_id: consultantIds[0] });
+        const ids = [first.id];
         for (const cid of consultantIds.slice(1)) {
-          await api.post('/api/activities', { ...data, school_id: first.school_id || '', school_name: first.school_id ? '' : data.school_name, consultant_id: cid });
+          ids.push((await api.post('/api/activities', { ...data, school_id: first.school_id || '', school_name: first.school_id ? '' : data.school_name, consultant_id: cid })).id);
         }
+        // The note goes on every course created, so each consultant sees it.
+        if (note) for (const id of ids) await api.post(`/api/activities/${id}/notes`, { body: note });
       }
       store.set('lastForm', { consultant_id: consultantIds[0] });
       if (data.calendar_uid && state.calEvents) state.calEvents = state.calEvents.filter((ev) => ev.uid !== data.calendar_uid);
@@ -827,8 +843,10 @@ function renderRegister(root) {
 
 // --- Noter on a course ----------------------------------------------------------------------
 
-async function renderNotes(box, activityId, notes = null) {
+async function renderNotes(box, activityId, notes = null, onChange = null) {
   if (!notes) notes = await api.get(`/api/activities/${activityId}/notes`);
+  else if (onChange) onChange(notes);
+  const again = (list) => renderNotes(box, activityId, list, onChange);
   box.innerHTML = `
     <div class="card-head"><h2>Noter</h2><span class="muted small">Ses kun af Kompas og konsulenten på kurset</span></div>
     ${notes.length ? `<ul class="note-list">${notes.map((n) => `<li class="note">
@@ -845,16 +863,51 @@ async function renderNotes(box, activityId, notes = null) {
     e.preventDefault();
     const body = form.body.value.trim();
     if (!body) { form.body.focus(); return; }
-    try { renderNotes(box, activityId, await api.post(`/api/activities/${activityId}/notes`, { body })); toast('Note gemt'); }
+    try { again(await api.post(`/api/activities/${activityId}/notes`, { body })); toast('Note gemt'); }
     catch (ex) { toast(ex.message, 'err'); }
   };
   $$('[data-del-note]', box).forEach((b) => {
     b.onclick = async () => {
-      try { renderNotes(box, activityId, await api.del(`/api/notes/${b.dataset.delNote}`)); toast('Note slettet'); }
+      try { again(await api.del(`/api/notes/${b.dataset.delNote}`)); toast('Note slettet'); }
       catch (ex) { toast(ex.message, 'err'); }
     };
   });
 }
+
+// Notes opened from the bubble in a list: a box over the list, so the overview stays where it is.
+async function openNotesDialog(id) {
+  let dlg = $('#notes-dialog');
+  if (!dlg) {
+    dlg = document.createElement('dialog');
+    dlg.id = 'notes-dialog';
+    dlg.className = 'dialog';
+    document.body.append(dlg);
+    dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); }); // click outside closes
+  }
+  try {
+    const a = await api.get(`/api/activities/${id}`);
+    dlg.innerHTML = `<div class="dlg-head"><div class="muted small">${fmtDate(a.date)} · ${esc(a.title)}${a.school ? ` · ${esc(a.school)}` : ''}${a.consultant ? ` · ${esc(a.consultant)}` : ''}</div>
+        <button type="button" class="linkbtn" data-close>Luk</button></div><div class="notes-box"></div>`;
+    $('[data-close]', dlg).onclick = () => dlg.close();
+    await renderNotes($('.notes-box', dlg), a.id, null, (notes) => {
+      $$(`[data-note-open="${a.id}"]`).forEach((b) => { b.outerHTML = noteMark({ id: a.id, notes: notes.length }).trim(); });
+    });
+    if (!dlg.open) dlg.showModal();
+    $('textarea', dlg).focus();
+  } catch (ex) { toast(ex.message, 'err'); }
+}
+
+// One listener for every note bubble; it runs before the row's own click, which opens the course.
+document.addEventListener('click', (e) => {
+  const b = e.target.closest?.('[data-note-open]');
+  if (!b) return;
+  e.stopPropagation();
+  e.preventDefault();
+  openNotesDialog(b.dataset.noteOpen);
+}, true);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.closest?.('[data-note-open]')) e.stopPropagation();
+}, true);
 
 // --- Bulk import ---------------------------------------------------------------------------
 function cellToValue(v) {
