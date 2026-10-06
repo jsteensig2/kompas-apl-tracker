@@ -7,7 +7,7 @@ let server, base, kim, soren;
 const cookies = {};
 
 before(async () => {
-  const { app } = createServer({ dbFile: ':memory:' });
+  const { app } = createServer({ dbFile: ':memory:', messages: true });
   server = app.listen(0);
   base = `http://localhost:${server.address().port}`;
   for (const u of await (await fetch(`${base}/auth/demo-users`)).json()) {
@@ -59,4 +59,20 @@ test('only Kompas administrators can send, list and delete messages', async () =
   assert.equal((await call('admin', `/api/messages/${id}`, { method: 'DELETE' })).status, 200);
   assert.ok(!(await pageData(kim)).messages.some((m) => m.id === id));
   assert.equal((await call('admin', `/api/messages/${id}`, { method: 'DELETE' })).status, 404);
+});
+
+test('Beskeder is paused by default: no tab, no messages on the consultant page, the API is closed', async () => {
+  const off = createServer({ dbFile: ':memory:' }).app.listen(0);
+  const url = `http://localhost:${off.address().port}`;
+  try {
+    const admin = (await (await fetch(`${url}/auth/demo-users`)).json()).find((u) => u.role === 'admin');
+    const r = await fetch(`${url}/auth/demo-login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ userId: admin.id }) });
+    const h = { cookie: r.headers.get('set-cookie').split(';')[0], 'content-type': 'application/json' };
+    assert.equal((await (await fetch(`${url}/api/me`, { headers: h })).json()).features.messages, false);
+    assert.equal((await fetch(`${url}/api/messages`, { headers: h })).status, 404);
+    assert.equal((await fetch(`${url}/api/messages`, { method: 'POST', headers: h, body: JSON.stringify({ title: 'Hej' }) })).status, 404);
+    const c = (await (await fetch(`${url}/api/options`, { headers: h })).json()).consultants[0];
+    const path = (await (await fetch(`${url}/api/admin/consultants/${c.id}/feed`, { headers: h })).json()).pagePath;
+    assert.deepEqual((await (await fetch(`${url}${path}/data`)).json()).messages, []);
+  } finally { off.close(); }
 });

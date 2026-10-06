@@ -74,6 +74,7 @@ const VIEWS = ['dashboard', 'activities', 'register', 'import', 'calendar', 'sig
 
 function go(view, { editing = null, prefill = null, copyOf = null } = {}) {
   if (!isAdmin() && ['register', 'admin', 'import', 'signup', 'messages'].includes(view)) view = 'dashboard';
+  if (view === 'messages' && !state.me?.features?.messages) view = 'dashboard'; // Beskeder is paused
   state.view = view;
   state.editing = editing;
   state.prefill = prefill;
@@ -93,7 +94,7 @@ function renderShell() {
   const me = state.me;
   const nav = [['dashboard', 'Overblik'], ['activities', 'Aktiviteter']];
   nav.push(['calendar', 'Kalender']);
-  if (isAdmin()) nav.push(['signup', 'Tilmelding'], ['messages', 'Beskeder'], ['admin', 'Administration']);
+  if (isAdmin()) nav.push(['signup', 'Tilmelding'], ...(state.me.features?.messages ? [['messages', 'Beskeder']] : []), ['admin', 'Administration']);
   $('#app').innerHTML = `
     <header class="topbar">
       <div class="topbar-inner">
