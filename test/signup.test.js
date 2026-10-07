@@ -149,3 +149,23 @@ test('a course that needs several consultants stays open after "Sæt på" until 
   const acts = (await json('admin', '/api/activities?status=pending')).filter((a) => a.title === 'Modul 3 (lærere)');
   assert.deepEqual(acts.map((a) => a.consultant).sort(), ['Kim Byrding', 'Rasmus Toft', 'Søren Rasmussen']);
 });
+
+test('Kompas creates a Foreløbig course without a consultant; it opens for sign-up with the number needed', async () => {
+  const iso = future(60).split('.').reverse().join('-');
+  const body = { date: iso, start_time: '14:00', end_time: '16:30', duration: 'half', apl_type_id: opts.aplTypes[0].id, title: 'Modul 2 (lærere)',
+    school_name: 'Læringshuset', participants: '', reseller_id: opts.resellers[0].id, consultant_id: '', pending: '1', consultants_needed: '4' };
+  // Without Foreløbig a consultant is still required, and the number needed is checked.
+  assert.equal((await call('admin', '/api/activities', { method: 'POST', body: JSON.stringify({ ...body, pending: '' }) })).status, 400);
+  assert.equal((await call('admin', '/api/activities', { method: 'POST', body: JSON.stringify({ ...body, consultants_needed: '0' }) })).status, 400);
+  const made = await json('admin', '/api/activities', { method: 'POST', body: JSON.stringify(body) });
+  assert.deepEqual([made.consultant_id, made.pending, made.consultants_needed], [null, 1, 4]);
+  const row = (await json('admin', '/api/signups')).courses.find((c) => c.id === made.id);
+  assert.deepEqual([row.needed, row.yes, row.full], [4, 0, false]);
+  const kd = await (await fetch(`${base}${await page(kim)}/data`)).json();
+  assert.ok(kd.signup.some((c) => c.id === made.id && c.start_time === '14:00'));
+  // Editing from the form keeps or changes the number needed.
+  const edited = await json('admin', `/api/activities/${made.id}`, { method: 'PUT', body: JSON.stringify({ ...body, consultants_needed: '3' }) });
+  assert.equal(edited.consultants_needed, 3);
+  const kept = await json('admin', `/api/activities/${made.id}`, { method: 'PUT', body: JSON.stringify({ ...body, consultants_needed: undefined }) });
+  assert.equal(kept.consultants_needed, 3);
+});

@@ -597,3 +597,4 @@ dt .note-btn { margin-left: 0; opacity: 1; cursor: default; }
 .su-cell button.su-remove { background: none; border: 0; padding: 2px 6px; font: inherit; color: inherit; cursor: pointer; border-radius: 4px; }
 .su-cell button.su-remove:hover, .su-cell button.su-remove:focus-visible { outline: 2px solid var(--danger); }
 .signup-grid td.su-cell.su-on { background: var(--ok); color: var(--surface); font-size: 0.75rem; }
+.needed-field input { max-width: 160px; }

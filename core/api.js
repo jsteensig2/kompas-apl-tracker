@@ -330,7 +330,8 @@ export function createApi(db, { XLSX } = {}) {
     const apl_type_id = ref('apl_types', b.apl_type_id, 'Type af APL-aktivitet', true);
     const reseller_id = ref('resellers', b.reseller_id, 'Reseller / partner', true);
     const municipality_id = ref('municipalities', b.municipality_id, 'Kommune', false);
-    const consultant_id = ref('consultants', b.consultant_id, 'Konsulent', true);
+    // A Foreløbig course may be created without a consultant, so it opens for sign-up (Jakob, 2026-10-07).
+    const consultant_id = ref('consultants', b.consultant_id, 'Konsulent', !truthy(b.pending));
     const paid_by_id = ref('paid_by', b.paid_by_id, 'Betalt af', false);
     let school_id = int(b.school_id);
     const schoolName = String(b.school_name || '').trim();
@@ -350,6 +351,8 @@ export function createApi(db, { XLSX } = {}) {
     const end_time = clock(b.end_time, 'Sluttidspunktet');
     if (end_time && !start_time && String(b.start_time ?? '').trim() === '') errors.push('Skriv også et starttidspunkt, når der er et sluttidspunkt.');
     if (start_time && end_time && end_time <= start_time) errors.push('Sluttidspunktet skal være efter starttidspunktet.');
+    const needed = neededInput(b.consultants_needed);
+    if (needed === undefined) errors.push(NEEDED_ERROR);
     if (errors.length) throw new HttpError(400, errors.join(' '));
     if (school_id === 'new') {
       const existing = db.get('SELECT id FROM schools WHERE name = ? COLLATE NOCASE AND municipality_id IS ?', [schoolName, municipality_id]);
@@ -358,7 +361,16 @@ export function createApi(db, { XLSX } = {}) {
     }
     return { date: b.date, start_time, end_time, duration: b.duration, apl_type_id, title, school_id: school_id || null, municipality_id,
       participants, consultant_id, reseller_id, paid_by_id, pending: truthy(b.pending) ? 1 : 0,
-      reschedule: truthy(b.reschedule) ? 1 : 0 };
+      reschedule: truthy(b.reschedule) ? 1 : 0, needed };
+  }
+
+  // Consultants needed (Tilmelding): empty = not set, otherwise a whole number 1–50; undefined = invalid.
+  const NEEDED_ERROR = 'Antal konsulenter skal være et helt tal fra 1 til 50.';
+  function neededInput(v) {
+    const raw = String(v ?? '').trim();
+    if (raw === '') return null;
+    const n = Number(raw);
+    return Number.isInteger(n) && n >= 1 && n <= 50 ? n : undefined;
   }
 
   const ACTIVITY_FIELDS = ['date', 'start_time', 'end_time', 'duration', 'apl_type_id', 'title', 'school_id', 'municipality_id',
@@ -372,6 +384,7 @@ export function createApi(db, { XLSX } = {}) {
       [...ACTIVITY_FIELDS.map((k) => a[k]), user.id]);
     const uid = String(body?.calendar_uid || '').slice(0, 300);
     if (uid) db.run('UPDATE activities SET calendar_uid = ? WHERE id = ?', [uid, lastInsertRowid]);
+    if (a.pending && a.needed) db.run('UPDATE activities SET consultants_needed = ? WHERE id = ?', [a.needed, lastInsertRowid]);
     return getActivity(user, Number(lastInsertRowid));
   }
 
@@ -381,6 +394,8 @@ export function createApi(db, { XLSX } = {}) {
     const a = activityInput(body);
     db.run(`UPDATE activities SET ${ACTIVITY_FIELDS.map((k) => `${k} = ?`).join(', ')}, updated_at = datetime('now') WHERE id = ?`,
       [...ACTIVITY_FIELDS.map((k) => a[k]), id]);
+    // The form only sends the number needed for Foreløbig courses; otherwise it is left as it was.
+    if (body && 'consultants_needed' in body && a.pending) db.run('UPDATE activities SET consultants_needed = ? WHERE id = ?', [a.needed, id]);
     return getActivity(user, id);
   }
 
@@ -761,9 +776,8 @@ export function createApi(db, { XLSX } = {}) {
   function setNeeded(user, id, body) {
     requireAdmin(user);
     openCourse(id);
-    const raw = String(body?.needed ?? '').trim();
-    const n = raw === '' ? null : Number(raw);
-    if (n !== null && (!Number.isInteger(n) || n < 1 || n > 50)) throw new HttpError(400, 'Antal konsulenter skal være et helt tal fra 1 til 50.');
+    const n = neededInput(body?.needed);
+    if (n === undefined) throw new HttpError(400, NEEDED_ERROR);
     db.run("UPDATE activities SET consultants_needed = ?, updated_at = datetime('now') WHERE id = ?", [n, id]);
     return { ok: true };
   }
