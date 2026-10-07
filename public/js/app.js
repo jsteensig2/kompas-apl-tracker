@@ -694,8 +694,9 @@ function renderRegister(root) {
     <div class="pagehead">
       <div><p class="eyebrow">${a ? 'Redigér aktivitet' : copy ? 'Kopi af kursus' : 'Ny aktivitet'}</p><h1>${a ? esc(a.title) : copy ? `Dublér: ${esc(copy.title)}` : 'Registrér aktivitet'}</h1></div>
       ${a || copy ? '<button type="button" class="btn" data-go="activities">Tilbage til aktiviteter</button>' : ''}
-      ${pre ? '<button type="button" class="btn" data-go="calendar">Tilbage til kalender</button>' : ''}
+      ${pre ? (pre.from === 'signup' ? '<button type="button" class="btn" data-go="signup">Tilbage til tilmelding</button>' : '<button type="button" class="btn" data-go="calendar">Tilbage til kalender</button>') : ''}
     </div>
+    ${pre?.from === 'signup' ? '<p class="notice">Kurset oprettes som Foreløbigt. Lad konsulent stå tom, og skriv hvor mange konsulenter der skal bruges. Så kommer det på Tilmelding, hvor konsulenterne kan melde sig.</p>' : ''}
     ${copy ? '<p class="notice">Alle felter er kopieret. Vælg en eller flere konsulenter: der oprettes ét kursus pr. konsulent.</p>' : ''}
     ${pre?.eventTitle ? `<p class="notice">Udfyldt fra kalenderaftalen <b>${esc(pre.eventTitle)}</b>. Tjek felterne, og tilføj antal deltagere og reseller.</p>` : ''}
     <form id="act-form" class="card form" novalidate autocomplete="off">
@@ -732,7 +733,7 @@ function renderRegister(root) {
         </div>
         <label class="field"><span>Kommune</span><select id="a-muni" name="municipality_id">${selectOptions(o.municipalities, v.municipality_id, 'Vælg kommune')}</select></label>
         <label class="field"><span>Antal deltagere <small class="muted" id="p-hint"></small></span><input id="a-participants" name="participants" type="number" inputmode="numeric" min="0" step="1" required value="${esc(v.participants)}"></label>
-        ${a ? `<label class="field"><span>Konsulent</span><select id="a-consultant" name="consultant_id" required>${selectOptions(o.consultants, v.consultant_id, 'Vælg konsulent')}</select></label>`
+        ${a ? `<label class="field"><span>Konsulent</span><select id="a-consultant" name="consultant_id">${selectOptions(o.consultants, v.consultant_id, v.pending ? 'Ingen konsulent endnu' : 'Vælg konsulent')}</select></label>`
           : `<div class="field field-wide"><span id="cons-label">Konsulent <small class="muted">· vælg flere for at oprette ét kursus pr. konsulent</small></span>
           <div class="seg seg-lg seg-wrap" role="group" aria-labelledby="cons-label">
             ${o.consultants.map((c) => `<label><input type="checkbox" name="consultant_ids" value="${c.id}" ${String(c.id) === String(v.consultant_id) ? 'checked' : ''}><span>${esc(c.name)}</span></label>`).join('')}
@@ -746,6 +747,11 @@ function renderRegister(root) {
         <label class="field"><span>Betalt af</span><select id="a-paid" name="paid_by_id">${selectOptions(o.paidBy, v.paid_by_id, 'Vælg hvem der betalte')}</select></label>
         <label class="field field-wide check-field"><input type="checkbox" id="a-pending" name="pending" value="1" ${v.pending ? 'checked' : ''}>
           <span><b>Foreløbig</b><small class="muted">Datoen er aftalt, men kurset er endnu ikke endeligt godkendt af skolen eller kommunen.</small></span></label>
+        <div class="field field-wide needed-field" id="needed-box" ${v.pending ? '' : 'hidden'}>
+          <label for="a-needed">Konsulenter der skal bruges <small class="muted">· valgfrit</small></label>
+          <input id="a-needed" name="consultants_needed" type="number" inputmode="numeric" min="1" max="50" step="1" value="${esc(v.consultants_needed ?? '')}">
+          <small class="hint">Et foreløbigt kursus uden konsulent kommer på Tilmelding, hvor konsulenterne kan melde sig. Det bliver åbent, indtil der er så mange på, som der skal bruges.</small>
+        </div>
         <label class="field field-wide check-field check-star"><input type="checkbox" id="a-reschedule" name="reschedule" value="1" ${v.reschedule ? 'checked' : ''}>
           <span><b>★ Skal have ny dato</b><small class="muted">Kurset skal flyttes. Det bliver stående på datoen ovenfor, indtil du retter den, og vises med en stjerne.</small></span></label>
         ${a ? '' : `<label class="field field-wide"><span>Note <small class="muted">· valgfri, ses kun af Kompas og konsulenten</small></span>
@@ -807,6 +813,13 @@ function renderRegister(root) {
   ['#a-start', '#a-end'].forEach((sel) => $(sel).addEventListener('change', checkSameDay));
   checkSameDay();
   $('#a-pending').addEventListener('change', planHint);
+  const showNeeded = () => {
+    const on = $('#a-pending').checked;
+    $('#needed-box').hidden = !on;
+    const none = $('#a-consultant option[value=""]');
+    if (none) none.textContent = on ? 'Ingen konsulent endnu' : 'Vælg konsulent';
+  };
+  $('#a-pending').addEventListener('change', showNeeded);
   planHint();
   $$('[data-title]').forEach((b) => { b.onclick = () => { $('#a-title').value = b.dataset.title; $('#a-school').focus(); }; });
 
@@ -888,7 +901,9 @@ function renderRegister(root) {
     if (!data.date) missing.push('dato');
     if (!data.title?.trim()) missing.push('titel / emne');
     if (data.participants === '' && data.date <= todayIso() && !data.pending) missing.push('antal deltagere');
-    if (!consultantIds.length) missing.push('konsulent');
+    // A Foreløbig course may wait for consultants to sign up under Tilmelding.
+    if (!consultantIds.length && !data.pending) missing.push('konsulent');
+    if (!data.pending) delete data.consultants_needed;
     if (!data.reseller_id) missing.push('reseller / partner');
     if (missing.length) { err.textContent = `Udfyld venligst: ${missing.join(', ')}.`; err.hidden = false; return; }
     err.hidden = true;
@@ -902,7 +917,7 @@ function renderRegister(root) {
         if (pendingNote) await api.post(`/api/activities/${a.id}/notes`, { body: pendingNote });
       } else {
         // One course per consultant. The first call may create a new school; the rest reuse it.
-        const first = await api.post('/api/activities', { ...data, consultant_id: consultantIds[0] });
+        const first = await api.post('/api/activities', { ...data, consultant_id: consultantIds[0] || '' });
         const ids = [first.id];
         for (const cid of consultantIds.slice(1)) {
           ids.push((await api.post('/api/activities', { ...data, school_id: first.school_id || '', school_name: first.school_id ? '' : data.school_name, consultant_id: cid })).id);
@@ -910,10 +925,12 @@ function renderRegister(root) {
         // The note goes on every course created, so each consultant sees it.
         if (note) for (const id of ids) await api.post(`/api/activities/${id}/notes`, { body: note });
       }
-      store.set('lastForm', { consultant_id: consultantIds[0] });
+      if (consultantIds.length) store.set('lastForm', { consultant_id: consultantIds[0] });
       if (data.calendar_uid && state.calEvents) state.calEvents = state.calEvents.filter((ev) => ev.uid !== data.calendar_uid);
       state.options = await api.get('/api/options');
-      toast(a ? 'Ændringer gemt' : consultantIds.length > 1 ? `${consultantIds.length} kurser registreret` : 'Aktivitet registreret');
+      const forSignup = !a && !consultantIds.length && data.date >= todayIso();
+      toast(a ? 'Ændringer gemt' : forSignup ? 'Kurset er oprettet og åbent for tilmelding' : consultantIds.length > 1 ? `${consultantIds.length} kurser registreret` : 'Aktivitet registreret');
+      if (forSignup) { go('signup'); return; }
       if (!a) {
         state.listFilters = { ...state.listFilters, q: '', year: data.date.slice(0, 4), from: '', to: '' };
       }
@@ -1539,7 +1556,8 @@ async function renderAdmin(root) {
 // --- Tilmelding --------------------------------------------------------------------------------
 // Doodle for Foreløbig courses without a consultant: the consultants answer on their own page
 // (Konsulentlink); here Kompas sees every answer and puts the chosen consultants on the course.
-const ANSWER_MARK = { yes: ['✓', 'Kan'], maybe: ['?', 'Måske'] };
+// Måske is no longer offered (Jakob, 2026-10-06), but older Måske answers still show.
+const ANSWER_MARK = { yes: ['✓', 'Det kan jeg'], maybe: ['?', 'Måske'] };
 
 async function renderSignup(root) {
   const { consultants, courses } = await api.get('/api/signups');
@@ -1550,9 +1568,10 @@ async function renderSignup(root) {
   const silent = consultants.filter((p) => !courses.some((c) => c.answers[p.id]));
   root.innerHTML = `
     <div class="pagehead"><div><p class="eyebrow">Foreløbige kurser</p><h1>Tilmelding</h1>
-      <p class="muted">Foreløbige kurser, der mangler konsulenter. Konsulenterne klikker Kan eller Måske på deres konsulentside, og du sætter dem på kurset her.
-        Kun Kan og konsulenter, du har sat på, tæller med i tilmeldt. Kurset bliver her, indtil du har sat så mange på, som der skal bruges. Når et kursus har fået de konsulenter, der skal bruges, lukker det for tilmelding.
-        Linket til konsulentsiden finder du under Administration › Konsulenter › Konsulentlink.</p></div></div>
+      <p class="muted">Foreløbige kurser, der mangler konsulenter. Konsulenterne trykker Det kan jeg på deres konsulentside, og du sætter dem på kurset her.
+        Kun Det kan jeg og konsulenter, du har sat på, tæller med i tilmeldt. Kurset bliver her, indtil du har sat så mange på, som der skal bruges. Når et kursus har fået de konsulenter, der skal bruges, lukker det for tilmelding.
+        Linket til konsulentsiden finder du under Administration › Konsulenter › Konsulentlink.</p></div>
+      <button type="button" class="btn btn-primary" id="su-new">Nyt kursus til tilmelding</button></div>
     ${munis.length > 1 ? `<div class="filters filters-inline"><label class="field field-compact"><span>Kommune</span><select id="su-muni">
       <option value="">Alle kommuner</option>${munis.map((m) => `<option ${m === state.signupMunicipality ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></label></div>` : ''}
     ${!shown.length ? `<section class="card"><p class="empty">Der er ingen foreløbige kurser, der mangler konsulenter, lige nu. Et kursus kommer med her, når det er markeret som Foreløbig og ikke har fået alle de konsulenter, der skal bruges.</p></section>` : `
@@ -1569,8 +1588,10 @@ async function renderSignup(root) {
         ${consultants.map((p) => { const a = c.answers[p.id]; if (c.assigned.includes(p.id)) return `<td class="su-cell su-on" title="${esc(p.name)}: sat på kurset">På</td>`; return `<td class="su-cell ${a ? `su-${a}` : ''}" title="${esc(p.name)}: ${a ? ANSWER_MARK[a][1] : 'Har ikke meldt sig'}">${a ? `<button type="button" class="su-remove" data-remove="${p.id}" aria-label="Fjern ${esc(p.name)}s tilmelding">${ANSWER_MARK[a][0]}</button>` : '<span class="muted">–</span>'}</td>`; }).join('')}
         <td><button type="button" class="btn btn-sm" data-assign>Sæt på</button></td></tr>`;
       }).join('')}</tbody></table></div></section>`}
-    <p class="muted small">På = sat på kurset · ✓ Kan · ? Måske · – kan ikke (har ikke meldt sig). Klik på et ✓ eller ? for at fjerne tilmeldingen.${silent.length ? ` Har ikke meldt sig på noget endnu: ${silent.map((p) => `${esc(p.name)}${p.has_link ? '' : ' (har ikke fået et konsulentlink)'}`).join(', ')}.` : ''}</p>`;
+    <p class="muted small">På = sat på kurset · ✓ Det kan jeg · – kan ikke (har ikke meldt sig)${courses.some((c) => count(c, 'maybe')) ? ' · ? Måske (ældre svar, før Måske blev fjernet)' : ''}. Klik på et ✓${courses.some((c) => count(c, 'maybe')) ? ' eller ?' : ''} for at fjerne tilmeldingen.${silent.length ? ` Har ikke meldt sig på noget endnu: ${silent.map((p) => `${esc(p.name)}${p.has_link ? '' : ' (har ikke fået et konsulentlink)'}`).join(', ')}.` : ''}</p>`;
 
+  // A new Foreløbig course without a consultant: it opens here for sign-up when saved.
+  $('#su-new').onclick = () => go('register', { prefill: { pending: 1, from: 'signup' } });
   $('#su-muni')?.addEventListener('change', (e) => { state.signupMunicipality = e.target.value; renderSignup(root); });
   $$('.signup-grid tbody tr').forEach((tr) => {
     const c = courses.find((x) => String(x.id) === tr.dataset.id);
