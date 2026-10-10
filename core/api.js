@@ -163,8 +163,9 @@ export function appleFields(a) {
     ['Side 2', 'Implementeringsstadie', '', 'Introduktion, Integration eller Innovation'],
     ['Side 3', 'Was this institution an Apple Distinguished School?', 'No', 'Vælg Yes, hvis skolen er en Apple Distinguished School'],
     ['Side 3', 'Did you use any resource(s) from the APLS Experiences Catalog?', '', 'Yes eller No'],
-    ['Side 4', 'Hvad var varigheden af din session?', a.duration === 'full' ? 'Hel dag' : 'Halv dag (1-4 timer)'],
-    ['Side 4', 'Leveringstilstand', online ? 'Online' : 'Fysisk fremmøde'],
+    // Apple's choices are 1-5 dage and Virtuelt / På stedet / Hybrid (Jakob, 2026-10-10); a course is one day.
+    ['Side 4', 'Hvad var varigheden af din session?', '1 dag', 'Halv og hel dag er begge 1 dag. Vælg flere dage, hvis sessionen strakte sig over flere'],
+    ['Side 4', 'Leveringstilstand', online ? 'Virtuelt' : 'På stedet', 'Vælg Hybrid, hvis nogle deltog virtuelt'],
     ['Side 4', 'Startdato', dmy(a.date)],
     ['Side 4', 'Slutdato', dmy(a.date)],
     ['Side 4', 'Blev denne session afholdt …', '', 'Enkeltstående supportsession, del af en serie eller del af en længerevarende supportplan'],
