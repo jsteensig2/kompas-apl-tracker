@@ -105,3 +105,16 @@ test('a consultant gets the Apple answers for their own held courses on their pa
   // The admin export filtered on a name with ø still downloads (ASCII file name).
   assert.equal((await call('admin', `/api/apple/export?consultant=${sr.id}`)).status, 200);
 });
+
+test('a consultant with an e-mail gets their personal Engagement Checkout link', async () => {
+  const opts = await json('admin', '/api/options');
+  const kb = opts.consultants.find((c) => c.name === 'Kim Byrding');
+  let feed = await json('admin', `/api/admin/consultants/${kb.id}/feed`);
+  assert.equal(feed.appleLink, null);
+  const c = (await json('admin', '/api/admin/consultants')).find((x) => x.id === kb.id);
+  await call('admin', `/api/admin/consultants/${kb.id}`, { method: 'PUT', body: JSON.stringify({ name: c.name, initials: c.initials, email: 'kim@kompas.dk' }) });
+  feed = await json('admin', `/api/admin/consultants/${kb.id}/feed`);
+  assert.equal(feed.appleLink, 'https://apple.co/apls-checkout?specialist=Kim+Byrding&apple_email=kim%40kompas.dk');
+  const data = await (await fetch(`${base}${feed.pagePath}/data`)).json();
+  assert.equal(data.appleLink, feed.appleLink);
+});

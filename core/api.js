@@ -173,6 +173,13 @@ export function appleFields(a) {
     ['Side 4', 'Antal deltagere', a.participants ? String(a.participants) : '', a.participants ? '' : 'Antal deltagere mangler i trackeren'],
   ];
 }
+// The specialist's personal link to Apple's Engagement Checkout fills in their name and e-mail
+// (format from Jakob, 2026-10-10). Without an e-mail there is no personal link.
+export function appleCheckoutLink(name, email) {
+  if (!name || !email) return null;
+  return `https://apple.co/apls-checkout?${new URLSearchParams({ specialist: name, apple_email: email })}`;
+}
+
 // Short column headings for the spreadsheet, in the same order as appleFields.
 const APPLE_HEADINGS = ['Område', 'Navn på specialist', 'E-mail til specialist', 'Leveringsland', 'Skolens navn',
   'System/distrikt (kommune)', 'Postnummer', 'Antal institutioner', 'Projekttype/niveau', 'Implementeringsstadie',
@@ -761,17 +768,17 @@ export function createApi(db, { XLSX } = {}) {
   // Each consultant has a subscription link with only their own courses (Kompas hands it out).
   function consultantFeed(user, id, reset) {
     requireAdmin(user);
-    const c = db.get('SELECT id, feed_token FROM consultants WHERE id = ?', [id]);
+    const c = db.get('SELECT id, name, email, feed_token FROM consultants WHERE id = ?', [id]);
     if (!c) throw new HttpError(404, 'Konsulenten findes ikke.');
     if (reset || !c.feed_token) db.run('UPDATE consultants SET feed_token = ? WHERE id = ?', [newToken(), id]);
     const token = db.get('SELECT feed_token FROM consultants WHERE id = ?', [id]).feed_token;
-    return { feedPath: `/calendar/feed/${token}.ics`, pagePath: `/k/${token}` };
+    return { feedPath: `/calendar/feed/${token}.ics`, pagePath: `/k/${token}`, appleLink: appleCheckoutLink(c.name, c.email) };
   }
 
   // The consultant's own page (same secret link as their calendar): held and coming courses.
   // Apple counts a workshop of 1-4 hours as one session and a full day as two.
   const consultantByToken = (token) => {
-    const c = /^[a-f0-9]{48}$/.test(String(token)) && db.get('SELECT id, name, feed_token FROM consultants WHERE feed_token = ?', [token]);
+    const c = /^[a-f0-9]{48}$/.test(String(token)) && db.get('SELECT id, name, email, feed_token FROM consultants WHERE feed_token = ?', [token]);
     if (!c) throw new HttpError(404, 'Siden findes ikke. Bed Kompas om et nyt link.');
     return c;
   };
@@ -792,7 +799,7 @@ export function createApi(db, { XLSX } = {}) {
       .sort((x, y) => x.date.localeCompare(y.date) || (x.start_time || '').localeCompare(y.start_time || ''));
     const byYear = {};
     for (const a of held) byYear[a.date.slice(0, 4)] = (byYear[a.date.slice(0, 4)] || 0) + a.sessions;
-    return { name: c.name, today: todayIso(), feedPath: `/calendar/feed/${c.feed_token}.ics`, held, planned, sessionsByYear: byYear, signup: signupList(c.id), messages: messagesFor(c.id) };
+    return { name: c.name, appleLink: appleCheckoutLink(c.name, c.email), today: todayIso(), feedPath: `/calendar/feed/${c.feed_token}.ics`, held, planned, sessionsByYear: byYear, signup: signupList(c.id), messages: messagesFor(c.id) };
   }
 
   // --- Tilmelding ---------------------------------------------------------------------------
