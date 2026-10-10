@@ -33,7 +33,7 @@ test('fields follow the form and fill in what the tracker knows', () => {
   assert.equal(v.Postnummer, '2840');
   assert.equal(v.Startdato, '11/03/2026');
   assert.equal(v['Hvad var varigheden af din session?'], '1 dag');
-  assert.equal(v.Leveringstilstand, 'På stedet');
+  assert.equal(v.Leveringstilstand, 'Ved side');
   assert.equal(v['Projekttype/Niveau for deltagende uddannelsesinstitutioner'], '');
   const gl = Object.fromEntries(appleFields({ date: '2026-01-05', duration: 'half', apl_type: 'Workshop Online', title: 'Webinar', school: 'X', municipality: 'Sermersooq', participants: 0 })
     .map(([, l, val]) => [l, val]));
