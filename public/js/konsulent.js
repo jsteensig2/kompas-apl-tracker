@@ -307,6 +307,7 @@ function render() {
         ${notReported ? `<p class="apple-todo"><b>${notReported} ${notReported === 1 ? 'afholdt kursus mangler' : 'afholdte kurser mangler'}</b> at blive markeret som indberettet til Apple.</p>` : data.held.length ? '<p class="apple-todo is-done"><b>✓ Alle dine afholdte kurser er indberettet til Apple.</b></p>' : ''}
         <p>Husk at registrere alle dine afholdte workshops hos Apple, også når du har nået de ${GOAL}. Du skal afholde mindst ${GOAL} workshops om året for at bevare din status som Apple Professional Learning Specialist.${thisYear >= GOAL ? '' : ` Du mangler ${GOAL - thisYear} i ${year}.`}</p>
         <p class="small">Tryk <b>Indberet hos Apple</b> ved et afholdt kursus nedenfor. Apples skema åbner med det, trackeren ved, og du udfylder resten. Når du kommer tilbage hertil, spørger siden, om du har indsendt det.</p>
+        <p class="small">Har du afholdt en Apple-workshop, der ikke står her på siden? Så skal du indberette den manuelt: <a href="${esc(data.manualForm)}" target="_blank" rel="noopener">Indberet en workshop manuelt hos Apple</a>. Skemaet åbner med dit navn og din e-mail udfyldt.</p>
         <form class="k-apple-email" id="apple-email-form">
           <label class="field"><span>Din Apple-e-mail <small class="muted">· bliver skrevet ind i Apples skema</small></span><input type="email" name="email" value="${esc(data.email)}" placeholder="navn@eksempel.dk" autocomplete="email"></label>
           <button type="submit" class="btn">${data.email ? 'Gem ændring' : 'Gem'}</button>
