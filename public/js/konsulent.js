@@ -61,22 +61,42 @@ function openApple(id) {
       <p class="muted small">${esc(fmtDate(a.date))}${a.school ? ` · ${esc(a.school)}` : ''}</p></div>
       <button type="button" class="btn btn-sm" data-close>Luk</button></div>
     <p class="small">Åbn Apples skema udfyldt med det, trackeren ved. Gå siderne igennem, udfyld felterne markeret Udfyld selv, og indsend skemaet. Tryk på en værdi her for at kopiere den, hvis et felt står tomt.</p>
-    <p>${a.appleForm ? `<a class="btn btn-primary btn-sm" href="${esc(a.appleForm)}" target="_blank" rel="noopener">Åbn Apples skema udfyldt</a> ` : ''}<a class="btn btn-sm" href="${esc(survey())}" target="_blank" rel="noopener">Åbn tomt skema</a></p>
+    <p>${a.appleForm ? `<a class="btn btn-primary btn-sm" data-apple-open href="${esc(a.appleForm)}" target="_blank" rel="noopener">Åbn Apples skema udfyldt</a> ` : ''}<a class="btn btn-sm" data-apple-open href="${esc(survey())}" target="_blank" rel="noopener">Åbn tomt skema</a></p>
+    <div class="apple-ask" id="apple-ask" hidden><b>Har du indsendt skemaet til Apple?</b>
+      <span class="copyrow"><button type="button" class="btn btn-primary btn-sm" id="apple-ask-yes">Ja, markér som indberettet</button><button type="button" class="btn btn-sm" id="apple-ask-no">Ikke endnu</button></span></div>
     <label class="apple-reported"><input type="checkbox" id="apple-reported" ${a.apple_reported_at ? 'checked' : ''}> <b>Indberettet til Apple</b>
       <span class="muted small">${a.apple_reported_at ? `Markeret ${esc(fmtDate(a.apple_reported_at.slice(0, 10)))}` : 'Sæt kryds, når du har indsendt skemaet'}</span></label>
     ${appleFields(a)}`;
   bindCopy(dlg);
-  dlg.querySelector('#apple-reported').onchange = async (e) => {
-    const box = e.currentTarget;
+  const box = dlg.querySelector('#apple-reported');
+  const save = async (reported) => {
     try {
-      const r = await fetch(`/k/${encodeURIComponent(token)}/courses/${a.id}/apple`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reported: box.checked }) });
+      const r = await fetch(`/k/${encodeURIComponent(token)}/courses/${a.id}/apple`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reported }) });
       if (!r.ok) throw new Error();
       a.apple_reported_at = (await r.json()).apple_reported_at;
-      toast(box.checked ? 'Markeret som indberettet' : 'Markering fjernet');
+      toast(reported ? 'Markeret som indberettet' : 'Markering fjernet');
       dlg.close();
       render();
-    } catch { box.checked = !box.checked; toast('Kunne ikke gemme'); }
+    } catch { box.checked = !reported; toast('Kunne ikke gemme'); }
   };
+  box.onchange = () => save(box.checked);
+  // Apple's form tells us nothing when it is submitted, so when the consultant comes back from it
+  // to this page, the dialog asks whether they sent it.
+  const ask = dlg.querySelector('#apple-ask');
+  const onReturn = () => {
+    if (document.visibilityState !== 'visible') return;
+    document.removeEventListener('visibilitychange', onReturn);
+    window.removeEventListener('focus', onReturn);
+    if (dlg.open && !a.apple_reported_at) ask.hidden = false;
+  };
+  dlg.querySelectorAll('[data-apple-open]').forEach((l) => {
+    l.addEventListener('click', () => {
+      if (a.apple_reported_at) return;
+      setTimeout(() => { document.addEventListener('visibilitychange', onReturn); window.addEventListener('focus', onReturn); }, 500);
+    });
+  });
+  dlg.querySelector('#apple-ask-yes').onclick = () => save(true);
+  dlg.querySelector('#apple-ask-no').onclick = () => { ask.hidden = true; };
   dlg.querySelector('[data-close]').onclick = () => dlg.close();
   dlg.onclick = (e) => { if (e.target === dlg) dlg.close(); };
   dlg.showModal();
