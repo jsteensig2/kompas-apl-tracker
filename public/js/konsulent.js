@@ -35,10 +35,9 @@ const noteBtn = (a) => {
 
 // Til Apple: the answers for Apple's APL Engagement Checkout, in the form's own order, ready to copy.
 const appleBtn = (a) => `<button type="button" class="btn btn-sm nowrap" data-apple="${a.id}">Til Apple</button>`;
-const PAGES = ['Side 1', 'Side 2', 'Side 3', 'Side 4'];
 // The tracker's hints point at Administration, which consultants don't have.
 const OWN_HINTS = { 'E-mailadresse til specialist': 'Din egen e-mail', Postnummer: 'Skolens postnummer' };
-const appleFields = (a) => `<div class="apple-pages">${PAGES.map((p) => `
+const appleFields = (a) => `<div class="apple-pages">${[...new Set(a.apple.map(([p]) => p))].map((p) => `
   <div class="apple-page"><p class="eyebrow">${p}</p><dl>${a.apple.filter(([pg]) => pg === p).map(([, label, value, h]) => [label, value, OWN_HINTS[label] || h]).map(([label, value, hint]) => `
     <div class="apple-field"><dt>${esc(label)}</dt><dd>${value
       ? `<button type="button" class="apple-copy" data-copy="${esc(value)}" title="Kopiér">${esc(value)}</button>`
@@ -58,8 +57,8 @@ function openApple(id) {
   dlg.innerHTML = `<div class="card-head"><div><p class="eyebrow">Til Apple</p><h2>${esc(a.title)}</h2>
       <p class="muted small">${esc(fmtDate(a.date))}${a.school ? ` · ${esc(a.school)}` : ''}</p></div>
       <button type="button" class="btn btn-sm" data-close>Luk</button></div>
-    <p class="small">Åbn Apples skema og udfyld det i samme rækkefølge som her. Tryk på en værdi for at kopiere den.</p>
-    <p><a class="btn btn-primary btn-sm" href="${esc(survey())}" target="_blank" rel="noopener">Åbn Apples skema</a></p>
+    <p class="small">Åbn Apples skema udfyldt med det, trackeren ved. Gå siderne igennem, udfyld felterne markeret Udfyld selv, og indsend skemaet. Tryk på en værdi her for at kopiere den, hvis et felt står tomt.</p>
+    <p>${a.appleForm ? `<a class="btn btn-primary btn-sm" href="${esc(a.appleForm)}" target="_blank" rel="noopener">Åbn Apples skema udfyldt</a> ` : ''}<a class="btn btn-sm" href="${esc(survey())}" target="_blank" rel="noopener">Åbn tomt skema</a></p>
     ${appleFields(a)}`;
   bindCopy(dlg);
   dlg.querySelector('[data-close]').onclick = () => dlg.close();

@@ -141,7 +141,8 @@ export const EXPORT_COLUMNS = [
 ];
 
 // APL Engagement Checkout (Apple's form for specialists), field by field in the form's own order
-// (from Jakob's screenshots, 2026-10-03). Each field is [page, label, value, hint]; an empty value
+// (from Jakob's screenshots, 2026-10-03, and the six pages he saved, 2026-10-10). Each field is
+// [page, label, value, hint, answer-mapping]; an empty value
 // is something only the consultant knows, so it is left for them to fill in.
 const GREENLAND = new Set(['avannaata', 'kujalleq', 'qeqertalik', 'qeqqata', 'sermersooq']);
 const dmy = (d) => d.split('-').reverse().join('/'); // Apple asks for dd/mm/åååå
@@ -150,29 +151,64 @@ export function appleFields(a) {
   const online = /online|webinar|zoom|teams/i.test(`${a.apl_type} ${a.title}`);
   const greenland = GREENLAND.has(String(a.municipality || '').toLowerCase());
   const district = !a.municipality ? '' : greenland || /kommune/i.test(a.municipality) ? a.municipality : `${a.municipality} Kommune`;
+  const partner = /atea/i.test(a.reseller || '') ? ['ATEA Denmark', '9'] : /comm2ig/i.test(a.reseller || '') ? ['Comm2IG', '10'] : null;
+  const participants = a.participants ? String(a.participants) : '';
+  // The fifth element says how the answer goes into Apple's form (Qualtrics question id, and the
+  // sub-field or choice id), read from the form's pages that Jakob saved on 2026-10-10.
   return [
-    ['Side 1', 'Vælg dit område', 'EMEIA (Europa, Mellemøsten, Indien og Afrika)'],
-    ['Side 1', 'Navn på specialist (for- og efternavn)', a.consultant || ''],
-    ['Side 1', 'E-mailadresse til specialist', a.consultant_email || '', 'Skriv konsulentens e-mail under Administration › Konsulenter'],
-    ['Side 1', 'Leveringsland', greenland ? 'Grønland' : 'Danmark'],
-    ['Side 2', 'Skolens navn', several ? '' : a.school || '', several ? 'Flere skoler: skriv kundens navn' : ''],
-    ['Side 2', 'System/distrikt/ministeriums navn', district],
-    ['Side 2', 'Postnummer', a.postal_code || '', 'Skriv skolens postnummer under Administration › Skoler'],
-    ['Side 2', 'Hvor mange individuelle uddannelsesinstitutioner deltog i sessionerne?', several ? '' : '1', several ? 'Antal skoler' : ''],
-    ['Side 2', 'Projekttype/Niveau for deltagende uddannelsesinstitutioner', '', 'Fx Indskoling, Mellemtrin, Udskoling eller Alle skolealdre'],
-    ['Side 2', 'Implementeringsstadie', '', 'Introduktion, Integration eller Innovation'],
-    ['Side 3', 'Was this institution an Apple Distinguished School?', 'No', 'Vælg Yes, hvis skolen er en Apple Distinguished School'],
-    ['Side 3', 'Did you use any resource(s) from the APLS Experiences Catalog?', '', 'Yes eller No'],
-    // Apple's choices are 1-5 dage and Virtuelt / Ved side (on site) / Hybrid (Jakob, 2026-10-10); a course is one day.
-    ['Side 4', 'Hvad var varigheden af din session?', '1 dag', 'Halv og hel dag er begge 1 dag. Vælg flere dage, hvis sessionen strakte sig over flere'],
-    ['Side 4', 'Leveringstilstand', online ? 'Virtuelt' : 'Ved side', 'Vælg Hybrid, hvis nogle deltog virtuelt'],
-    ['Side 4', 'Startdato', dmy(a.date)],
-    ['Side 4', 'Slutdato', dmy(a.date)],
+    ['Side 1', 'Vælg dit område', 'EMEIA (Europa, Mellemøsten, Indien og Afrika)', '', ['QID41', null, '8']],
+    ['Side 2', 'Navn på specialist (for- og efternavn)', a.consultant || '', '', ['QID1']],
+    ['Side 2', 'E-mailadresse til specialist', a.consultant_email || '', 'Skriv konsulentens e-mail under Administration › Konsulenter', ['QID2']],
+    ['Side 2', 'Leveringsland', greenland ? 'Grønland' : 'Danmark', '', ['QID121', null, greenland ? '28' : '7']],
+    ['Side 3', 'Skolens navn', several ? '' : a.school || '', several ? 'Flere skoler: skriv kundens navn' : '', ['QID99', '4']],
+    ['Side 3', 'System/distrikt/ministeriums navn', district, '', ['QID99', '5']],
+    ['Side 3', 'Postnummer', a.postal_code || '', 'Skriv skolens postnummer under Administration › Skoler', ['QID99', '6']],
+    ['Side 3', 'Hvor mange individuelle uddannelsesinstitutioner deltog i sessionerne?', several ? '' : '1', several ? 'Antal skoler' : '', ['QID100']],
+    ['Side 3', 'Projekttype/Niveau for deltagende uddannelsesinstitutioner', '', 'Fx Indskoling, Mellemtrin, Udskoling eller Alle skolealdre'],
+    ['Side 3', 'Implementeringsstadie', '', 'Introduktion, Integration eller Innovation'],
+    ['Side 3', 'Hvem var sessionen tilpasset til?', 'Undervisere', '', ['QID103', null, ['2']]],
+    ['Side 3', 'Antal deltagere', participants, participants ? '' : 'Antal deltagere mangler i trackeren', ['QID104']],
+    // Apple's choices are 1-5 dage and Virtuelt / På side (on site) / Hybrid; a course is one day.
+    ['Side 4', 'Hvad var varigheden af din session?', '1 dag', 'Halv og hel dag er begge 1 dag. Vælg flere dage, hvis sessionen strakte sig over flere', ['QID141', null, '4']],
+    ['Side 4', 'Leveringstilstand', online ? 'Virtuelt' : 'På side', 'Vælg Hybrid, hvis nogle deltog virtuelt', ['QID142', null, online ? '1' : '2']],
+    ['Side 4', 'Startdato', dmy(a.date), '', ['QID87', '1']],
+    ['Side 4', 'Slutdato', dmy(a.date), '', ['QID87', '2']],
     ['Side 4', 'Blev denne session afholdt …', '', 'Enkeltstående supportsession, del af en serie eller del af en længerevarende supportplan'],
-    ['Side 4', 'Hvem var sessionen tilpasset til?', 'Undervisere'],
-    ['Side 4', 'Antal deltagere', a.participants ? String(a.participants) : '', a.participants ? '' : 'Antal deltagere mangler i trackeren'],
+    ['Side 4', 'Hvem arrangerede APL-sessionen med dig?', partner ? 'Apple Authorised Education Specialist (AAES)' : '', partner ? '' : 'Apple, AAES, uddannelsesinstitution eller andet', partner && ['QID108', null, '1']],
+    ['Side 5', 'Vælg navnet (Channel Partner)', partner ? partner[0] : '', partner ? '' : 'Kun hvis en partner arrangerede sessionen', partner && ['QID137', null, partner[1]]],
+    ['Side 6', 'Was this institution an Apple Distinguished School?', 'No', 'Vælg Yes, hvis skolen er en Apple Distinguished School', ['QID153', null, '2']],
+    ['Side 6', 'Did you use any resource(s) from the APLS Experiences Catalog?', '', 'Yes eller No'],
   ];
 }
+
+// Postal code for a school from OpenStreetMap (Nominatim), searched by name and municipality.
+// Returns a four-digit Danish postal code or null. Nominatim allows one request a second.
+export async function nominatimPostal(name, municipality, fetchFn = fetch) {
+  const muni = !municipality ? '' : /kommune/i.test(municipality) ? municipality : `${municipality} Kommune`;
+  const q = [name, muni, 'Danmark'].filter(Boolean).join(', ');
+  const url = `https://nominatim.openstreetmap.org/search?${new URLSearchParams({ q, format: 'jsonv2', addressdetails: '1', countrycodes: 'dk,gl', limit: '5' })}`;
+  const r = await fetchFn(url, { signal: AbortSignal.timeout(10000), headers: { 'user-agent': 'kompas-apl-tracker (https://kompas-apl-tracker.onrender.com)', 'accept-language': 'da' } });
+  if (!r.ok) throw new Error(String(r.status));
+  const hits = await r.json();
+  const hit = hits.find((h) => h.category === 'amenity' || h.class === 'amenity') || hits[0];
+  const code = String(hit?.address?.postcode || '').trim();
+  return /^\d{4}$/.test(code) ? code : null;
+}
+
+// One link per course that opens Apple's form (in Danish) with every known answer already filled in,
+// using Qualtrics' Q_PopulateResponse. The consultant checks it, adds the rest and submits it themselves.
+const APPLE_FORM = 'https://essentials.applesurveys.com/jfe/form/SV_7UiJTisrllOFbsG';
+export function appleFormLink(fields) {
+  const answers = {};
+  for (const [, , value, , q] of fields) {
+    if (!value || !q) continue;
+    const [qid, sub, choice] = q;
+    if (sub) (answers[qid] ||= {})[sub] = value;
+    else answers[qid] = choice || value;
+  }
+  return `${APPLE_FORM}?${new URLSearchParams({ Q_Language: 'DA', Q_PopulateResponse: JSON.stringify(answers) })}`;
+}
+
 // The specialist's personal link to Apple's Engagement Checkout fills in their name and e-mail
 // (format from Jakob, 2026-10-10). Without an e-mail there is no personal link.
 export function appleCheckoutLink(name, email) {
@@ -183,8 +219,8 @@ export function appleCheckoutLink(name, email) {
 // Short column headings for the spreadsheet, in the same order as appleFields.
 const APPLE_HEADINGS = ['Område', 'Navn på specialist', 'E-mail til specialist', 'Leveringsland', 'Skolens navn',
   'System/distrikt (kommune)', 'Postnummer', 'Antal institutioner', 'Projekttype/niveau', 'Implementeringsstadie',
-  'Apple Distinguished School?', 'APLS Experiences Catalog?', 'Varighed', 'Leveringstilstand', 'Startdato', 'Slutdato',
-  'Sessionskontekst', 'Målgruppe', 'Antal deltagere'];
+  'Målgruppe', 'Antal deltagere', 'Varighed', 'Leveringstilstand', 'Startdato', 'Slutdato', 'Sessionskontekst',
+  'Hvem arrangerede', 'Partner', 'Apple Distinguished School?', 'APLS Experiences Catalog?'];
 
 const TZID = 'Europe/Copenhagen';
 const VTIMEZONE = ['BEGIN:VTIMEZONE', `TZID:${TZID}`,
@@ -507,8 +543,11 @@ export function createApi(db, { XLSX } = {}) {
     return rows.map((a) => ({ ...a, ...extra.get(a.id) }))
       .filter((a) => (f.sent === 'no' ? !a.apple_reported_at : f.sent === 'yes' ? Boolean(a.apple_reported_at) : true))
       .sort((x, y) => (x.consultant || '').localeCompare(y.consultant || '', 'da') || x.date.localeCompare(y.date))
-      .map((a) => ({ id: a.id, date: a.date, title: a.title, school: a.school || '', consultant: a.consultant || '', reseller: a.reseller,
-        apple_reported_at: a.apple_reported_at || null, fields: appleFields(a) }));
+      .map((a) => {
+        const fields = appleFields(a);
+        return { id: a.id, date: a.date, title: a.title, school: a.school || '', consultant: a.consultant || '', reseller: a.reseller,
+          apple_reported_at: a.apple_reported_at || null, fields: fields.map((x) => x.slice(0, 4)), formLink: appleFormLink(fields) };
+      });
   }
 
   function exportApple(user, f) {
@@ -538,7 +577,7 @@ export function createApi(db, { XLSX } = {}) {
     if (!XLSX) throw new HttpError(500, 'Excel-eksport er ikke tilgængelig.');
     // Dates stay text (dd/mm/åååå) so they paste into Apple's form exactly as it asks.
     const ws = XLSX.utils.aoa_to_sheet([headings, ...rows.map(line)]);
-    ws['!cols'] = [12, 22, 26, 12, 24, 24, 10, 10, 18, 18, 12, 12, 18, 16, 11, 11, 18, 12, 10, 26, 12, 12].map((wch) => ({ wch }));
+    ws['!cols'] = [12, 22, 26, 12, 24, 24, 10, 10, 18, 18, 12, 10, 8, 14, 11, 11, 18, 22, 14, 12, 12, 28, 12, 12].map((wch) => ({ wch }));
     ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(rows.length, 1), c: headings.length - 1 } }) };
     ws['!freeze'] = { xSplit: 0, ySplit: 1 };
     const wb = XLSX.utils.book_new();
@@ -792,8 +831,8 @@ export function createApi(db, { XLSX } = {}) {
       country: GREENLAND.has(String(a.municipality || '').toLowerCase()) ? 'Grønland' : 'Danmark',
       notes: notesFor(a.id, { consultantId: c.id }),
     }));
-    const apple = new Map(appleRows({ consultant: c.id }).map((a) => [a.id, a.fields]));
-    const held = rows.filter((a) => a.status === 'held').map((a) => ({ ...a, apple: apple.get(a.id) || [] }))
+    const apple = new Map(appleRows({ consultant: c.id }).map((a) => [a.id, a]));
+    const held = rows.filter((a) => a.status === 'held').map((a) => ({ ...a, apple: apple.get(a.id)?.fields || [], appleForm: apple.get(a.id)?.formLink || null }))
       .sort((x, y) => y.date.localeCompare(x.date) || (y.start_time || '').localeCompare(x.start_time || ''));
     const planned = rows.filter((a) => a.status === 'planned')
       .sort((x, y) => x.date.localeCompare(y.date) || (x.start_time || '').localeCompare(y.start_time || ''));
@@ -1127,5 +1166,27 @@ export function createApi(db, { XLSX } = {}) {
     }
   }
 
-  return { handle, feed, consultantOverview, consultantAppleExport, setConsultantAppleEmail, setSignup, markMessagesRead, consultantNotes, deleteConsultantNote, calendarUrlFor: (user) => db.get('SELECT calendar_url FROM users WHERE id = ?', [user.id])?.calendar_url || '' };
+  // Administration › Skoler › Find postnumre: looks up schools without a postal code, a batch at a
+  // time (Nominatim allows one request a second), and saves what it finds.
+  // `after` continues from the last school of the previous batch, so schools not found are skipped.
+  async function findPostalCodes(user, { after = 0, lookup = nominatimPostal, limit = 25, pause = 1100 } = {}) {
+    requireAdmin(user);
+    const todo = db.all(`SELECT s.id, s.name, m.name AS municipality FROM schools s LEFT JOIN municipalities m ON m.id = s.municipality_id
+      WHERE COALESCE(s.postal_code, '') = '' AND s.name NOT LIKE '%flere skoler%' AND s.id > ? ORDER BY s.id`, [int(after) || 0]);
+    const found = [];
+    const missing = [];
+    for (const [i, sch] of todo.slice(0, limit).entries()) {
+      if (i && pause) await new Promise((r) => setTimeout(r, pause));
+      let code = null;
+      try { code = await lookup(sch.name, sch.municipality); } catch { /* counted as not found */ }
+      if (code) {
+        db.run('UPDATE schools SET postal_code = ? WHERE id = ?', [code, sch.id]);
+        found.push({ name: sch.name, postal_code: code });
+      } else missing.push(sch.name);
+    }
+    const done = todo.slice(0, limit);
+    return { found, missing, remaining: Math.max(todo.length - limit, 0), next: done.at(-1)?.id || 0 };
+  }
+
+  return { handle, feed, findPostalCodes, consultantOverview, consultantAppleExport, setConsultantAppleEmail, setSignup, markMessagesRead, consultantNotes, deleteConsultantNote, calendarUrlFor: (user) => db.get('SELECT calendar_url FROM users WHERE id = ?', [user.id])?.calendar_url || '' };
 }

@@ -1476,8 +1476,33 @@ async function renderAdmin(root) {
           <button type="button" class="linkbtn danger" data-act="delete">Slet</button>
         </div>
       </li>`).join('')}</ul>
-    <p class="muted small">${rows.length} i alt</p>`;
+    <p class="muted small">${rows.length} i alt</p>
+    ${isSchools && !transport.isPreview && rows.some((r) => !r.postal_code) ? `<p class="admin-postal"><button type="button" class="btn btn-sm" id="find-postal">Find manglende postnumre</button>
+      <span class="muted small">Slår skolerne op på OpenStreetMap. Tjek dem bagefter, og ret dem der er forkerte.</span></p><div id="postal-result" class="small"></div>` : ''}`;
 
+  if ($('#find-postal')) {
+    $('#find-postal').onclick = async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      const found = [];
+      const missing = [];
+      let from = 0;
+      try {
+        for (;;) {
+          btn.textContent = `Finder postnumre… (${found.length} fundet)`;
+          const r = await api.post('/api/admin/schools/postal-lookup', { after: from });
+          found.push(...r.found);
+          missing.push(...r.missing);
+          if (!r.remaining) break;
+          from = r.next;
+        }
+        toast(`${found.length} postnumre fundet`);
+        await after();
+        const out = $('#postal-result');
+        if (out && missing.length) out.innerHTML = `<p class="muted">Ikke fundet, skriv dem selv: ${missing.map(esc).join(', ')}</p>`;
+      } catch (ex) { fail(ex); btn.disabled = false; btn.textContent = 'Find manglende postnumre'; }
+    };
+  }
   const errEl = $('#admin-err');
   const fail = (ex) => { errEl.textContent = ex.message; errEl.hidden = false; };
   const toggleReseller = (form) => {
@@ -1619,15 +1644,15 @@ async function loadApple() {
     body.innerHTML = `<div class="card"><p class="muted empty">${state.appleFilters.sent === 'no' ? 'Alle afholdte kurser i udvalget er sendt til Apple.' : 'Ingen afholdte kurser matcher filtrene.'}</p></div>`;
     return;
   }
-  const pages = ['Side 1', 'Side 2', 'Side 3', 'Side 4'];
   body.innerHTML = rows.map((a) => `
     <section class="card apple-course ${a.apple_reported_at ? 'is-sent' : ''}" data-id="${a.id}">
       <div class="card-head">
         <div><h2>${esc(a.consultant || 'Ingen konsulent')} · ${esc(fmtDate(a.date))}</h2>
-          <p class="muted small">${esc(a.title)} · ${esc(a.school || 'Ingen skole')} · ${esc(a.reseller)}</p></div>
+          <p class="muted small">${esc(a.title)} · ${esc(a.school || 'Ingen skole')} · ${esc(a.reseller)}</p>
+          <p><a class="btn btn-sm" href="${esc(a.formLink)}" target="_blank" rel="noopener">Åbn Apples skema udfyldt</a></p></div>
         <label class="apple-sent"><input type="checkbox" ${a.apple_reported_at ? 'checked' : ''}> Sendt til Apple</label>
       </div>
-      <div class="apple-pages">${pages.map((p) => `
+      <div class="apple-pages">${[...new Set(a.fields.map(([p]) => p))].map((p) => `
         <div class="apple-page"><p class="eyebrow">${p}</p><dl>${a.fields.filter(([pg]) => pg === p).map(([, label, value, hint]) => `
           <div class="apple-field"><dt>${esc(label)}</dt><dd>${value
             ? `<button type="button" class="apple-copy" data-copy="${esc(value)}" title="Kopiér">${esc(value)}</button>`
