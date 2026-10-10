@@ -59,6 +59,7 @@ test('the prefilled link carries the known answers in Qualtrics ids', () => {
   assert.equal(q.QID142, '2');
   assert.equal(q.QID137, '9');
   assert.equal(q.QID104, '18');
+  assert.equal(q.QID156, '2'); // Experiences Catalog: No
   assert.deepEqual(q.QID103, ['2']); // Undervisere, multi-answer
   assert.equal(q.QID102, undefined); // left for the consultant
 });
