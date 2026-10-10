@@ -177,7 +177,7 @@ export function appleFields(a) {
     ['Side 4', 'Hvem arrangerede APL-sessionen med dig?', partner ? 'Apple Authorised Education Specialist (AAES)' : '', partner ? '' : 'Apple, AAES, uddannelsesinstitution eller andet', partner && ['QID108', null, '1']],
     ['Side 5', 'Vælg navnet (Channel Partner)', partner ? partner[0] : '', partner ? '' : 'Kun hvis en partner arrangerede sessionen', partner && ['QID137', null, partner[1]]],
     ['Side 6', 'Was this institution an Apple Distinguished School?', 'No', 'Vælg Yes, hvis skolen er en Apple Distinguished School', ['QID153', null, '2']],
-    ['Side 6', 'Did you use any resource(s) from the APLS Experiences Catalog?', '', 'Yes eller No'],
+    ['Side 6', 'Did you use any resource(s) from the APLS Experiences Catalog?', 'No', 'Vælg Yes, hvis du brugte materiale fra kataloget', ['QID156', null, '2']],
   ];
 }
 
