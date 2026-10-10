@@ -110,6 +110,7 @@ export function createServer({ dbFile = process.env.DB_FILE || fileURLToPath(new
       res.status(err.status || 500).json({ error: err.status ? err.message : 'Der opstod en fejl på serveren.' });
     }
   };
+  app.put('/k/:token/apple-email', kRoute((req) => api.setConsultantAppleEmail(req.params.token, req.body || {})));
   app.post('/k/:token/courses/:id/notes', kRoute((req) => api.consultantNotes(req.params.token, Number(req.params.id), req.body || {})));
   app.delete('/k/:token/notes/:id', kRoute((req) => api.deleteConsultantNote(req.params.token, Number(req.params.id))));
 

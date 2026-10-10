@@ -799,7 +799,7 @@ export function createApi(db, { XLSX } = {}) {
       .sort((x, y) => x.date.localeCompare(y.date) || (x.start_time || '').localeCompare(y.start_time || ''));
     const byYear = {};
     for (const a of held) byYear[a.date.slice(0, 4)] = (byYear[a.date.slice(0, 4)] || 0) + a.sessions;
-    return { name: c.name, appleLink: appleCheckoutLink(c.name, c.email), today: todayIso(), feedPath: `/calendar/feed/${c.feed_token}.ics`, held, planned, sessionsByYear: byYear, signup: signupList(c.id), messages: messagesFor(c.id) };
+    return { name: c.name, email: c.email || '', appleLink: appleCheckoutLink(c.name, c.email), today: todayIso(), feedPath: `/calendar/feed/${c.feed_token}.ics`, held, planned, sessionsByYear: byYear, signup: signupList(c.id), messages: messagesFor(c.id) };
   }
 
   // --- Tilmelding ---------------------------------------------------------------------------
@@ -936,6 +936,15 @@ export function createApi(db, { XLSX } = {}) {
   }
 
   // Called by the consultant page after it has shown the messages, so they are marked "Ny" only once.
+  // The consultant writes their own Apple e-mail on their page, which gives them their personal checkout link.
+  function setConsultantAppleEmail(token, body) {
+    const c = consultantByToken(token);
+    const email = String(body?.email ?? '').trim().toLowerCase() || null;
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new HttpError(400, 'Skriv en gyldig e-mailadresse.');
+    db.run('UPDATE consultants SET email = ? WHERE id = ?', [email, c.id]);
+    return { email, appleLink: appleCheckoutLink(c.name, email) };
+  }
+
   function markMessagesRead(token) {
     const c = consultantByToken(token);
     db.run(`INSERT OR IGNORE INTO message_reads (message_id, consultant_id) SELECT m.id, ? FROM messages m WHERE ${MESSAGES_FOR}`, [c.id, c.id]);
@@ -1118,5 +1127,5 @@ export function createApi(db, { XLSX } = {}) {
     }
   }
 
-  return { handle, feed, consultantOverview, consultantAppleExport, setSignup, markMessagesRead, consultantNotes, deleteConsultantNote, calendarUrlFor: (user) => db.get('SELECT calendar_url FROM users WHERE id = ?', [user.id])?.calendar_url || '' };
+  return { handle, feed, consultantOverview, consultantAppleExport, setConsultantAppleEmail, setSignup, markMessagesRead, consultantNotes, deleteConsultantNote, calendarUrlFor: (user) => db.get('SELECT calendar_url FROM users WHERE id = ?', [user.id])?.calendar_url || '' };
 }
