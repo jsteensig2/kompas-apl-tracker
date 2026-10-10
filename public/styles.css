@@ -598,3 +598,33 @@ dt .note-btn { margin-left: 0; opacity: 1; cursor: default; }
 .su-cell button.su-remove:hover, .su-cell button.su-remove:focus-visible { outline: 2px solid var(--danger); }
 .signup-grid td.su-cell.su-on { background: var(--ok); color: var(--surface); font-size: 0.75rem; }
 .needed-field input { max-width: 160px; }
+
+/* Til Apple: one card per held course, the fields of Apple's form in its own order. */
+.apple-filters .field-status { grid-column: span 2; }
+.apple-filters .seg label span { white-space: nowrap; }
+.apple-course { margin-bottom: 14px; }
+.apple-course h2 { margin: 0; font-size: 1.02rem; }
+.apple-course.is-sent { opacity: 0.6; }
+.apple-sent { display: inline-flex; align-items: center; gap: 6px; font-size: 0.88rem; white-space: nowrap; cursor: pointer; }
+.apple-pages { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+.apple-page .eyebrow { margin: 0 0 6px; }
+.apple-page dl { margin: 0; display: grid; gap: 8px; }
+.apple-field dt { font-size: 0.78rem; color: var(--muted); line-height: 1.3; }
+.apple-field dd { margin: 2px 0 0; }
+.apple-copy { font: inherit; font-size: 0.9rem; text-align: left; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: var(--r-sm); padding: 4px 8px; cursor: copy; max-width: 100%; overflow-wrap: anywhere; }
+.apple-copy:hover { border-color: var(--accent); }
+.apple-copy:focus-visible { outline: 2px solid var(--focus); }
+.apple-blank { font-size: 0.85rem; color: var(--pending-ink); }
+
+@media print {
+  .topbar, .demobar, .fab, .app-version, .no-print, .apple-sent, #toast { display: none !important; }
+  body { background: #fff; }
+  .apple-course { break-inside: avoid; box-shadow: none; border: 1px solid #ccc; }
+  .apple-course.is-sent { opacity: 1; }
+  .apple-copy { background: none; border: 0; padding: 0; }
+  .apple-field .muted, .apple-head .muted { display: none; }
+  .apple-course { padding: 10px 14px; margin-bottom: 8px; }
+  .apple-page dl { gap: 4px; }
+  .apple-pages { grid-template-columns: repeat(4, 1fr); gap: 10px; }
+}
