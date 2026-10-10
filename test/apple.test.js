@@ -126,7 +126,9 @@ test('the Apple form link carries the consultant e-mail written under Administra
   await call('admin', `/api/admin/consultants/${kb.id}`, { method: 'PUT', body: JSON.stringify({ name: c.name, initials: c.initials, email: 'kim@kompas.dk' }) });
   const { pagePath } = await json('admin', `/api/admin/consultants/${kb.id}/feed`);
   const data = await (await fetch(`${base}${pagePath}/data`)).json();
-  assert.equal(data.appleLink, undefined); // the personal Engagement Checkout link is gone; the filled-in form covers it
+  assert.equal(data.appleLink, undefined);
+  const manual = JSON.parse(new URL(data.manualForm).searchParams.get('Q_PopulateResponse'));
+  assert.deepEqual(manual, { QID41: '8', QID1: 'Kim Byrding', QID2: 'kim@kompas.dk' }); // the personal Engagement Checkout link is gone; the filled-in form covers it
   const course = data.held[0];
   if (course) assert.equal(JSON.parse(new URL(course.appleForm).searchParams.get('Q_PopulateResponse')).QID2, 'kim@kompas.dk');
 });

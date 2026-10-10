@@ -826,7 +826,11 @@ export function createApi(db, { XLSX } = {}) {
       .sort((x, y) => x.date.localeCompare(y.date) || (x.start_time || '').localeCompare(y.start_time || ''));
     const byYear = {};
     for (const a of held) byYear[a.date.slice(0, 4)] = (byYear[a.date.slice(0, 4)] || 0) + a.sessions;
-    return { name: c.name, email: c.email || '', today: todayIso(), feedPath: `/calendar/feed/${c.feed_token}.ics`, held, planned, sessionsByYear: byYear, signup: signupList(c.id), messages: messagesFor(c.id) };
+    // Manuel indberetning: Apple's form with only area, name and e-mail filled in, for a workshop
+    // that is not in the tracker (Jakob, 2026-10-10).
+    const manualForm = appleFormLink(appleFields({ consultant: c.name, consultant_email: c.email, date: todayIso() })
+      .filter(([, label]) => ['Vælg dit område', 'Navn på specialist (for- og efternavn)', 'E-mailadresse til specialist'].includes(label)));
+    return { name: c.name, email: c.email || '', manualForm, today: todayIso(), feedPath: `/calendar/feed/${c.feed_token}.ics`, held, planned, sessionsByYear: byYear, signup: signupList(c.id), messages: messagesFor(c.id) };
   }
 
   // --- Tilmelding ---------------------------------------------------------------------------
