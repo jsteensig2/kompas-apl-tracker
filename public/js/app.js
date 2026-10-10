@@ -1619,15 +1619,15 @@ async function loadApple() {
     body.innerHTML = `<div class="card"><p class="muted empty">${state.appleFilters.sent === 'no' ? 'Alle afholdte kurser i udvalget er sendt til Apple.' : 'Ingen afholdte kurser matcher filtrene.'}</p></div>`;
     return;
   }
-  const pages = ['Side 1', 'Side 2', 'Side 3', 'Side 4'];
   body.innerHTML = rows.map((a) => `
     <section class="card apple-course ${a.apple_reported_at ? 'is-sent' : ''}" data-id="${a.id}">
       <div class="card-head">
         <div><h2>${esc(a.consultant || 'Ingen konsulent')} · ${esc(fmtDate(a.date))}</h2>
-          <p class="muted small">${esc(a.title)} · ${esc(a.school || 'Ingen skole')} · ${esc(a.reseller)}</p></div>
+          <p class="muted small">${esc(a.title)} · ${esc(a.school || 'Ingen skole')} · ${esc(a.reseller)}</p>
+          <p><a class="btn btn-sm" href="${esc(a.formLink)}" target="_blank" rel="noopener">Åbn Apples skema udfyldt</a></p></div>
         <label class="apple-sent"><input type="checkbox" ${a.apple_reported_at ? 'checked' : ''}> Sendt til Apple</label>
       </div>
-      <div class="apple-pages">${pages.map((p) => `
+      <div class="apple-pages">${[...new Set(a.fields.map(([p]) => p))].map((p) => `
         <div class="apple-page"><p class="eyebrow">${p}</p><dl>${a.fields.filter(([pg]) => pg === p).map(([, label, value, hint]) => `
           <div class="apple-field"><dt>${esc(label)}</dt><dd>${value
             ? `<button type="button" class="apple-copy" data-copy="${esc(value)}" title="Kopiér">${esc(value)}</button>`

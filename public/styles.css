@@ -626,7 +626,7 @@ dt .note-btn { margin-left: 0; opacity: 1; cursor: default; }
   .apple-field .muted, .apple-head .muted { display: none; }
   .apple-course { padding: 10px 14px; margin-bottom: 8px; }
   .apple-page dl { gap: 4px; }
-  .apple-pages { grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .apple-pages { grid-template-columns: repeat(3, 1fr); gap: 10px; }
 }
 
 /* Til Apple on the consultant page: a dialog per course, and a print list of every held course. */

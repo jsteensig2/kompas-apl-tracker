@@ -3,7 +3,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import XLSX from 'xlsx';
 import { createServer } from '../server/index.js';
-import { appleFields } from '../core/api.js';
+import { appleFields, appleFormLink } from '../core/api.js';
 
 let server, base;
 const cookies = {};
@@ -26,14 +26,14 @@ test('fields follow the form and fill in what the tracker knows', () => {
     consultant: 'Kim Byrding', consultant_email: 'kb@kompas.dk', postal_code: '2840', participants: 18 });
   const v = Object.fromEntries(f.map(([, l, val]) => [l, val]));
   assert.equal(f[0][1], 'Vælg dit område');
-  assert.equal(f.at(-1)[1], 'Antal deltagere');
+  assert.equal(f.length, 21);
   assert.equal(v['Navn på specialist (for- og efternavn)'], 'Kim Byrding');
   assert.equal(v['E-mailadresse til specialist'], 'kb@kompas.dk');
   assert.equal(v['System/distrikt/ministeriums navn'], 'Rudersdal Kommune');
   assert.equal(v.Postnummer, '2840');
   assert.equal(v.Startdato, '11/03/2026');
   assert.equal(v['Hvad var varigheden af din session?'], '1 dag');
-  assert.equal(v.Leveringstilstand, 'Ved side');
+  assert.equal(v.Leveringstilstand, 'På side');
   assert.equal(v['Projekttype/Niveau for deltagende uddannelsesinstitutioner'], '');
   const gl = Object.fromEntries(appleFields({ date: '2026-01-05', duration: 'half', apl_type: 'Workshop Online', title: 'Webinar', school: 'X', municipality: 'Sermersooq', participants: 0 })
     .map(([, l, val]) => [l, val]));
@@ -43,11 +43,29 @@ test('fields follow the form and fill in what the tracker knows', () => {
   assert.equal(gl['Antal deltagere'], '');
 });
 
+test('the prefilled link carries the known answers in Qualtrics ids', () => {
+  const f = appleFields({ date: '2026-03-11', duration: 'full', apl_type: 'Workshop Fysisk', title: 'AI', school: 'Holte Skole', municipality: 'Rudersdal',
+    consultant: 'Kim Byrding', consultant_email: 'kb@kompas.dk', postal_code: '2840', participants: 18, reseller: 'Atea' });
+  const url = new URL(appleFormLink(f));
+  assert.equal(url.origin + url.pathname, 'https://essentials.applesurveys.com/jfe/form/SV_7UiJTisrllOFbsG');
+  assert.equal(url.searchParams.get('Q_Language'), 'DA');
+  const q = JSON.parse(url.searchParams.get('Q_PopulateResponse'));
+  assert.equal(q.QID41, '8');
+  assert.equal(q.QID1, 'Kim Byrding');
+  assert.equal(q.QID121, '7');
+  assert.deepEqual(q.QID99, { 4: 'Holte Skole', 5: 'Rudersdal Kommune', 6: '2840' });
+  assert.deepEqual(q.QID87, { 1: '11/03/2026', 2: '11/03/2026' });
+  assert.equal(q.QID142, '2');
+  assert.equal(q.QID137, '9');
+  assert.equal(q.QID104, '18');
+  assert.equal(q.QID102, undefined); // left for the consultant
+});
+
 test('only held courses, admin only, with e-mail and postal code from Administration', async () => {
   const rows = await json('admin', '/api/apple');
   const held = (await json('admin', '/api/activities?status=held'));
   assert.equal(rows.length, held.length);
-  assert.ok(rows.every((r) => r.fields.length === 19));
+  assert.ok(rows.every((r) => r.fields.length === 21 && r.formLink.includes('Q_PopulateResponse')));
   assert.equal((await call('Atea', '/api/apple')).status, 403);
   assert.equal((await call('Atea', '/api/apple/export')).status, 403);
 
@@ -92,7 +110,7 @@ test('a consultant gets the Apple answers for their own held courses on their pa
   const { pagePath } = await json('admin', `/api/admin/consultants/${sr.id}/feed`);
   const data = await (await fetch(`${base}${pagePath}/data`)).json();
   assert.ok(data.held.length > 0);
-  assert.ok(data.held.every((a) => a.apple.length === 19));
+  assert.ok(data.held.every((a) => a.apple.length === 21 && a.appleForm.includes('QID1')));
   assert.ok(data.held.every((a) => a.apple[1][2] === 'Søren Rasmussen'));
   const r = await fetch(`${base}${pagePath}/apple?format=xlsx`);
   assert.equal(r.status, 200);
