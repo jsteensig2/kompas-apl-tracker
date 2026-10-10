@@ -489,7 +489,11 @@ export function createApi(db, { XLSX } = {}) {
   // behalf) can copy them from a spreadsheet or a printout. Foreløbig and coming courses are never included.
   function appleCourses(user, f) {
     requireAdmin(user);
-    const rows = listActivities(user, { ...f, status: 'held' });
+    return appleRows(f);
+  }
+
+  function appleRows(f) {
+    const rows = listActivities({ role: 'admin' }, { ...f, status: 'held' });
     const extra = new Map(db.all(`SELECT a.id, a.apple_reported_at, c.email AS consultant_email, s.postal_code
         FROM activities a LEFT JOIN consultants c ON c.id = a.consultant_id LEFT JOIN schools s ON s.id = a.school_id
         WHERE ${HELD_SQL}`, [todayIso()]).map((x) => [x.id, x]));
@@ -503,10 +507,23 @@ export function createApi(db, { XLSX } = {}) {
   function exportApple(user, f) {
     const rows = appleCourses(user, f);
     const consultant = int(f.consultant) && db.get('SELECT name FROM consultants WHERE id = ?', [int(f.consultant)])?.name;
-    const base = `apple-registrering-${(consultant || 'alle').toLowerCase().replace(/[^a-z0-9æøå]+/g, '-')}-${todayIso()}`;
+    return appleFile(rows, consultant || 'alle', f.format);
+  }
+
+  // The consultant's own held courses for Apple, newest first, from their private page.
+  function consultantAppleExport(token, format) {
+    const c = consultantByToken(token);
+    const rows = appleRows({ consultant: c.id }).sort((x, y) => y.date.localeCompare(x.date));
+    return appleFile(rows, c.name, format);
+  }
+
+  function appleFile(rows, who, format) {
+    // File names must stay ASCII (HTTP header): Søren -> soeren.
+    const slug = who.toLowerCase().replace(/æ/g, 'ae').replace(/ø/g, 'oe').replace(/å/g, 'aa').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const base = `apple-registrering-${slug || 'alle'}-${todayIso()}`;
     const headings = [...APPLE_HEADINGS, 'Kursus (titel)', 'Reseller', 'Sendt til Apple'];
     const line = (a) => [...a.fields.map(([, , v]) => v), a.title, a.reseller, a.apple_reported_at ? dmy(a.apple_reported_at.slice(0, 10)) : ''];
-    if (f.format === 'csv') {
+    if (format === 'csv') {
       const cell = (v) => { const t = String(v ?? ''); return /[";\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
       return { filename: `${base}.csv`, contentType: 'text/csv; charset=utf-8',
         data: '﻿' + [headings, ...rows.map(line)].map((l) => l.map(cell).join(';')).join('\r\n') };
@@ -768,7 +785,8 @@ export function createApi(db, { XLSX } = {}) {
       country: GREENLAND.has(String(a.municipality || '').toLowerCase()) ? 'Grønland' : 'Danmark',
       notes: notesFor(a.id, { consultantId: c.id }),
     }));
-    const held = rows.filter((a) => a.status === 'held')
+    const apple = new Map(appleRows({ consultant: c.id }).map((a) => [a.id, a.fields]));
+    const held = rows.filter((a) => a.status === 'held').map((a) => ({ ...a, apple: apple.get(a.id) || [] }))
       .sort((x, y) => y.date.localeCompare(x.date) || (y.start_time || '').localeCompare(x.start_time || ''));
     const planned = rows.filter((a) => a.status === 'planned')
       .sort((x, y) => x.date.localeCompare(y.date) || (x.start_time || '').localeCompare(y.start_time || ''));
@@ -1093,5 +1111,5 @@ export function createApi(db, { XLSX } = {}) {
     }
   }
 
-  return { handle, feed, consultantOverview, setSignup, markMessagesRead, consultantNotes, deleteConsultantNote, calendarUrlFor: (user) => db.get('SELECT calendar_url FROM users WHERE id = ?', [user.id])?.calendar_url || '' };
+  return { handle, feed, consultantOverview, consultantAppleExport, setSignup, markMessagesRead, consultantNotes, deleteConsultantNote, calendarUrlFor: (user) => db.get('SELECT calendar_url FROM users WHERE id = ?', [user.id])?.calendar_url || '' };
 }

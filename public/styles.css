@@ -628,3 +628,14 @@ dt .note-btn { margin-left: 0; opacity: 1; cursor: default; }
   .apple-page dl { gap: 4px; }
   .apple-pages { grid-template-columns: repeat(4, 1fr); gap: 10px; }
 }
+
+/* Til Apple on the consultant page: a dialog per course, and a print list of every held course. */
+.dialog-wide { width: min(980px, calc(100vw - 32px)); }
+.k-apple-sub { margin: 18px 0 4px; font-size: 1rem; }
+.k-card-apple { margin-top: 10px; }
+.apple-print-list { display: none; }
+@media print {
+  body.print-apple #toast, body.print-apple #app > :not(.apple-print-list) { display: none !important; }
+  body.print-apple .apple-print-list { display: block; }
+  body.print-apple .apple-print-list h1 { font-size: 1.2rem; margin: 0 0 10px; }
+}
