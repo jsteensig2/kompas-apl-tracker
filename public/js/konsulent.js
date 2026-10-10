@@ -34,7 +34,10 @@ const noteBtn = (a) => {
 };
 
 // Til Apple: the answers for Apple's APL Engagement Checkout, in the form's own order, ready to copy.
-const appleBtn = (a) => `<button type="button" class="btn btn-sm nowrap" data-apple="${a.id}">Til Apple</button>`;
+// A course the consultant (or Kompas) has marked as reported shows a green "Indberettet" instead.
+const appleBtn = (a) => a.apple_reported_at
+  ? `<button type="button" class="btn btn-sm nowrap apple-done" data-apple="${a.id}" title="Indberettet til Apple ${esc(fmtDate(a.apple_reported_at.slice(0, 10)))}">✓ Indberettet</button>`
+  : `<button type="button" class="btn btn-sm nowrap" data-apple="${a.id}">Til Apple</button>`;
 // The tracker's hints point at Administration, which consultants don't have.
 const OWN_HINTS = { 'E-mailadresse til specialist': 'Din egen e-mail', Postnummer: 'Skolens postnummer' };
 const appleFields = (a) => `<div class="apple-pages">${[...new Set(a.apple.map(([p]) => p))].map((p) => `
@@ -59,8 +62,21 @@ function openApple(id) {
       <button type="button" class="btn btn-sm" data-close>Luk</button></div>
     <p class="small">Åbn Apples skema udfyldt med det, trackeren ved. Gå siderne igennem, udfyld felterne markeret Udfyld selv, og indsend skemaet. Tryk på en værdi her for at kopiere den, hvis et felt står tomt.</p>
     <p>${a.appleForm ? `<a class="btn btn-primary btn-sm" href="${esc(a.appleForm)}" target="_blank" rel="noopener">Åbn Apples skema udfyldt</a> ` : ''}<a class="btn btn-sm" href="${esc(survey())}" target="_blank" rel="noopener">Åbn tomt skema</a></p>
+    <label class="apple-reported"><input type="checkbox" id="apple-reported" ${a.apple_reported_at ? 'checked' : ''}> <b>Indberettet til Apple</b>
+      <span class="muted small">${a.apple_reported_at ? `Markeret ${esc(fmtDate(a.apple_reported_at.slice(0, 10)))}` : 'Sæt kryds, når du har indsendt skemaet'}</span></label>
     ${appleFields(a)}`;
   bindCopy(dlg);
+  dlg.querySelector('#apple-reported').onchange = async (e) => {
+    const box = e.currentTarget;
+    try {
+      const r = await fetch(`/k/${encodeURIComponent(token)}/courses/${a.id}/apple`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reported: box.checked }) });
+      if (!r.ok) throw new Error();
+      a.apple_reported_at = (await r.json()).apple_reported_at;
+      toast(box.checked ? 'Markeret som indberettet' : 'Markering fjernet');
+      dlg.close();
+      render();
+    } catch { box.checked = !box.checked; toast('Kunne ikke gemme'); }
+  };
   dlg.querySelector('[data-close]').onclick = () => dlg.close();
   dlg.onclick = (e) => { if (e.target === dlg) dlg.close(); };
   dlg.showModal();
@@ -232,6 +248,7 @@ function render() {
   const year = data.today.slice(0, 4);
   const thisYear = data.sessionsByYear[year] || 0; // a full day counts as two workshops
   const heldYear = data.held.filter((a) => a.date.startsWith(year));
+  const notReported = data.held.filter((a) => !a.apple_reported_at).length;
   // "15 halve dage + 1 hel dag" makes it clear why 16 courses are 17 workshops.
   const days = (rows) => {
     const full = rows.filter((a) => a.duration === 'full').length;
@@ -269,6 +286,7 @@ function render() {
           <div><div class="kpi-label">Apple-workshops i ${year}</div>
             <div class="kpi-sub">Kun til Apple-registreringen tæller en halv dag som 1 workshop og en hel dag som 2.${heldYear.length && heldYear.length !== thisYear ? ` Dine ${heldYear.length} kurser i ${year} svarer derfor til ${thisYear} Apple-workshops.` : ''}</div></div>
         </div>
+        ${notReported ? `<p class="apple-todo"><b>${notReported} ${notReported === 1 ? 'afholdt kursus mangler' : 'afholdte kurser mangler'}</b> at blive markeret som indberettet til Apple.</p>` : data.held.length ? '<p class="apple-todo is-done"><b>✓ Alle dine afholdte kurser er indberettet til Apple.</b></p>' : ''}
         <p>Husk at registrere alle dine afholdte workshops hos Apple, også når du har nået de ${GOAL}. Du skal afholde mindst ${GOAL} workshops om året for at bevare din status som Apple Professional Learning Specialist.${thisYear >= GOAL ? '' : ` Du mangler ${GOAL - thisYear} i ${year}.`}</p>
         <h3 class="k-apple-sub">Dit personlige link til Engagement Checkout</h3>
         <p class="small">${data.appleLink

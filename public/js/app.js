@@ -1605,7 +1605,7 @@ async function renderApple(root) {
     <div class="filters apple-filters no-print">
       <div class="field field-status"><span id="ap-label">Vis</span>
         <div class="seg" role="radiogroup" aria-labelledby="ap-label">
-          ${[['no', 'Ikke sendt'], ['yes', 'Sendt til Apple'], ['', 'Alle']].map(([val, l]) => `<label><input type="radio" name="ap-sent" value="${val}" ${f.sent === val ? 'checked' : ''}><span>${l}</span></label>`).join('')}
+          ${[['no', 'Ikke indberettet'], ['yes', 'Indberettet'], ['', 'Alle']].map(([val, l]) => `<label><input type="radio" name="ap-sent" value="${val}" ${f.sent === val ? 'checked' : ''}><span>${l}</span></label>`).join('')}
         </div>
       </div>
       <label class="field"><span>År</span><select id="ap-year">${yearOptions(f.year)}</select></label>
@@ -1641,7 +1641,7 @@ async function loadApple() {
     [[noMail, 'mangler konsulentens e-mail'], [noPostal, 'mangler postnummer'], [noPart, 'mangler deltagere']]
       .filter(([n]) => n).map(([n, t]) => ` · ${num(n)} ${t}`).join('')}`;
   if (!rows.length) {
-    body.innerHTML = `<div class="card"><p class="muted empty">${state.appleFilters.sent === 'no' ? 'Alle afholdte kurser i udvalget er sendt til Apple.' : 'Ingen afholdte kurser matcher filtrene.'}</p></div>`;
+    body.innerHTML = `<div class="card"><p class="muted empty">${state.appleFilters.sent === 'no' ? 'Alle afholdte kurser i udvalget er indberettet til Apple.' : 'Ingen afholdte kurser matcher filtrene.'}</p></div>`;
     return;
   }
   body.innerHTML = rows.map((a) => `
@@ -1650,7 +1650,7 @@ async function loadApple() {
         <div><h2>${esc(a.consultant || 'Ingen konsulent')} · ${esc(fmtDate(a.date))}</h2>
           <p class="muted small">${esc(a.title)} · ${esc(a.school || 'Ingen skole')} · ${esc(a.reseller)}</p>
           <p><a class="btn btn-sm" href="${esc(a.formLink)}" target="_blank" rel="noopener">Åbn Apples skema udfyldt</a></p></div>
-        <label class="apple-sent"><input type="checkbox" ${a.apple_reported_at ? 'checked' : ''}> Sendt til Apple</label>
+        <label class="apple-sent"><input type="checkbox" ${a.apple_reported_at ? 'checked' : ''}> Indberettet til Apple</label>
       </div>
       <div class="apple-pages">${[...new Set(a.fields.map(([p]) => p))].map((p) => `
         <div class="apple-page"><p class="eyebrow">${p}</p><dl>${a.fields.filter(([pg]) => pg === p).map(([, label, value, hint]) => `
@@ -1669,7 +1669,7 @@ async function loadApple() {
       try {
         await api.put(`/api/activities/${card.dataset.id}/apple`, { reported: box.checked });
         card.classList.toggle('is-sent', box.checked);
-        toast(box.checked ? 'Markeret som sendt til Apple' : 'Markering fjernet');
+        toast(box.checked ? 'Markeret som indberettet til Apple' : 'Markering fjernet');
       } catch (ex) { box.checked = !box.checked; toast(ex.message, 'err'); }
     };
   });

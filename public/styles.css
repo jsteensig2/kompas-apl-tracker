@@ -607,6 +607,11 @@ dt .note-btn { margin-left: 0; opacity: 1; cursor: default; }
 .apple-course h2 { margin: 0; font-size: 1.02rem; }
 .apple-course.is-sent { opacity: 0.6; }
 .apple-sent { display: inline-flex; align-items: center; gap: 6px; font-size: 0.88rem; white-space: nowrap; cursor: pointer; }
+.apple-done { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, transparent); background: color-mix(in srgb, var(--ok) 10%, transparent); }
+.apple-reported { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.apple-reported input { width: 18px; height: 18px; }
+.apple-todo { padding: 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--warn, #b26b00) 10%, transparent); }
+.apple-todo.is-done { color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, transparent); }
 .apple-pages { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
 .apple-page .eyebrow { margin: 0 0 6px; }
 .apple-page dl { margin: 0; display: grid; gap: 8px; }
