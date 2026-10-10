@@ -81,7 +81,8 @@ function buildWhere(user, f = {}) {
     throw new HttpError(403, 'Din bruger har ikke adgang til nogen aktiviteter.');
   }
   if (f.status === 'held') { where.push(HELD_SQL); params.push(todayIso()); }
-  if (f.status === 'planned') { where.push(PLANNED_SQL); params.push(todayIso()); }
+  if (f.status === 'planned') { where.push(PLANNED_SQL); params.push(todayIso()); } // every coming course, Foreløbig included
+  if (f.status === 'approved') { where.push('(a.date > ? AND a.pending = 0)'); params.push(todayIso()); } // Planlagt: coming and approved
   if (f.status === 'pending') where.push('a.pending = 1');
   if (truthy(f.reschedule)) where.push('a.reschedule = 1'); // ★ Skal have ny dato
   if (int(f.year)) { where.push("substr(a.date, 1, 4) = ?"); params.push(String(int(f.year))); }
@@ -207,13 +208,6 @@ export function appleFormLink(fields) {
     else answers[qid] = choice || value;
   }
   return `${APPLE_FORM}?${new URLSearchParams({ Q_Language: 'DA', Q_PopulateResponse: JSON.stringify(answers) })}`;
-}
-
-// The specialist's personal link to Apple's Engagement Checkout fills in their name and e-mail
-// (format from Jakob, 2026-10-10). Without an e-mail there is no personal link.
-export function appleCheckoutLink(name, email) {
-  if (!name || !email) return null;
-  return `https://apple.co/apls-checkout?${new URLSearchParams({ specialist: name, apple_email: email })}`;
 }
 
 // Short column headings for the spreadsheet, in the same order as appleFields.
@@ -557,12 +551,6 @@ export function createApi(db, { XLSX } = {}) {
   }
 
   // The consultant's own held courses for Apple, newest first, from their private page.
-  function consultantAppleExport(token, format) {
-    const c = consultantByToken(token);
-    const rows = appleRows({ consultant: c.id }).sort((x, y) => y.date.localeCompare(x.date));
-    return appleFile(rows, c.name, format);
-  }
-
   function appleFile(rows, who, format) {
     // File names must stay ASCII (HTTP header): Søren -> soeren.
     const slug = who.toLowerCase().replace(/æ/g, 'ae').replace(/ø/g, 'oe').replace(/å/g, 'aa').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -811,7 +799,7 @@ export function createApi(db, { XLSX } = {}) {
     if (!c) throw new HttpError(404, 'Konsulenten findes ikke.');
     if (reset || !c.feed_token) db.run('UPDATE consultants SET feed_token = ? WHERE id = ?', [newToken(), id]);
     const token = db.get('SELECT feed_token FROM consultants WHERE id = ?', [id]).feed_token;
-    return { feedPath: `/calendar/feed/${token}.ics`, pagePath: `/k/${token}`, appleLink: appleCheckoutLink(c.name, c.email) };
+    return { feedPath: `/calendar/feed/${token}.ics`, pagePath: `/k/${token}` };
   }
 
   // The consultant's own page (same secret link as their calendar): held and coming courses.
@@ -838,7 +826,7 @@ export function createApi(db, { XLSX } = {}) {
       .sort((x, y) => x.date.localeCompare(y.date) || (x.start_time || '').localeCompare(y.start_time || ''));
     const byYear = {};
     for (const a of held) byYear[a.date.slice(0, 4)] = (byYear[a.date.slice(0, 4)] || 0) + a.sessions;
-    return { name: c.name, email: c.email || '', appleLink: appleCheckoutLink(c.name, c.email), today: todayIso(), feedPath: `/calendar/feed/${c.feed_token}.ics`, held, planned, sessionsByYear: byYear, signup: signupList(c.id), messages: messagesFor(c.id) };
+    return { name: c.name, email: c.email || '', today: todayIso(), feedPath: `/calendar/feed/${c.feed_token}.ics`, held, planned, sessionsByYear: byYear, signup: signupList(c.id), messages: messagesFor(c.id) };
   }
 
   // --- Tilmelding ---------------------------------------------------------------------------
@@ -981,7 +969,7 @@ export function createApi(db, { XLSX } = {}) {
     const email = String(body?.email ?? '').trim().toLowerCase() || null;
     if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new HttpError(400, 'Skriv en gyldig e-mailadresse.');
     db.run('UPDATE consultants SET email = ? WHERE id = ?', [email, c.id]);
-    return { email, appleLink: appleCheckoutLink(c.name, email) };
+    return { email };
   }
 
   function markMessagesRead(token) {
@@ -1197,5 +1185,5 @@ export function createApi(db, { XLSX } = {}) {
     return { found, missing, remaining: Math.max(todo.length - limit, 0), next: done.at(-1)?.id || 0 };
   }
 
-  return { handle, feed, findPostalCodes, consultantOverview, consultantAppleExport, setConsultantAppleEmail, setConsultantAppleReported, setSignup, markMessagesRead, consultantNotes, deleteConsultantNote, calendarUrlFor: (user) => db.get('SELECT calendar_url FROM users WHERE id = ?', [user.id])?.calendar_url || '' };
+  return { handle, feed, findPostalCodes, consultantOverview, setConsultantAppleEmail, setConsultantAppleReported, setSignup, markMessagesRead, consultantNotes, deleteConsultantNote, calendarUrlFor: (user) => db.get('SELECT calendar_url FROM users WHERE id = ?', [user.id])?.calendar_url || '' };
 }

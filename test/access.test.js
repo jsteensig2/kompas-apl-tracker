@@ -133,6 +133,10 @@ test('admins mark a course as awaiting approval; it is filtered, kept out of key
   assert.equal(d.orderbook.pending, before.orderbook.pending + 1);
   assert.deepEqual((await json('admin', '/api/activities?status=pending')).map((x) => x.id), [a.id]);
   assert.ok(!(await json('admin', '/api/activities?status=held')).some((x) => x.id === a.id));
+  // Planlagt (approved) means coming and approved; "planned" is every coming course, Foreløbig included.
+  assert.ok((await json('admin', '/api/activities?status=planned')).some((x) => x.id === a.id));
+  const approved = await json('admin', '/api/activities?status=approved');
+  assert.ok(approved.length && approved.every((x) => !x.pending && x.status === 'planned'));
   const seen = await json('Atea', '/api/activities?status=pending');
   assert.equal(seen[0]?.pending, 1); // resellers see it too, marked
   const off = await (await put('admin', false)).json();
