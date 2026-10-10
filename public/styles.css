@@ -639,3 +639,7 @@ dt .note-btn { margin-left: 0; opacity: 1; cursor: default; }
   body.print-apple .apple-print-list { display: block; }
   body.print-apple .apple-print-list h1 { font-size: 1.2rem; margin: 0 0 10px; }
 }
+
+.k-apple-email { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin: 8px 0; }
+.k-apple-email .field { flex: 1 1 240px; max-width: 360px; }
+.k-apple-link { width: 100%; font-size: 0.82rem; margin: 0 0 10px; color: var(--muted); }

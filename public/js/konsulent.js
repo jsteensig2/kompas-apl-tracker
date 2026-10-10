@@ -271,9 +271,15 @@ function render() {
             <div class="kpi-sub">Kun til Apple-registreringen tæller en halv dag som 1 workshop og en hel dag som 2.${heldYear.length && heldYear.length !== thisYear ? ` Dine ${heldYear.length} kurser i ${year} svarer derfor til ${thisYear} Apple-workshops.` : ''}</div></div>
         </div>
         <p>Husk at registrere alle dine afholdte workshops hos Apple, også når du har nået de ${GOAL}. Du skal afholde mindst ${GOAL} workshops om året for at bevare din status som Apple Professional Learning Specialist.${thisYear >= GOAL ? '' : ` Du mangler ${GOAL - thisYear} i ${year}.`}</p>
-        ${data.appleLink
-          ? '<p>Knapperne her på siden åbner dit <b>personlige link</b> til spørgeskemaet ”Engagement Checkout Survey”, så dit navn og din e-mail allerede er udfyldt. Gem gerne linket som bogmærke.</p>'
-          : '<p>Knappen åbner det åbne link til spørgeskemaet ”Engagement Checkout Survey”, hvor du selv skal indtaste navn, land og e-mail. Send din Apple-e-mail til Kompas, så får du dit personlige link her, hvor navn og e-mail er udfyldt på forhånd.</p>'}
+        <h3 class="k-apple-sub">Dit personlige link til Engagement Checkout</h3>
+        <p class="small">${data.appleLink
+          ? 'Linket udfylder dit navn og din Apple-e-mail i Apples skema. Alle Apple-knapper her på siden bruger det. Gem det gerne som bogmærke.'
+          : 'Skriv den e-mail, du bruger hos Apple, så får du dit personlige link, hvor dit navn og din e-mail er udfyldt i Apples skema. Indtil da åbner knappen det åbne link, hvor du selv skal skrive navn, land og e-mail.'}</p>
+        <form class="k-apple-email" id="apple-email-form">
+          <label class="field"><span>Din Apple-e-mail</span><input type="email" name="email" value="${esc(data.email)}" placeholder="navn@eksempel.dk" autocomplete="email"></label>
+          <button type="submit" class="btn">${data.email ? 'Gem ændring' : 'Gem'}</button>
+        </form>
+        ${data.appleLink ? `<input class="k-apple-link" readonly value="${esc(data.appleLink)}" aria-label="Dit personlige link">` : ''}
         <div class="copyrow"><a class="btn btn-primary" href="${esc(survey())}" target="_blank" rel="noopener">${data.appleLink ? 'Åbn mit personlige link' : 'Åbn Engagement Checkout Survey'}</a><button type="button" class="btn" id="copy-survey">Kopiér link</button></div>
         ${data.held.length ? `<h3 class="k-apple-sub">Svarene til skemaet</h3>
         <p class="small">Tryk <b>Til Apple</b> ved et afholdt kursus nedenfor for at se svarene i samme rækkefølge som Apples skema og kopiere dem. Du kan også hente alle dine afholdte kurser som regneark eller PDF. Felter, som kun du kender, står som "Udfyld selv".</p>
@@ -301,6 +307,19 @@ function render() {
   bindSignup();
   bindNotes();
   document.querySelectorAll('[data-apple]').forEach((b) => { b.onclick = () => openApple(b.dataset.apple); });
+  document.getElementById('apple-email-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const email = e.target.email.value;
+    try {
+      const r = await fetch(`/k/${encodeURIComponent(token)}/apple-email`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }) });
+      const out = await r.json();
+      if (!r.ok) throw new Error(out.error || 'Det lykkedes ikke');
+      data.email = out.email || '';
+      data.appleLink = out.appleLink;
+      render();
+      toast(out.appleLink ? 'Gemt. Dit personlige link er klar' : 'E-mail fjernet');
+    } catch (ex) { toast(ex.message); }
+  };
   document.getElementById('apple-print')?.addEventListener('click', () => {
     document.body.classList.add('print-apple');
     window.print();

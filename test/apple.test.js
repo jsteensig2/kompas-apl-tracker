@@ -118,3 +118,18 @@ test('a consultant with an e-mail gets their personal Engagement Checkout link',
   const data = await (await fetch(`${base}${feed.pagePath}/data`)).json();
   assert.equal(data.appleLink, feed.appleLink);
 });
+
+test('a consultant can write their own Apple e-mail on their page', async () => {
+  const opts = await json('admin', '/api/options');
+  const tr = opts.consultants.find((c) => c.name === 'Rasmus Toft') || opts.consultants[0];
+  const { pagePath } = await json('admin', `/api/admin/consultants/${tr.id}/feed`);
+  const put = (email) => fetch(`${base}${pagePath}/apple-email`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }) });
+  assert.equal((await put('ikke-en-mail')).status, 400);
+  const ok = await (await put('RT@Kompas.dk')).json();
+  assert.equal(ok.email, 'rt@kompas.dk');
+  assert.match(ok.appleLink, /^https:\/\/apple\.co\/apls-checkout\?specialist=.+&apple_email=rt%40kompas\.dk$/);
+  const data = await (await fetch(`${base}${pagePath}/data`)).json();
+  assert.equal(data.email, 'rt@kompas.dk');
+  assert.equal((await json('admin', '/api/admin/consultants')).find((c) => c.id === tr.id).email, 'rt@kompas.dk');
+  assert.equal((await fetch(`${base}/k/${'0'.repeat(48)}/apple-email`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: '{}' })).status, 404);
+});
