@@ -137,6 +137,18 @@ export function createServer({ dbFile = process.env.DB_FILE || fileURLToPath(new
     }
   });
 
+  // Administration › Skoler › Find postnumre (looks schools up on OpenStreetMap, one batch per call).
+  app.post('/api/admin/schools/postal-lookup', async (req, res) => {
+    try {
+      if (!req.user) throw new HttpError(401, 'Log venligst ind.');
+      res.json(await api.findPostalCodes(req.user, { after: req.body?.after }));
+    } catch (err) {
+      if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });
+      console.error(err);
+      res.status(500).json({ error: 'Der opstod en fejl på serveren.' });
+    }
+  });
+
   app.all('/api/*', (req, res) => {
     try {
       const result = api.handle({ method: req.method, path: req.path, query: req.query, body: req.body, user: req.user });

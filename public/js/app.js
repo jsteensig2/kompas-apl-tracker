@@ -1476,8 +1476,33 @@ async function renderAdmin(root) {
           <button type="button" class="linkbtn danger" data-act="delete">Slet</button>
         </div>
       </li>`).join('')}</ul>
-    <p class="muted small">${rows.length} i alt</p>`;
+    <p class="muted small">${rows.length} i alt</p>
+    ${isSchools && !transport.isPreview && rows.some((r) => !r.postal_code) ? `<p class="admin-postal"><button type="button" class="btn btn-sm" id="find-postal">Find manglende postnumre</button>
+      <span class="muted small">Slår skolerne op på OpenStreetMap. Tjek dem bagefter, og ret dem der er forkerte.</span></p><div id="postal-result" class="small"></div>` : ''}`;
 
+  if ($('#find-postal')) {
+    $('#find-postal').onclick = async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      const found = [];
+      const missing = [];
+      let from = 0;
+      try {
+        for (;;) {
+          btn.textContent = `Finder postnumre… (${found.length} fundet)`;
+          const r = await api.post('/api/admin/schools/postal-lookup', { after: from });
+          found.push(...r.found);
+          missing.push(...r.missing);
+          if (!r.remaining) break;
+          from = r.next;
+        }
+        toast(`${found.length} postnumre fundet`);
+        await after();
+        const out = $('#postal-result');
+        if (out && missing.length) out.innerHTML = `<p class="muted">Ikke fundet, skriv dem selv: ${missing.map(esc).join(', ')}</p>`;
+      } catch (ex) { fail(ex); btn.disabled = false; btn.textContent = 'Find manglende postnumre'; }
+    };
+  }
   const errEl = $('#admin-err');
   const fail = (ex) => { errEl.textContent = ex.message; errEl.hidden = false; };
   const toggleReseller = (form) => {

@@ -166,7 +166,7 @@ export function appleFields(a) {
     ['Side 3', 'Hvor mange individuelle uddannelsesinstitutioner deltog i sessionerne?', several ? '' : '1', several ? 'Antal skoler' : '', ['QID100']],
     ['Side 3', 'Projekttype/Niveau for deltagende uddannelsesinstitutioner', '', 'Fx Indskoling, Mellemtrin, Udskoling eller Alle skolealdre'],
     ['Side 3', 'Implementeringsstadie', '', 'Introduktion, Integration eller Innovation'],
-    ['Side 3', 'Hvem var sessionen tilpasset til?', 'Undervisere', '', ['QID103', null, '2']],
+    ['Side 3', 'Hvem var sessionen tilpasset til?', 'Undervisere', '', ['QID103', null, ['2']]],
     ['Side 3', 'Antal deltagere', participants, participants ? '' : 'Antal deltagere mangler i trackeren', ['QID104']],
     // Apple's choices are 1-5 dage and Virtuelt / På side (on site) / Hybrid; a course is one day.
     ['Side 4', 'Hvad var varigheden af din session?', '1 dag', 'Halv og hel dag er begge 1 dag. Vælg flere dage, hvis sessionen strakte sig over flere', ['QID141', null, '4']],
@@ -179,6 +179,20 @@ export function appleFields(a) {
     ['Side 6', 'Was this institution an Apple Distinguished School?', 'No', 'Vælg Yes, hvis skolen er en Apple Distinguished School', ['QID153', null, '2']],
     ['Side 6', 'Did you use any resource(s) from the APLS Experiences Catalog?', '', 'Yes eller No'],
   ];
+}
+
+// Postal code for a school from OpenStreetMap (Nominatim), searched by name and municipality.
+// Returns a four-digit Danish postal code or null. Nominatim allows one request a second.
+export async function nominatimPostal(name, municipality, fetchFn = fetch) {
+  const muni = !municipality ? '' : /kommune/i.test(municipality) ? municipality : `${municipality} Kommune`;
+  const q = [name, muni, 'Danmark'].filter(Boolean).join(', ');
+  const url = `https://nominatim.openstreetmap.org/search?${new URLSearchParams({ q, format: 'jsonv2', addressdetails: '1', countrycodes: 'dk,gl', limit: '5' })}`;
+  const r = await fetchFn(url, { signal: AbortSignal.timeout(10000), headers: { 'user-agent': 'kompas-apl-tracker (https://kompas-apl-tracker.onrender.com)', 'accept-language': 'da' } });
+  if (!r.ok) throw new Error(String(r.status));
+  const hits = await r.json();
+  const hit = hits.find((h) => h.category === 'amenity' || h.class === 'amenity') || hits[0];
+  const code = String(hit?.address?.postcode || '').trim();
+  return /^\d{4}$/.test(code) ? code : null;
 }
 
 // One link per course that opens Apple's form (in Danish) with every known answer already filled in,
@@ -1152,5 +1166,27 @@ export function createApi(db, { XLSX } = {}) {
     }
   }
 
-  return { handle, feed, consultantOverview, consultantAppleExport, setConsultantAppleEmail, setSignup, markMessagesRead, consultantNotes, deleteConsultantNote, calendarUrlFor: (user) => db.get('SELECT calendar_url FROM users WHERE id = ?', [user.id])?.calendar_url || '' };
+  // Administration › Skoler › Find postnumre: looks up schools without a postal code, a batch at a
+  // time (Nominatim allows one request a second), and saves what it finds.
+  // `after` continues from the last school of the previous batch, so schools not found are skipped.
+  async function findPostalCodes(user, { after = 0, lookup = nominatimPostal, limit = 25, pause = 1100 } = {}) {
+    requireAdmin(user);
+    const todo = db.all(`SELECT s.id, s.name, m.name AS municipality FROM schools s LEFT JOIN municipalities m ON m.id = s.municipality_id
+      WHERE COALESCE(s.postal_code, '') = '' AND s.name NOT LIKE '%flere skoler%' AND s.id > ? ORDER BY s.id`, [int(after) || 0]);
+    const found = [];
+    const missing = [];
+    for (const [i, sch] of todo.slice(0, limit).entries()) {
+      if (i && pause) await new Promise((r) => setTimeout(r, pause));
+      let code = null;
+      try { code = await lookup(sch.name, sch.municipality); } catch { /* counted as not found */ }
+      if (code) {
+        db.run('UPDATE schools SET postal_code = ? WHERE id = ?', [code, sch.id]);
+        found.push({ name: sch.name, postal_code: code });
+      } else missing.push(sch.name);
+    }
+    const done = todo.slice(0, limit);
+    return { found, missing, remaining: Math.max(todo.length - limit, 0), next: done.at(-1)?.id || 0 };
+  }
+
+  return { handle, feed, findPostalCodes, consultantOverview, consultantAppleExport, setConsultantAppleEmail, setSignup, markMessagesRead, consultantNotes, deleteConsultantNote, calendarUrlFor: (user) => db.get('SELECT calendar_url FROM users WHERE id = ?', [user.id])?.calendar_url || '' };
 }

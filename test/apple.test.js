@@ -3,7 +3,8 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import XLSX from 'xlsx';
 import { createServer } from '../server/index.js';
-import { appleFields, appleFormLink } from '../core/api.js';
+import { appleFields, appleFormLink, createApi, nominatimPostal } from '../core/api.js';
+import { openDatabase } from '../server/db.js';
 
 let server, base;
 const cookies = {};
@@ -58,6 +59,7 @@ test('the prefilled link carries the known answers in Qualtrics ids', () => {
   assert.equal(q.QID142, '2');
   assert.equal(q.QID137, '9');
   assert.equal(q.QID104, '18');
+  assert.deepEqual(q.QID103, ['2']); // Undervisere, multi-answer
   assert.equal(q.QID102, undefined); // left for the consultant
 });
 
@@ -150,4 +152,32 @@ test('a consultant can write their own Apple e-mail on their page', async () => 
   assert.equal(data.email, 'rt@kompas.dk');
   assert.equal((await json('admin', '/api/admin/consultants')).find((c) => c.id === tr.id).email, 'rt@kompas.dk');
   assert.equal((await fetch(`${base}/k/${'0'.repeat(48)}/apple-email`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: '{}' })).status, 404);
+});
+
+test('postal codes are looked up for schools without one, batch by batch', async () => {
+  const db = openDatabase(':memory:');
+  const api = createApi(db);
+  const admin = { role: 'admin' };
+  const before = db.get("SELECT COUNT(*) AS n FROM schools WHERE COALESCE(postal_code, '') = ''").n;
+  assert.ok(before > 2);
+  const asked = [];
+  const lookup = async (name) => { asked.push(name); return asked.length === 1 ? null : '2840'; };
+  const first = await api.findPostalCodes(admin, { lookup, limit: 2, pause: 0 });
+  assert.equal(first.missing.length, 1);
+  assert.equal(first.found.length, 1);
+  assert.equal(first.remaining, before - 2);
+  const second = await api.findPostalCodes(admin, { after: first.next, lookup, limit: 100, pause: 0 });
+  assert.equal(second.remaining, 0);
+  assert.ok(!asked.slice(2).includes(asked[0])); // a school not found is not asked again
+  assert.equal(db.get("SELECT COUNT(*) AS n FROM schools WHERE COALESCE(postal_code, '') = ''").n, 1);
+  await assert.rejects(api.findPostalCodes({ role: 'reseller' }, { lookup }), /administrator/i);
+});
+
+test('the OpenStreetMap answer prefers the school and keeps only a 4-digit code', async () => {
+  let url;
+  const fake = (hits) => async (u) => { url = u; return { ok: true, json: async () => hits }; };
+  assert.equal(await nominatimPostal('Holte Skole', 'Rudersdal', fake([{ category: 'highway', address: { postcode: '9999' } }, { category: 'amenity', address: { postcode: '2840' } }])), '2840');
+  assert.match(decodeURIComponent(url), /q=Holte\+Skole,\+Rudersdal\+Kommune,\+Danmark/);
+  assert.equal(await nominatimPostal('X', '', fake([])), null);
+  assert.equal(await nominatimPostal('X', '', fake([{ address: { postcode: 'DK-28' } }])), null);
 });

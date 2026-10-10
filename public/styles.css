@@ -220,6 +220,7 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 .tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 12px; color: var(--muted); font: 500 0.92rem var(--font); cursor: pointer; white-space: nowrap; margin-bottom: -1px; }
 .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
 .admin-add { display: flex; gap: 8px; flex-wrap: wrap; }
+.admin-postal { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
 .admin-add > input, .admin-add > select { flex: 1 1 180px; width: auto; }
 .admin-list { list-style: none; margin: 16px 0 8px; padding: 0; }
 .admin-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); flex-wrap: wrap; }
