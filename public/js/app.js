@@ -1453,7 +1453,7 @@ async function renderAdmin(root) {
       ${isSchools ? `<select name="municipality_id" aria-label="Kommune">${selectOptions(o.municipalities, r.municipality_id, 'Vælg kommune…')}</select>
         <input name="postal_code" placeholder="Postnr." value="${esc(r.postal_code || '')}" aria-label="Postnummer" inputmode="numeric" maxlength="4" class="input-short">` : ''}
       ${tab === 'consultants' ? `<input name="initials" placeholder="Initialer, fx KB" value="${esc(r.initials || '')}" aria-label="Initialer" maxlength="6" class="input-short">
-        <input name="email" type="email" placeholder="E-mail (til Apple)" value="${esc(r.email || '')}" aria-label="E-mail">` : ''}`;
+        <input name="email" type="email" placeholder="Apple-e-mail" value="${esc(r.email || '')}" aria-label="E-mail">` : ''}`;
   };
   const describe = (r) => {
     if (isUsers) return `<b>${esc(r.name)}</b><span class="muted">${esc(r.email)}</span><span class="tag ${r.role === 'admin' ? 'tag-admin' : ''}">${r.role === 'admin' ? 'Kompas-administrator' : r.role === 'viewer' ? 'Ser alle resellere · kun læse' : `Ser ${esc(r.reseller)}`}</span>${userState(r)}`;
@@ -1517,7 +1517,7 @@ async function renderAdmin(root) {
     if (feedBtn) {
       const showFeed = async (reset) => {
         try {
-          const { feedPath, pagePath } = reset ? await api.post(`/api/admin/consultants/${r.id}/feed`, {}) : await api.get(`/api/admin/consultants/${r.id}/feed`);
+          const { feedPath, pagePath, appleLink } = reset ? await api.post(`/api/admin/consultants/${r.id}/feed`, {}) : await api.get(`/api/admin/consultants/${r.id}/feed`);
           const page = new URL(pagePath, location.href).toString();
           const webcal = new URL(feedPath, location.href).toString().replace(/^https?:/, 'webcal:');
           li.querySelector('.temp-pw')?.remove();
@@ -1526,6 +1526,8 @@ async function renderAdmin(root) {
             <div class="copyrow"><input readonly value="${esc(page)}" aria-label="Konsulentside til ${esc(r.name)}"><button type="button" class="btn btn-sm" data-copy="${esc(page)}">Kopiér</button><a class="btn btn-sm" href="${esc(page)}" target="_blank" rel="noopener">Åbn</a></div>
             <p class="small"><b>Kalender:</b> kurserne i Apple Kalender (Arkiv › Nyt kalenderabonnement) eller på iPhone (Indstillinger › Kalender › Konti › Tilføj konto › Andet). Linket findes også på konsulentsiden.</p>
             <div class="copyrow"><input readonly value="${esc(webcal)}" aria-label="Kalenderlink til ${esc(r.name)}"><button type="button" class="btn btn-sm" data-copy="${esc(webcal)}">Kopiér</button></div>
+            <p class="small"><b>Personligt Apple-link:</b> ${appleLink ? `Engagement Checkout med ${esc(r.name)}s navn og e-mail udfyldt. Det står også på konsulentsiden.` : 'Skriv konsulentens Apple-e-mail (Redigér), så får konsulenten sit personlige link til Engagement Checkout på sin side.'}</p>
+            ${appleLink ? `<div class="copyrow"><input readonly value="${esc(appleLink)}" aria-label="Apple-link til ${esc(r.name)}"><button type="button" class="btn btn-sm" data-copy="${esc(appleLink)}">Kopiér</button></div>` : ''}
             <p class="muted small">Linkene virker uden login. Er de delt ved en fejl, så <button type="button" class="linkbtn" data-reset>lav nye links</button>.</p></div>`);
           const box = li.querySelector('.temp-pw');
           box.querySelectorAll('[data-copy]').forEach((b) => { b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy); toast('Link kopieret'); } catch { b.previousElementSibling.select(); } }; });

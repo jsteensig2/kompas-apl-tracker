@@ -2,6 +2,8 @@
 // Opened from the private link Kompas sends (/k/<token>); no login.
 
 const APPLE_SURVEY = 'https://essentials.applesurveys.com/jfe/form/SV_7UiJTisrllOFbsG';
+// The consultant's personal Engagement Checkout link (name and e-mail filled in) once Kompas has their e-mail.
+const survey = () => data.appleLink || APPLE_SURVEY;
 const LOGO_MARK = `<svg class="wordmark-mark" viewBox="0 0 660 660" aria-hidden="true">
   <polygon class="lm-2" points="336,0 429,323 336,323"/><polygon class="lm-3" points="1,323 326,231 326,323"/>
   <polygon class="lm-1" points="234,338 326,338 326,658"/><polygon class="lm-4" points="336,338 659,338 336,430"/></svg>`;
@@ -57,7 +59,7 @@ function openApple(id) {
       <p class="muted small">${esc(fmtDate(a.date))}${a.school ? ` · ${esc(a.school)}` : ''}</p></div>
       <button type="button" class="btn btn-sm" data-close>Luk</button></div>
     <p class="small">Åbn Apples skema og udfyld det i samme rækkefølge som her. Tryk på en værdi for at kopiere den.</p>
-    <p><a class="btn btn-primary btn-sm" href="${APPLE_SURVEY}" target="_blank" rel="noopener">Åbn Apples skema</a></p>
+    <p><a class="btn btn-primary btn-sm" href="${esc(survey())}" target="_blank" rel="noopener">Åbn Apples skema</a></p>
     ${appleFields(a)}`;
   bindCopy(dlg);
   dlg.querySelector('[data-close]').onclick = () => dlg.close();
@@ -248,7 +250,7 @@ function render() {
     <main class="page">
       <div class="pagehead"><div><p class="eyebrow">Konsulent</p><h1>${esc(data.name)}</h1>
         <p class="muted">Dine afholdte og kommende kurser. Siden opdateres, når Kompas registrerer eller flytter et kursus.</p></div>
-        <div class="pagehead-actions"><a class="btn" href="${esc(webcal)}">Abonnér i Kalender</a><a class="btn btn-primary" href="${APPLE_SURVEY}" target="_blank" rel="noopener">Registrér hos Apple</a></div></div>
+        <div class="pagehead-actions"><a class="btn" href="${esc(webcal)}">Abonnér i Kalender</a><a class="btn btn-primary" href="${esc(survey())}" target="_blank" rel="noopener">Registrér hos Apple</a></div></div>
 
       <div class="kpis kpis-3">
         <div class="kpi"><div class="kpi-num">${data.planned.length}</div><div class="kpi-label">Kommende kurser</div></div>
@@ -269,8 +271,10 @@ function render() {
             <div class="kpi-sub">Kun til Apple-registreringen tæller en halv dag som 1 workshop og en hel dag som 2.${heldYear.length && heldYear.length !== thisYear ? ` Dine ${heldYear.length} kurser i ${year} svarer derfor til ${thisYear} Apple-workshops.` : ''}</div></div>
         </div>
         <p>Husk at registrere alle dine afholdte workshops hos Apple, også når du har nået de ${GOAL}. Du skal afholde mindst ${GOAL} workshops om året for at bevare din status som Apple Professional Learning Specialist.${thisYear >= GOAL ? '' : ` Du mangler ${GOAL - thisYear} i ${year}.`}</p>
-        <p>Hvis du ikke kan finde dit personlige link til spørgeskemaet ”Engagement Checkout Survey”, kan du også benytte dette åbne link. Den eneste forskel er, at du her selv skal indtaste navn, land og e-mail.</p>
-        <div class="copyrow"><a class="btn btn-primary" href="${APPLE_SURVEY}" target="_blank" rel="noopener">Åbn Engagement Checkout Survey</a><button type="button" class="btn" id="copy-survey">Kopiér link</button></div>
+        ${data.appleLink
+          ? '<p>Knapperne her på siden åbner dit <b>personlige link</b> til spørgeskemaet ”Engagement Checkout Survey”, så dit navn og din e-mail allerede er udfyldt. Gem gerne linket som bogmærke.</p>'
+          : '<p>Knappen åbner det åbne link til spørgeskemaet ”Engagement Checkout Survey”, hvor du selv skal indtaste navn, land og e-mail. Send din Apple-e-mail til Kompas, så får du dit personlige link her, hvor navn og e-mail er udfyldt på forhånd.</p>'}
+        <div class="copyrow"><a class="btn btn-primary" href="${esc(survey())}" target="_blank" rel="noopener">${data.appleLink ? 'Åbn mit personlige link' : 'Åbn Engagement Checkout Survey'}</a><button type="button" class="btn" id="copy-survey">Kopiér link</button></div>
         ${data.held.length ? `<h3 class="k-apple-sub">Svarene til skemaet</h3>
         <p class="small">Tryk <b>Til Apple</b> ved et afholdt kursus nedenfor for at se svarene i samme rækkefølge som Apples skema og kopiere dem. Du kan også hente alle dine afholdte kurser som regneark eller PDF. Felter, som kun du kender, står som "Udfyld selv".</p>
         <div class="copyrow"><a class="btn" href="/k/${encodeURIComponent(token)}/apple?format=xlsx">Hent Excel</a><button type="button" class="btn" id="apple-print">Udskriv / PDF</button></div>` : ''}
@@ -306,7 +310,7 @@ function render() {
     fetch(`/k/${encodeURIComponent(token)}/messages/read`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).catch(() => {});
   }
   document.getElementById('copy-survey').onclick = async () => {
-    try { await navigator.clipboard.writeText(APPLE_SURVEY); toast('Link kopieret'); } catch { window.open(APPLE_SURVEY, '_blank', 'noopener'); }
+    try { await navigator.clipboard.writeText(survey()); toast('Link kopieret'); } catch { window.open(survey(), '_blank', 'noopener'); }
   };
 }
 
