@@ -126,6 +126,10 @@ konsulent(er) igen.
 
 Fungerer som en Doodle. Foreløbige kurser fra i dag og frem, som ikke har nogen konsulent, vises øverst på hver konsulents side (`/k/<token>`), hvor konsulenten trykker **Det kan jeg** ved de kurser, de kan tage (intet svar betyder kan ikke). Tidligere Måske-svar vises stadig for Kompas i skemaet. Kompas opretter et nyt kursus til tilmelding med knappen **Nyt kursus til tilmelding**: kurset gemmes som Foreløbigt uden konsulent og med antallet af konsulenter, der skal bruges. Under fanen **Tilmelding** ser Kompas alle svar i et skema (kan filtreres på kommune), skriver hvor mange konsulenter kurset skal bruge, og trykker **Sæt på** for at vælge konsulenterne. Har konsulenten trykket Det kan jeg, kan de ikke selv melde fra; det gør Kompas ved at klikke på svaret i skemaet. Kun Kan tæller mod det antal, der skal bruges (vist som fx 2/4). Når antallet er nået, lukker kurset for tilmelding og forsvinder fra siden hos de konsulenter, der ikke har svaret; Kompas ser det stadig, markeret Fuld. Den første valgte overtager kurset, de øvrige får hver deres kopi (én konsulent pr. kursus). Kurserne forbliver Foreløbige, indtil de godkendes, og forsvinder fra tilmeldingen.
 
+## Til Apple (APL Engagement Checkout)
+
+Fanen **Til Apple** (kun Kompas) viser afholdte kurser med de oplysninger, Apples APL Engagement Checkout beder specialisten om, i skemaets egen rækkefølge (side 1-4). Værdierne kopieres med ét tryk, og listen kan hentes som Excel/CSV (én række pr. kursus, kolonner i skemaets rækkefølge, datoer som dd/mm/åååå) eller udskrives som PDF. Filtre: år, konsulent, reseller og Ikke sendt / Sendt til Apple. Konsulentens e-mail skrives under Administration › Konsulenter og skolens postnummer under Administration › Skoler. Felter, som kun konsulenten kender (niveau, implementeringsstadie, Experiences Catalog, sessionskontekst), står som "Udfyld selv". Foreløbige og kommende kurser er aldrig med.
+
 ## Senere udvidelser (ikke bygget)
 
 Apple compliance-mål (fx 34 / 40 workshops) er bevidst ikke implementeret. Dashboardets tal

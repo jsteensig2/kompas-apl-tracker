@@ -93,6 +93,9 @@ export function migrate(db) {
   // Optional start and end time, "HH:MM" on a 24-hour clock (Jakob, 2026-10-06).
   if (!cols('activities').includes('start_time')) db.exec('ALTER TABLE activities ADD COLUMN start_time TEXT');
   if (!cols('activities').includes('end_time')) db.exec('ALTER TABLE activities ADD COLUMN end_time TEXT');
+  // Apple's registration form asks for the specialist's e-mail and the school's postal code (Jakob, 2026-10-10).
+  if (!cols('consultants').includes('email')) db.exec('ALTER TABLE consultants ADD COLUMN email TEXT');
+  if (!cols('schools').includes('postal_code')) db.exec('ALTER TABLE schools ADD COLUMN postal_code TEXT');
   if (!cols('activities').includes('consultants_needed')) db.exec('ALTER TABLE activities ADD COLUMN consultants_needed INTEGER');
   // Kompas' own initials (Jakob, 2026-10-03); only filled in where none are set.
   for (const [initials, name] of [['KB', 'kim byrding'], ['TH', 'torben hollensen'], ['SR', 'søren rasmussen'],

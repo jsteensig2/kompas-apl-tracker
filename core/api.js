@@ -140,6 +140,44 @@ export const EXPORT_COLUMNS = [
   ['Betalt af', (a) => a.paid_by || ''],
 ];
 
+// APL Engagement Checkout (Apple's form for specialists), field by field in the form's own order
+// (from Jakob's screenshots, 2026-10-03). Each field is [page, label, value, hint]; an empty value
+// is something only the consultant knows, so it is left for them to fill in.
+const GREENLAND = new Set(['avannaata', 'kujalleq', 'qeqertalik', 'qeqqata', 'sermersooq']);
+const dmy = (d) => d.split('-').reverse().join('/'); // Apple asks for dd/mm/åååå
+export function appleFields(a) {
+  const several = /flere skoler/i.test(a.school || '');
+  const online = /online|webinar|zoom|teams/i.test(`${a.apl_type} ${a.title}`);
+  const greenland = GREENLAND.has(String(a.municipality || '').toLowerCase());
+  const district = !a.municipality ? '' : greenland || /kommune/i.test(a.municipality) ? a.municipality : `${a.municipality} Kommune`;
+  return [
+    ['Side 1', 'Vælg dit område', 'EMEIA (Europa, Mellemøsten, Indien og Afrika)'],
+    ['Side 1', 'Navn på specialist (for- og efternavn)', a.consultant || ''],
+    ['Side 1', 'E-mailadresse til specialist', a.consultant_email || '', 'Skriv konsulentens e-mail under Administration › Konsulenter'],
+    ['Side 1', 'Leveringsland', greenland ? 'Grønland' : 'Danmark'],
+    ['Side 2', 'Skolens navn', several ? '' : a.school || '', several ? 'Flere skoler: skriv kundens navn' : ''],
+    ['Side 2', 'System/distrikt/ministeriums navn', district],
+    ['Side 2', 'Postnummer', a.postal_code || '', 'Skriv skolens postnummer under Administration › Skoler'],
+    ['Side 2', 'Hvor mange individuelle uddannelsesinstitutioner deltog i sessionerne?', several ? '' : '1', several ? 'Antal skoler' : ''],
+    ['Side 2', 'Projekttype/Niveau for deltagende uddannelsesinstitutioner', '', 'Fx Indskoling, Mellemtrin, Udskoling eller Alle skolealdre'],
+    ['Side 2', 'Implementeringsstadie', '', 'Introduktion, Integration eller Innovation'],
+    ['Side 3', 'Was this institution an Apple Distinguished School?', 'No', 'Vælg Yes, hvis skolen er en Apple Distinguished School'],
+    ['Side 3', 'Did you use any resource(s) from the APLS Experiences Catalog?', '', 'Yes eller No'],
+    ['Side 4', 'Hvad var varigheden af din session?', a.duration === 'full' ? 'Hel dag' : 'Halv dag (1-4 timer)'],
+    ['Side 4', 'Leveringstilstand', online ? 'Online' : 'Fysisk fremmøde'],
+    ['Side 4', 'Startdato', dmy(a.date)],
+    ['Side 4', 'Slutdato', dmy(a.date)],
+    ['Side 4', 'Blev denne session afholdt …', '', 'Enkeltstående supportsession, del af en serie eller del af en længerevarende supportplan'],
+    ['Side 4', 'Hvem var sessionen tilpasset til?', 'Undervisere'],
+    ['Side 4', 'Antal deltagere', a.participants ? String(a.participants) : '', a.participants ? '' : 'Antal deltagere mangler i trackeren'],
+  ];
+}
+// Short column headings for the spreadsheet, in the same order as appleFields.
+const APPLE_HEADINGS = ['Område', 'Navn på specialist', 'E-mail til specialist', 'Leveringsland', 'Skolens navn',
+  'System/distrikt (kommune)', 'Postnummer', 'Antal institutioner', 'Projekttype/niveau', 'Implementeringsstadie',
+  'Apple Distinguished School?', 'APLS Experiences Catalog?', 'Varighed', 'Leveringstilstand', 'Startdato', 'Slutdato',
+  'Sessionskontekst', 'Målgruppe', 'Antal deltagere'];
+
 const TZID = 'Europe/Copenhagen';
 const VTIMEZONE = ['BEGIN:VTIMEZONE', `TZID:${TZID}`,
   'BEGIN:DAYLIGHT', 'TZOFFSETFROM:+0100', 'TZOFFSETTO:+0200', 'TZNAME:CEST', 'DTSTART:19700329T020000', 'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU', 'END:DAYLIGHT',
@@ -445,6 +483,53 @@ export function createApi(db, { XLSX } = {}) {
     return { filename: `${base}.xlsx`, contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', data: new Uint8Array(data) };
   }
 
+  // --- Til Apple ---------------------------------------------------------------------------
+  // Held courses with the fields of Apple's APL Engagement Checkout, so consultants (or Kompas on their
+  // behalf) can copy them from a spreadsheet or a printout. Foreløbig and coming courses are never included.
+  function appleCourses(user, f) {
+    requireAdmin(user);
+    const rows = listActivities(user, { ...f, status: 'held' });
+    const extra = new Map(db.all(`SELECT a.id, a.apple_reported_at, c.email AS consultant_email, s.postal_code
+        FROM activities a LEFT JOIN consultants c ON c.id = a.consultant_id LEFT JOIN schools s ON s.id = a.school_id
+        WHERE ${HELD_SQL}`, [todayIso()]).map((x) => [x.id, x]));
+    return rows.map((a) => ({ ...a, ...extra.get(a.id) }))
+      .filter((a) => (f.sent === 'no' ? !a.apple_reported_at : f.sent === 'yes' ? Boolean(a.apple_reported_at) : true))
+      .sort((x, y) => (x.consultant || '').localeCompare(y.consultant || '', 'da') || x.date.localeCompare(y.date))
+      .map((a) => ({ id: a.id, date: a.date, title: a.title, school: a.school || '', consultant: a.consultant || '', reseller: a.reseller,
+        apple_reported_at: a.apple_reported_at || null, fields: appleFields(a) }));
+  }
+
+  function exportApple(user, f) {
+    const rows = appleCourses(user, f);
+    const consultant = int(f.consultant) && db.get('SELECT name FROM consultants WHERE id = ?', [int(f.consultant)])?.name;
+    const base = `apple-registrering-${(consultant || 'alle').toLowerCase().replace(/[^a-z0-9æøå]+/g, '-')}-${todayIso()}`;
+    const headings = [...APPLE_HEADINGS, 'Kursus (titel)', 'Reseller', 'Sendt til Apple'];
+    const line = (a) => [...a.fields.map(([, , v]) => v), a.title, a.reseller, a.apple_reported_at ? dmy(a.apple_reported_at.slice(0, 10)) : ''];
+    if (f.format === 'csv') {
+      const cell = (v) => { const t = String(v ?? ''); return /[";\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+      return { filename: `${base}.csv`, contentType: 'text/csv; charset=utf-8',
+        data: '﻿' + [headings, ...rows.map(line)].map((l) => l.map(cell).join(';')).join('\r\n') };
+    }
+    if (!XLSX) throw new HttpError(500, 'Excel-eksport er ikke tilgængelig.');
+    // Dates stay text (dd/mm/åååå) so they paste into Apple's form exactly as it asks.
+    const ws = XLSX.utils.aoa_to_sheet([headings, ...rows.map(line)]);
+    ws['!cols'] = [12, 22, 26, 12, 24, 24, 10, 10, 18, 18, 12, 12, 18, 16, 11, 11, 18, 12, 10, 26, 12, 12].map((wch) => ({ wch }));
+    ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(rows.length, 1), c: headings.length - 1 } }) };
+    ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Til Apple');
+    const data = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+    return { filename: `${base}.xlsx`, contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', data: new Uint8Array(data) };
+  }
+
+  // Kompas ticks a course off once it is registered with Apple, so it drops out of "Ikke sendt".
+  function setAppleReported(user, id, body) {
+    requireAdmin(user);
+    getActivity(user, id);
+    db.run('UPDATE activities SET apple_reported_at = ? WHERE id = ?', [truthy(body?.reported) ? new Date().toISOString() : null, id]);
+    return { id, apple_reported_at: db.get('SELECT apple_reported_at FROM activities WHERE id = ?', [id]).apple_reported_at };
+  }
+
   // --- Administration of reference data -------------------------------------------------
 
   function adminList(user, list) {
@@ -460,12 +545,12 @@ export function createApi(db, { XLSX } = {}) {
                      FROM users u LEFT JOIN resellers r ON r.id = u.reseller_id ORDER BY u.role, u.name`).map(({ ...x }) => ({ ...x, has_password: Boolean(x.has_password), must_change_password: Boolean(x.must_change_password) }));
     }
     if (list === 'schools') {
-      return db.all(`SELECT s.id, s.name, s.municipality_id, m.name AS municipality,
+      return db.all(`SELECT s.id, s.name, s.municipality_id, m.name AS municipality, s.postal_code,
                        (SELECT COUNT(*) FROM activities a WHERE a.school_id = s.id) AS used
                      FROM schools s LEFT JOIN municipalities m ON m.id = s.municipality_id ORDER BY s.name`);
     }
     if (list === 'consultants') {
-      return db.all(`SELECT x.id, x.name, x.initials, (SELECT COUNT(*) FROM activities a WHERE a.consultant_id = x.id) AS used,
+      return db.all(`SELECT x.id, x.name, x.initials, x.email, (SELECT COUNT(*) FROM activities a WHERE a.consultant_id = x.id) AS used,
                        x.feed_token IS NOT NULL AS has_link, x.page_seen_at, x.feed_seen_at
                      FROM consultants x ORDER BY x.name`).map((x) => ({ ...x, has_link: Boolean(x.has_link) }));
     }
@@ -512,8 +597,10 @@ export function createApi(db, { XLSX } = {}) {
       if (db.get('SELECT id FROM schools WHERE name = ? COLLATE NOCASE AND municipality_id IS ? AND id <> ?', [name, municipality_id, id || 0])) {
         throw new HttpError(409, 'Skolen findes allerede i den kommune.');
       }
-      if (id) db.run('UPDATE schools SET name = ?, municipality_id = ? WHERE id = ?', [name, municipality_id, id]);
-      else id = Number(db.run('INSERT INTO schools (name, municipality_id) VALUES (?, ?)', [name, municipality_id]).lastInsertRowid);
+      const postal = String(body?.postal_code ?? '').trim() || null;
+      if (postal && !/^\d{3,4}$/.test(postal)) throw new HttpError(400, 'Postnummeret skal være 3 eller 4 cifre.');
+      if (id) db.run('UPDATE schools SET name = ?, municipality_id = ?, postal_code = ? WHERE id = ?', [name, municipality_id, postal, id]);
+      else id = Number(db.run('INSERT INTO schools (name, municipality_id, postal_code) VALUES (?, ?, ?)', [name, municipality_id, postal]).lastInsertRowid);
       return { id };
     }
     if (nameExists(def.table, name, id || 0)) throw new HttpError(409, `${def.label} "${name}" findes allerede.`);
@@ -522,8 +609,10 @@ export function createApi(db, { XLSX } = {}) {
       if (initials && db.get('SELECT id FROM consultants WHERE upper(initials) = ? AND id <> ?', [initials, id || 0])) {
         throw new HttpError(409, `Initialerne ${initials} bruges allerede af en anden konsulent.`);
       }
-      if (id) db.run('UPDATE consultants SET name = ?, initials = ? WHERE id = ?', [name, initials, id]);
-      else id = Number(db.run('INSERT INTO consultants (name, initials) VALUES (?, ?)', [name, initials]).lastInsertRowid);
+      const email = String(body?.email ?? '').trim().toLowerCase() || null;
+      if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new HttpError(400, 'Indtast en gyldig e-mailadresse.');
+      if (id) db.run('UPDATE consultants SET name = ?, initials = ?, email = ? WHERE id = ?', [name, initials, email, id]);
+      else id = Number(db.run('INSERT INTO consultants (name, initials, email) VALUES (?, ?, ?)', [name, initials, email]).lastInsertRowid);
       return { id };
     }
     if (id) db.run(`UPDATE ${def.table} SET name = ? WHERE id = ?`, [name, id]);
@@ -663,7 +752,6 @@ export function createApi(db, { XLSX } = {}) {
 
   // The consultant's own page (same secret link as their calendar): held and coming courses.
   // Apple counts a workshop of 1-4 hours as one session and a full day as two.
-  const GREENLAND = new Set(['avannaata', 'kujalleq', 'qeqertalik', 'qeqqata', 'sermersooq']);
   const consultantByToken = (token) => {
     const c = /^[a-f0-9]{48}$/.test(String(token)) && db.get('SELECT id, name, feed_token FROM consultants WHERE feed_token = ?', [token]);
     if (!c) throw new HttpError(404, 'Siden findes ikke. Bed Kompas om et nyt link.');
@@ -980,6 +1068,9 @@ export function createApi(db, { XLSX } = {}) {
       case 'PUT /activities/:id': return { json: updateActivity(user, id, body) };
       case 'PUT /activities/:id/participants': return { json: setParticipants(user, int(parts[1]), body) };
       case 'PUT /activities/:id/pending': return { json: setPending(user, int(parts[1]), body) };
+      case 'PUT /activities/:id/apple': return { json: setAppleReported(user, int(parts[1]), body) };
+      case 'GET /apple': return { json: appleCourses(user, query) };
+      case 'GET /apple/export': return { file: exportApple(user, query) };
       case 'DELETE /activities/:id': return { json: deleteActivity(user, id) };
       case 'GET /activities/:id/notes': return { json: listNotes(user, int(parts[1])) };
       case 'POST /activities/:id/notes': return { json: addNote(user, int(parts[1]), body) };

@@ -62,6 +62,7 @@ const state = {
   listFilters: { q: '', status: '', year: String(new Date().getFullYear()), from: '', to: '', reseller: '', municipality: '', consultant: '', type: '', reschedule: '' },
   importResult: null,
   adminTab: 'consultants',
+  appleFilters: { year: String(new Date().getFullYear()), consultant: '', reseller: '', sent: 'no' },
   demoUsers: [],
 };
 const isAdmin = () => state.me?.role === 'admin';
@@ -81,10 +82,10 @@ function toast(msg, kind = 'ok') {
 }
 
 // --- Navigation ----------------------------------------------------------------------------
-const VIEWS = ['dashboard', 'activities', 'register', 'import', 'calendar', 'signup', 'messages', 'admin', 'password'];
+const VIEWS = ['dashboard', 'activities', 'register', 'import', 'calendar', 'signup', 'apple', 'messages', 'admin', 'password'];
 
 function go(view, { editing = null, prefill = null, copyOf = null } = {}) {
-  if (!isAdmin() && ['register', 'admin', 'import', 'signup', 'messages'].includes(view)) view = 'dashboard';
+  if (!isAdmin() && ['register', 'admin', 'import', 'signup', 'apple', 'messages'].includes(view)) view = 'dashboard';
   state.view = view;
   state.editing = editing;
   state.prefill = prefill;
@@ -104,7 +105,7 @@ function renderShell() {
   const me = state.me;
   const nav = [['dashboard', 'Overblik'], ['activities', 'Aktiviteter']];
   nav.push(['calendar', 'Kalender']);
-  if (isAdmin()) nav.push(['signup', 'Tilmelding'], ['messages', 'Beskeder'], ['admin', 'Administration']);
+  if (isAdmin()) nav.push(['signup', 'Tilmelding'], ['apple', 'Til Apple'], ['messages', 'Beskeder'], ['admin', 'Administration']);
   $('#app').innerHTML = `
     <header class="topbar">
       <div class="topbar-inner">
@@ -1449,12 +1450,14 @@ async function renderAdmin(root) {
         <select name="reseller_id" aria-label="Reseller">${selectOptions(o.resellers, r.reseller_id, 'Vælg reseller…')}</select>`;
     }
     return `<input name="name" placeholder="Navn" value="${esc(r.name || '')}" aria-label="Navn" required>
-      ${isSchools ? `<select name="municipality_id" aria-label="Kommune">${selectOptions(o.municipalities, r.municipality_id, 'Vælg kommune…')}</select>` : ''}
-      ${tab === 'consultants' ? `<input name="initials" placeholder="Initialer, fx KB" value="${esc(r.initials || '')}" aria-label="Initialer" maxlength="6" class="input-short">` : ''}`;
+      ${isSchools ? `<select name="municipality_id" aria-label="Kommune">${selectOptions(o.municipalities, r.municipality_id, 'Vælg kommune…')}</select>
+        <input name="postal_code" placeholder="Postnr." value="${esc(r.postal_code || '')}" aria-label="Postnummer" inputmode="numeric" maxlength="4" class="input-short">` : ''}
+      ${tab === 'consultants' ? `<input name="initials" placeholder="Initialer, fx KB" value="${esc(r.initials || '')}" aria-label="Initialer" maxlength="6" class="input-short">
+        <input name="email" type="email" placeholder="E-mail (til Apple)" value="${esc(r.email || '')}" aria-label="E-mail">` : ''}`;
   };
   const describe = (r) => {
     if (isUsers) return `<b>${esc(r.name)}</b><span class="muted">${esc(r.email)}</span><span class="tag ${r.role === 'admin' ? 'tag-admin' : ''}">${r.role === 'admin' ? 'Kompas-administrator' : r.role === 'viewer' ? 'Ser alle resellere · kun læse' : `Ser ${esc(r.reseller)}`}</span>${userState(r)}`;
-    return `<b>${esc(r.name)}</b>${isSchools ? `<span class="muted">${esc(r.municipality || 'Ingen kommune')}</span>` : ''}${tab === 'consultants' && r.initials ? `<span class="muted">${esc(r.initials)}</span>` : ''}
+    return `<b>${esc(r.name)}</b>${isSchools ? `<span class="muted">${esc(r.municipality || 'Ingen kommune')}${r.postal_code ? ` · ${esc(r.postal_code)}` : ''}</span>` : ''}${tab === 'consultants' && r.initials ? `<span class="muted">${esc(r.initials)}</span>` : ''}${tab === 'consultants' && r.email ? `<span class="muted">${esc(r.email)}</span>` : ''}
       <span class="muted small">${r.used ? `${r.used} ${r.used === 1 ? 'aktivitet' : 'aktiviteter'}` : 'Ikke brugt'}</span>${tab === 'consultants' ? consultantState(r) : ''}`;
   };
 
@@ -1549,6 +1552,98 @@ async function renderAdmin(root) {
       actions.querySelector('[data-yes]').onclick = async () => {
         try { await api.del(`/api/admin/${tab}/${r.id}`); toast('Slettet'); await after(); } catch (ex) { await renderAdmin($('#view')); $('#admin-err').textContent = ex.message; $('#admin-err').hidden = false; }
       };
+    };
+  });
+}
+
+// --- Til Apple ---------------------------------------------------------------------------------
+// Held courses with the fields of Apple's APL Engagement Checkout, in the form's own order, so the
+// consultant copies from here, a spreadsheet or a printout instead of looking things up in the tracker.
+const APPLE_SURVEY = 'https://essentials.applesurveys.com/jfe/form/SV_7UiJTisrllOFbsG';
+
+async function renderApple(root) {
+  const f = state.appleFilters;
+  const o = state.options;
+  root.innerHTML = `
+    <div class="pagehead apple-head">
+      <div><p class="eyebrow">APL Engagement Checkout</p><h1>Til Apple</h1>
+        <p class="muted">Afholdte kurser med de oplysninger, Apples skema beder om, i samme rækkefølge som skemaet. Tryk på en værdi for at kopiere den, eller hent det hele som regneark eller PDF. Foreløbige og kommende kurser er ikke med.</p></div>
+      <div class="pagehead-actions no-print">
+        <a class="btn" href="${APPLE_SURVEY}" target="_blank" rel="noopener">Åbn Apples skema</a>
+        <button class="btn" id="apple-xlsx" type="button">Hent Excel</button>
+        <button class="btn" id="apple-csv" type="button">Hent CSV</button>
+        <button class="btn" id="apple-print" type="button">Udskriv / PDF</button>
+      </div>
+    </div>
+    <div class="filters apple-filters no-print">
+      <div class="field field-status"><span id="ap-label">Vis</span>
+        <div class="seg" role="radiogroup" aria-labelledby="ap-label">
+          ${[['no', 'Ikke sendt'], ['yes', 'Sendt til Apple'], ['', 'Alle']].map(([val, l]) => `<label><input type="radio" name="ap-sent" value="${val}" ${f.sent === val ? 'checked' : ''}><span>${l}</span></label>`).join('')}
+        </div>
+      </div>
+      <label class="field"><span>År</span><select id="ap-year">${yearOptions(f.year)}</select></label>
+      <label class="field"><span>Konsulent</span><select id="ap-consultant">${selectOptions(o.consultants, f.consultant, 'Alle')}</select></label>
+      <label class="field"><span>Reseller</span><select id="ap-reseller">${selectOptions(o.resellers, f.reseller, 'Alle')}</select></label>
+    </div>
+    <div class="listbar"><span id="apple-summary" class="muted" aria-live="polite"></span></div>
+    <div id="apple-body"><div class="loading">Indlæser…</div></div>`;
+  ['year', 'consultant', 'reseller'].forEach((k) => { $(`#ap-${k}`).onchange = (e) => { f[k] = e.target.value; loadApple(); }; });
+  $$('input[name="ap-sent"]').forEach((r) => { r.onchange = () => { f.sent = r.value; loadApple(); }; });
+  const download = async (format, btn) => {
+    btn.disabled = true;
+    try {
+      const name = await transport.download(`/api/apple/export${qs({ ...f, format })}`);
+      if (name) toast(`Hentet: ${name}`);
+    } catch (e) { toast(e.message, 'err'); } finally { btn.disabled = false; }
+  };
+  $('#apple-xlsx').onclick = (e) => download('xlsx', e.currentTarget);
+  $('#apple-csv').onclick = (e) => download('csv', e.currentTarget);
+  $('#apple-print').onclick = () => window.print();
+  await loadApple();
+}
+
+async function loadApple() {
+  const rows = await api.get(`/api/apple${qs(state.appleFilters)}`);
+  const body = $('#apple-body');
+  if (!body) return;
+  const missing = (label) => rows.filter((a) => !a.fields.find(([, l]) => l === label)[2]).length;
+  const noMail = missing('E-mailadresse til specialist');
+  const noPostal = missing('Postnummer');
+  const noPart = missing('Antal deltagere');
+  $('#apple-summary').innerHTML = `${num(rows.length)} ${rows.length === 1 ? 'kursus' : 'kurser'}${
+    [[noMail, 'mangler konsulentens e-mail'], [noPostal, 'mangler postnummer'], [noPart, 'mangler deltagere']]
+      .filter(([n]) => n).map(([n, t]) => ` · ${num(n)} ${t}`).join('')}`;
+  if (!rows.length) {
+    body.innerHTML = `<div class="card"><p class="muted empty">${state.appleFilters.sent === 'no' ? 'Alle afholdte kurser i udvalget er sendt til Apple.' : 'Ingen afholdte kurser matcher filtrene.'}</p></div>`;
+    return;
+  }
+  const pages = ['Side 1', 'Side 2', 'Side 3', 'Side 4'];
+  body.innerHTML = rows.map((a) => `
+    <section class="card apple-course ${a.apple_reported_at ? 'is-sent' : ''}" data-id="${a.id}">
+      <div class="card-head">
+        <div><h2>${esc(a.consultant || 'Ingen konsulent')} · ${esc(fmtDate(a.date))}</h2>
+          <p class="muted small">${esc(a.title)} · ${esc(a.school || 'Ingen skole')} · ${esc(a.reseller)}</p></div>
+        <label class="apple-sent"><input type="checkbox" ${a.apple_reported_at ? 'checked' : ''}> Sendt til Apple</label>
+      </div>
+      <div class="apple-pages">${pages.map((p) => `
+        <div class="apple-page"><p class="eyebrow">${p}</p><dl>${a.fields.filter(([pg]) => pg === p).map(([, label, value, hint]) => `
+          <div class="apple-field"><dt>${esc(label)}</dt><dd>${value
+            ? `<button type="button" class="apple-copy" data-copy="${esc(value)}" title="Kopiér">${esc(value)}</button>`
+            : `<span class="apple-blank">Udfyld selv</span>`}${hint ? `<div class="muted small">${esc(hint)}</div>` : ''}</dd></div>`).join('')}
+        </dl></div>`).join('')}
+      </div>
+    </section>`).join('');
+  $$('.apple-copy', body).forEach((b) => {
+    b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy); toast('Kopieret'); } catch { toast('Kunne ikke kopiere', 'err'); } };
+  });
+  $$('.apple-sent input', body).forEach((box) => {
+    box.onchange = async () => {
+      const card = box.closest('.apple-course');
+      try {
+        await api.put(`/api/activities/${card.dataset.id}/apple`, { reported: box.checked });
+        card.classList.toggle('is-sent', box.checked);
+        toast(box.checked ? 'Markeret som sendt til Apple' : 'Markering fjernet');
+      } catch (ex) { box.checked = !box.checked; toast(ex.message, 'err'); }
     };
   });
 }
@@ -1700,6 +1795,7 @@ async function render() {
     else if (state.view === 'admin') await renderAdmin(root);
     else if (state.view === 'calendar') await renderCalendar(root);
     else if (state.view === 'signup') await renderSignup(root);
+    else if (state.view === 'apple') await renderApple(root);
     else if (state.view === 'messages') await renderMessages(root);
     else if (state.view === 'import') renderImport(root);
     else await renderDashboard(root);
