@@ -68,19 +68,6 @@ export function createServer({ dbFile = process.env.DB_FILE || fileURLToPath(new
     }
   });
 
-  // The consultant's held courses with the fields of Apple's APL Engagement Checkout, as Excel or CSV.
-  app.get('/k/:token/apple', (req, res) => {
-    try {
-      const { filename, contentType, data } = api.consultantAppleExport(req.params.token, req.query.format);
-      res.setHeader('Cache-Control', 'no-store');
-      res.setHeader('Content-Type', contentType);
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-      res.send(typeof data === 'string' ? data : Buffer.from(data));
-    } catch (err) {
-      res.status(err.status || 500).json({ error: err.status ? err.message : 'Der opstod en fejl på serveren.' });
-    }
-  });
-
   // The consultant answers whether they can take a Foreløbig course (Tilmelding).
   app.put('/k/:token/signup/:id', (req, res) => {
     try {

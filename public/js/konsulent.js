@@ -1,9 +1,8 @@
-// A consultant's own page: held and coming courses, Apple session count and the Apple survey link.
+// A consultant's own page: held and coming courses, Apple workshop count and the button that opens Apple's form filled in.
 // Opened from the private link Kompas sends (/k/<token>); no login.
 
-const APPLE_SURVEY = 'https://essentials.applesurveys.com/jfe/form/SV_7UiJTisrllOFbsG';
-// The consultant's personal Engagement Checkout link (name and e-mail filled in) once Kompas has their e-mail.
-const survey = () => data.appleLink || APPLE_SURVEY;
+// Beskeder is paused (Jakob, 2026-10-06): the messages are kept, but not shown. Set to true to resume.
+const SHOW_BESKEDER = false;
 const LOGO_MARK = `<svg class="wordmark-mark" viewBox="0 0 660 660" aria-hidden="true">
   <polygon class="lm-2" points="336,0 429,323 336,323"/><polygon class="lm-3" points="1,323 326,231 326,323"/>
   <polygon class="lm-1" points="234,338 326,338 326,658"/><polygon class="lm-4" points="336,338 659,338 336,430"/></svg>`;
@@ -33,11 +32,14 @@ const noteBtn = (a) => {
   return ` <button type="button" class="note-btn ${n ? 'has-notes' : ''}" data-notes="${a.id}" title="${label}" aria-label="${label}">${NOTE_ICON}${n || ''}</button>`;
 };
 
-// Til Apple: the answers for Apple's APL Engagement Checkout, in the form's own order, ready to copy.
-// A course the consultant (or Kompas) has marked as reported shows a green "Indberettet" instead.
-const appleBtn = (a) => a.apple_reported_at
+// Indberet hos Apple: one button per held course opens Apple's form with every known answer filled in.
+// When the consultant comes back to this page, it asks whether the form was sent. A course marked as
+// reported (by the consultant or Kompas) shows a green "Indberettet" that opens the details instead.
+const appleBtn = (a) => (a.apple_reported_at
   ? `<button type="button" class="btn btn-sm nowrap apple-done" data-apple="${a.id}" title="Indberettet til Apple ${esc(fmtDate(a.apple_reported_at.slice(0, 10)))}">✓ Indberettet</button>`
-  : `<button type="button" class="btn btn-sm nowrap" data-apple="${a.id}">Til Apple</button>`;
+  : a.appleForm ? `<a class="btn btn-sm btn-primary nowrap" href="${esc(a.appleForm)}" target="_blank" rel="noopener" data-apple-go="${a.id}">Indberet hos Apple</a>`
+    : `<button type="button" class="btn btn-sm nowrap" data-apple="${a.id}">Indberet hos Apple</button>`);
+let awaiting = null; // the course whose Apple form was just opened
 // The tracker's hints point at Administration, which consultants don't have.
 const OWN_HINTS = { 'E-mailadresse til specialist': 'Din egen e-mail', Postnummer: 'Skolens postnummer' };
 const appleFields = (a) => `<div class="apple-pages">${[...new Set(a.apple.map(([p]) => p))].map((p) => `
@@ -53,34 +55,50 @@ function bindCopy(root) {
   });
 }
 
-function openApple(id) {
+// The Apple dialog. `asked`: the consultant is back from Apple's form, so ask whether it was sent.
+function openApple(id, { asked = false } = {}) {
   const a = data.held.find((x) => String(x.id) === String(id));
   const dlg = document.getElementById('apple-dialog');
   if (!a || !dlg) return;
-  dlg.innerHTML = `<div class="card-head"><div><p class="eyebrow">Til Apple</p><h2>${esc(a.title)}</h2>
-      <p class="muted small">${esc(fmtDate(a.date))}${a.school ? ` · ${esc(a.school)}` : ''}</p></div>
-      <button type="button" class="btn btn-sm" data-close>Luk</button></div>
-    <p class="small">Åbn Apples skema udfyldt med det, trackeren ved. Gå siderne igennem, udfyld felterne markeret Udfyld selv, og indsend skemaet. Tryk på en værdi her for at kopiere den, hvis et felt står tomt.</p>
-    <p>${a.appleForm ? `<a class="btn btn-primary btn-sm" href="${esc(a.appleForm)}" target="_blank" rel="noopener">Åbn Apples skema udfyldt</a> ` : ''}<a class="btn btn-sm" href="${esc(survey())}" target="_blank" rel="noopener">Åbn tomt skema</a></p>
-    <label class="apple-reported"><input type="checkbox" id="apple-reported" ${a.apple_reported_at ? 'checked' : ''}> <b>Indberettet til Apple</b>
-      <span class="muted small">${a.apple_reported_at ? `Markeret ${esc(fmtDate(a.apple_reported_at.slice(0, 10)))}` : 'Sæt kryds, når du har indsendt skemaet'}</span></label>
-    ${appleFields(a)}`;
-  bindCopy(dlg);
-  dlg.querySelector('#apple-reported').onchange = async (e) => {
-    const box = e.currentTarget;
+  const save = async (reported) => {
     try {
-      const r = await fetch(`/k/${encodeURIComponent(token)}/courses/${a.id}/apple`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reported: box.checked }) });
+      const r = await fetch(`/k/${encodeURIComponent(token)}/courses/${a.id}/apple`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reported }) });
       if (!r.ok) throw new Error();
       a.apple_reported_at = (await r.json()).apple_reported_at;
-      toast(box.checked ? 'Markeret som indberettet' : 'Markering fjernet');
+      toast(reported ? 'Markeret som indberettet' : 'Markering fjernet');
       dlg.close();
       render();
-    } catch { box.checked = !box.checked; toast('Kunne ikke gemme'); }
+    } catch { toast('Kunne ikke gemme'); }
   };
-  dlg.querySelector('[data-close]').onclick = () => dlg.close();
+  dlg.innerHTML = `<div class="card-head"><div><p class="eyebrow">Indberet hos Apple</p><h2>${esc(a.title)}</h2>
+      <p class="muted small">${esc(fmtDate(a.date))}${a.school ? ` · ${esc(a.school)}` : ''}</p></div>
+      <button type="button" class="btn btn-sm" data-close>Luk</button></div>
+    ${asked ? `<p><b>Har du indsendt Apples skema for dette kursus?</b></p>
+      <p class="copyrow"><button type="button" class="btn btn-primary" data-yes>Ja, markér som indberettet</button><button type="button" class="btn" data-close>Ikke endnu</button></p>`
+    : a.apple_reported_at ? `<p class="apple-todo is-done"><b>✓ Indberettet ${esc(fmtDate(a.apple_reported_at.slice(0, 10)))}</b></p>
+      <p class="copyrow">${a.appleForm ? `<a class="btn btn-sm" href="${esc(a.appleForm)}" target="_blank" rel="noopener">Åbn Apples skema igen</a>` : ''}<button type="button" class="btn btn-sm" data-undo>Fjern markeringen</button></p>`
+    : `<p class="small">Apples skema åbner med det, trackeren ved. Gå siderne igennem, udfyld felterne markeret Udfyld selv, og indsend skemaet.</p>
+      <p class="copyrow">${a.appleForm ? `<a class="btn btn-primary btn-sm" href="${esc(a.appleForm)}" target="_blank" rel="noopener" data-apple-go="${a.id}">Åbn Apples skema udfyldt</a>` : ''}<button type="button" class="btn btn-sm" data-yes>Markér som indberettet</button></p>`}
+    <details class="howto"><summary>Vis svarene til skemaet</summary>
+      <p class="small muted">Tryk på en værdi for at kopiere den, hvis et felt står tomt i Apples skema.</p>${appleFields(a)}</details>`;
+  bindCopy(dlg);
+  dlg.querySelectorAll('[data-close]').forEach((b) => { b.onclick = () => dlg.close(); });
+  dlg.querySelector('[data-yes]')?.addEventListener('click', () => save(true));
+  dlg.querySelector('[data-undo]')?.addEventListener('click', () => save(false));
+  dlg.querySelector('[data-apple-go]')?.addEventListener('click', () => { awaiting = a.id; dlg.close(); });
   dlg.onclick = (e) => { if (e.target === dlg) dlg.close(); };
-  dlg.showModal();
+  if (!dlg.open) dlg.showModal();
 }
+
+// Back from Apple's form (another tab): ask once whether it was sent.
+const askIfSent = () => {
+  if (awaiting == null || document.visibilityState !== 'visible') return;
+  const id = awaiting;
+  awaiting = null;
+  if (!data.held.find((x) => x.id === id)?.apple_reported_at) openApple(id, { asked: true });
+};
+document.addEventListener('visibilitychange', askIfSent);
+window.addEventListener('focus', askIfSent);
 
 function table(rows, planned) {
   if (!rows.length) return `<p class="empty">${planned ? 'Ingen planlagte kurser lige nu.' : 'Ingen afholdte kurser endnu.'}</p>`;
@@ -120,7 +138,7 @@ function messageItem(m) {
 }
 
 function messagesSection() {
-  if (!data.messages?.length) return '';
+  if (!SHOW_BESKEDER || !data.messages?.length) return '';
   const fresh = data.messages.filter((m) => m.unread).length;
   const first = data.messages.slice(0, Math.max(SHOW_MESSAGES, fresh));
   const older = data.messages.slice(first.length);
@@ -266,7 +284,7 @@ function render() {
     <main class="page">
       <div class="pagehead"><div><p class="eyebrow">Konsulent</p><h1>${esc(data.name)}</h1>
         <p class="muted">Dine afholdte og kommende kurser. Siden opdateres, når Kompas registrerer eller flytter et kursus.</p></div>
-        <div class="pagehead-actions"><a class="btn" href="${esc(webcal)}">Abonnér i Kalender</a><a class="btn btn-primary" href="${esc(survey())}" target="_blank" rel="noopener">Registrér hos Apple</a></div></div>
+        <div class="pagehead-actions"><a class="btn" href="${esc(webcal)}">Abonnér i Kalender</a></div></div>
 
       <div class="kpis kpis-3">
         <div class="kpi"><div class="kpi-num">${data.planned.length}</div><div class="kpi-label">Kommende kurser</div></div>
@@ -288,19 +306,11 @@ function render() {
         </div>
         ${notReported ? `<p class="apple-todo"><b>${notReported} ${notReported === 1 ? 'afholdt kursus mangler' : 'afholdte kurser mangler'}</b> at blive markeret som indberettet til Apple.</p>` : data.held.length ? '<p class="apple-todo is-done"><b>✓ Alle dine afholdte kurser er indberettet til Apple.</b></p>' : ''}
         <p>Husk at registrere alle dine afholdte workshops hos Apple, også når du har nået de ${GOAL}. Du skal afholde mindst ${GOAL} workshops om året for at bevare din status som Apple Professional Learning Specialist.${thisYear >= GOAL ? '' : ` Du mangler ${GOAL - thisYear} i ${year}.`}</p>
-        <h3 class="k-apple-sub">Dit personlige link til Engagement Checkout</h3>
-        <p class="small">${data.appleLink
-          ? 'Linket udfylder dit navn og din Apple-e-mail i Apples skema. Alle Apple-knapper her på siden bruger det. Gem det gerne som bogmærke.'
-          : 'Skriv den e-mail, du bruger hos Apple, så får du dit personlige link, hvor dit navn og din e-mail er udfyldt i Apples skema. Indtil da åbner knappen det åbne link, hvor du selv skal skrive navn, land og e-mail.'}</p>
+        <p class="small">Tryk <b>Indberet hos Apple</b> ved et afholdt kursus nedenfor. Apples skema åbner med det, trackeren ved, og du udfylder resten. Når du kommer tilbage hertil, spørger siden, om du har indsendt det.</p>
         <form class="k-apple-email" id="apple-email-form">
-          <label class="field"><span>Din Apple-e-mail</span><input type="email" name="email" value="${esc(data.email)}" placeholder="navn@eksempel.dk" autocomplete="email"></label>
+          <label class="field"><span>Din Apple-e-mail <small class="muted">· bliver skrevet ind i Apples skema</small></span><input type="email" name="email" value="${esc(data.email)}" placeholder="navn@eksempel.dk" autocomplete="email"></label>
           <button type="submit" class="btn">${data.email ? 'Gem ændring' : 'Gem'}</button>
         </form>
-        ${data.appleLink ? `<input class="k-apple-link" readonly value="${esc(data.appleLink)}" aria-label="Dit personlige link">` : ''}
-        <div class="copyrow"><a class="btn btn-primary" href="${esc(survey())}" target="_blank" rel="noopener">${data.appleLink ? 'Åbn mit personlige link' : 'Åbn Engagement Checkout Survey'}</a><button type="button" class="btn" id="copy-survey">Kopiér link</button></div>
-        ${data.held.length ? `<h3 class="k-apple-sub">Svarene til skemaet</h3>
-        <p class="small">Tryk <b>Til Apple</b> ved et afholdt kursus nedenfor for at se svarene i samme rækkefølge som Apples skema og kopiere dem. Du kan også hente alle dine afholdte kurser som regneark eller PDF. Felter, som kun du kender, står som "Udfyld selv".</p>
-        <div class="copyrow"><a class="btn" href="/k/${encodeURIComponent(token)}/apple?format=xlsx">Hent Excel</a><button type="button" class="btn" id="apple-print">Udskriv / PDF</button></div>` : ''}
         ${years.length > 1 ? `<p class="muted small">Apple-workshops pr. år: ${years.map(([y, n]) => `${y}: ${n}`).join(' · ')}</p>` : ''}
       </section>
 
@@ -314,16 +324,12 @@ function render() {
       <section class="card card-flush"><div class="card-head card-head-pad"><h2>Afholdte kurser</h2><span class="muted small">Nyeste først</span></div>${table(data.held, false)}</section>
     </main>
     <dialog id="notes-dialog" class="dialog"></dialog>
-    <dialog id="apple-dialog" class="dialog dialog-wide"></dialog>
-    <section id="apple-print-list" class="apple-print-list" aria-hidden="true">
-      <h1>Til Apple · ${esc(data.name)}</h1>
-      ${data.held.map((a) => `<section class="card apple-course"><h2>${esc(fmtDate(a.date))} · ${esc(a.title)}</h2>
-        <p class="muted small">${esc(a.school || '')}${a.municipality ? ` · ${esc(a.municipality)}` : ''}</p>${appleFields(a)}</section>`).join('')}
-    </section>`;
+    <dialog id="apple-dialog" class="dialog dialog-wide"></dialog>`;
 
   bindSignup();
   bindNotes();
   document.querySelectorAll('[data-apple]').forEach((b) => { b.onclick = () => openApple(b.dataset.apple); });
+  document.querySelectorAll('[data-apple-go]').forEach((b) => { b.addEventListener('click', () => { awaiting = Number(b.dataset.appleGo); }); });
   document.getElementById('apple-email-form').onsubmit = async (e) => {
     e.preventDefault();
     const email = e.target.email.value;
@@ -332,22 +338,13 @@ function render() {
       const out = await r.json();
       if (!r.ok) throw new Error(out.error || 'Det lykkedes ikke');
       data.email = out.email || '';
-      data.appleLink = out.appleLink;
-      render();
-      toast(out.appleLink ? 'Gemt. Dit personlige link er klar' : 'E-mail fjernet');
+      await load();
+      toast(data.email ? 'Gemt' : 'E-mail fjernet');
     } catch (ex) { toast(ex.message); }
   };
-  document.getElementById('apple-print')?.addEventListener('click', () => {
-    document.body.classList.add('print-apple');
-    window.print();
-  });
-  window.onafterprint = () => document.body.classList.remove('print-apple');
-  if (data.messages?.some((m) => m.unread)) {
+  if (SHOW_BESKEDER && data.messages?.some((m) => m.unread)) {
     fetch(`/k/${encodeURIComponent(token)}/messages/read`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).catch(() => {});
   }
-  document.getElementById('copy-survey').onclick = async () => {
-    try { await navigator.clipboard.writeText(survey()); toast('Link kopieret'); } catch { window.open(survey(), '_blank', 'noopener'); }
-  };
 }
 
 async function load() {

@@ -115,29 +115,20 @@ test('a consultant gets the Apple answers for their own held courses on their pa
   assert.ok(data.held.length > 0);
   assert.ok(data.held.every((a) => a.apple.length === 21 && a.appleForm.includes('QID1')));
   assert.ok(data.held.every((a) => a.apple[1][2] === 'Søren Rasmussen'));
-  const r = await fetch(`${base}${pagePath}/apple?format=xlsx`);
-  assert.equal(r.status, 200);
-  assert.match(r.headers.get('content-disposition'), /apple-registrering-soeren-rasmussen-/);
-  const wb = XLSX.read(new Uint8Array(await r.arrayBuffer()));
-  const table = XLSX.utils.sheet_to_json(wb.Sheets['Til Apple'], { header: 1, defval: '' });
-  assert.equal(table.length - 1, data.held.length);
-  assert.ok(table.slice(1).every((row) => row[1] === 'Søren Rasmussen'));
-  assert.equal((await fetch(`${base}/k/${'0'.repeat(48)}/apple`)).status, 404);
   // The admin export filtered on a name with ø still downloads (ASCII file name).
   assert.equal((await call('admin', `/api/apple/export?consultant=${sr.id}`)).status, 200);
 });
 
-test('a consultant with an e-mail gets their personal Engagement Checkout link', async () => {
+test('the Apple form link carries the consultant e-mail written under Administration', async () => {
   const opts = await json('admin', '/api/options');
   const kb = opts.consultants.find((c) => c.name === 'Kim Byrding');
-  let feed = await json('admin', `/api/admin/consultants/${kb.id}/feed`);
-  assert.equal(feed.appleLink, null);
   const c = (await json('admin', '/api/admin/consultants')).find((x) => x.id === kb.id);
   await call('admin', `/api/admin/consultants/${kb.id}`, { method: 'PUT', body: JSON.stringify({ name: c.name, initials: c.initials, email: 'kim@kompas.dk' }) });
-  feed = await json('admin', `/api/admin/consultants/${kb.id}/feed`);
-  assert.equal(feed.appleLink, 'https://apple.co/apls-checkout?specialist=Kim+Byrding&apple_email=kim%40kompas.dk');
-  const data = await (await fetch(`${base}${feed.pagePath}/data`)).json();
-  assert.equal(data.appleLink, feed.appleLink);
+  const { pagePath } = await json('admin', `/api/admin/consultants/${kb.id}/feed`);
+  const data = await (await fetch(`${base}${pagePath}/data`)).json();
+  assert.equal(data.appleLink, undefined); // the personal Engagement Checkout link is gone; the filled-in form covers it
+  const course = data.held[0];
+  if (course) assert.equal(JSON.parse(new URL(course.appleForm).searchParams.get('Q_PopulateResponse')).QID2, 'kim@kompas.dk');
 });
 
 test('a consultant can write their own Apple e-mail on their page', async () => {
@@ -148,7 +139,6 @@ test('a consultant can write their own Apple e-mail on their page', async () => 
   assert.equal((await put('ikke-en-mail')).status, 400);
   const ok = await (await put('RT@Kompas.dk')).json();
   assert.equal(ok.email, 'rt@kompas.dk');
-  assert.match(ok.appleLink, /^https:\/\/apple\.co\/apls-checkout\?specialist=.+&apple_email=rt%40kompas\.dk$/);
   const data = await (await fetch(`${base}${pagePath}/data`)).json();
   assert.equal(data.email, 'rt@kompas.dk');
   assert.equal((await json('admin', '/api/admin/consultants')).find((c) => c.id === tr.id).email, 'rt@kompas.dk');

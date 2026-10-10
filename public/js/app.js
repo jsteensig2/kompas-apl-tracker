@@ -82,10 +82,13 @@ function toast(msg, kind = 'ok') {
 }
 
 // --- Navigation ----------------------------------------------------------------------------
+// Beskeder is paused (Jakob, 2026-10-06): the tab is hidden, the messages are kept. Set to true to resume.
+const SHOW_BESKEDER = false;
 const VIEWS = ['dashboard', 'activities', 'register', 'import', 'calendar', 'signup', 'apple', 'messages', 'admin', 'password'];
 
 function go(view, { editing = null, prefill = null, copyOf = null } = {}) {
   if (!isAdmin() && ['register', 'admin', 'import', 'signup', 'apple', 'messages'].includes(view)) view = 'dashboard';
+  if (view === 'messages' && !SHOW_BESKEDER) view = 'dashboard';
   state.view = view;
   state.editing = editing;
   state.prefill = prefill;
@@ -105,7 +108,7 @@ function renderShell() {
   const me = state.me;
   const nav = [['dashboard', 'Overblik'], ['activities', 'Aktiviteter']];
   nav.push(['calendar', 'Kalender']);
-  if (isAdmin()) nav.push(['signup', 'Tilmelding'], ['apple', 'Til Apple'], ['messages', 'Beskeder'], ['admin', 'Administration']);
+  if (isAdmin()) nav.push(['signup', 'Tilmelding'], ['apple', 'Til Apple'], ...(SHOW_BESKEDER ? [['messages', 'Beskeder']] : []), ['admin', 'Administration']);
   $('#app').innerHTML = `
     <header class="topbar">
       <div class="topbar-inner">
@@ -483,7 +486,6 @@ async function renderDashboard(root) {
         <h1>Overblik over APL</h1>
         ${!seesAll() ? `<p class="muted">Aktiviteter gennemført af Kompas for ${esc(state.me.reseller)}.</p>` : ''}
       </div>
-      ${isAdmin() ? '<button class="btn btn-primary" data-go="register" type="button">+ Registrér aktivitet</button>' : ''}
     </div>
     <div class="filters filters-inline">
       <label class="field field-compact"><span>År</span><select id="d-year">${yearOptions(f.year)}</select></label>
@@ -548,7 +550,7 @@ function activityFilters() {
     <div class="filters">
       <div class="field field-status"><span id="st-label">Status</span>
         <div class="seg" role="radiogroup" aria-labelledby="st-label">
-          ${[['', 'Alle'], ['held', 'Afholdt'], ['planned', 'Kommende kurser'], ['pending', 'Foreløbig']].map(([val, l]) => `<label><input type="radio" name="f-status" value="${val}" ${f.status === val ? 'checked' : ''}><span>${l}</span></label>`).join('')}
+          ${[['', 'Alle'], ['held', 'Afholdt'], ['approved', 'Planlagt'], ['pending', 'Foreløbig']].map(([val, l]) => `<label><input type="radio" name="f-status" value="${val}" ${f.status === val ? 'checked' : ''}><span>${l}</span></label>`).join('')}
         </div>
       </div>
       <label class="field field-search"><span>Søg</span><input id="f-q" type="search" placeholder="Emne, skole, kommune, konsulent…" value="${esc(f.q)}"></label>
@@ -593,8 +595,8 @@ async function renderActivities(root) {
   $$('input[name="f-status"]').forEach((r) => {
     r.onchange = () => {
       f.status = r.value;
-      // Coming and Foreløbig courses often fall in next year, so the year filter is cleared for them.
-      if (['planned', 'pending'].includes(r.value) && f.year) { f.year = ''; $('#f-year').value = ''; }
+      // Planlagt and Foreløbig courses often fall in next year, so the year filter is cleared for them.
+      if (['approved', 'pending'].includes(r.value) && f.year) { f.year = ''; $('#f-year').value = ''; }
       loadList();
     };
   });
@@ -628,7 +630,8 @@ async function loadList() {
   const summary = (sum) => {
     const nPlanned = rows.filter((r) => r.status === 'planned').length;
     const nPending = rows.filter((r) => r.pending).length;
-    return `${num(rows.length)} ${rows.length === 1 ? 'aktivitet' : 'aktiviteter'} · ${num(rows.length - nPlanned)} afholdt · ${num(nPlanned)} kommende${nPending ? ` (heraf ${num(nPending)} foreløbige)` : ''} · ${num(sum)} deltagere`;
+    // "Se alle kommende kurser" on Overblik shows Planlagt and Foreløbig together (status=planned).
+    return `${state.listFilters.status === 'planned' ? 'Alle kommende kurser: ' : ''}${num(rows.length)} ${rows.length === 1 ? 'aktivitet' : 'aktiviteter'} · ${num(rows.length - nPlanned)} afholdt · ${num(nPlanned)} kommende${nPending ? ` (heraf ${num(nPending)} foreløbige)` : ''} · ${num(sum)} deltagere`;
   };
   $('#list-summary').textContent = summary(total);
   if (!rows.length) { body.innerHTML = '<div class="card"><p class="muted empty">Ingen aktiviteter matcher filtrene.</p></div>'; return; }
@@ -1369,6 +1372,7 @@ async function renderMonth() {
   }
 
   const held = acts.filter((a) => a.status === 'held').length;
+  const pending = acts.filter((a) => a.pending).length;
   box.innerHTML = `
     <div class="month-head">
       <button type="button" class="btn btn-sm" data-shift="-1" aria-label="Forrige måned">‹</button>
@@ -1376,7 +1380,7 @@ async function renderMonth() {
       <button type="button" class="btn btn-sm" data-shift="1" aria-label="Næste måned">›</button>
       ${ym !== today.slice(0, 7) ? '<button type="button" class="linkbtn" data-shift="0">I dag</button>' : ''}
       <span class="spacer"></span>
-      <span class="muted small">${held} afholdt · ${acts.length - held} planlagt</span>
+      <span class="muted small">${held} afholdt · ${acts.length - held - pending} planlagt${pending ? ` · ${pending} foreløbige` : ''}</span>
     </div>
     <div class="legend"><span><i class="sw sw-held"></i>Afholdt</span><span><i class="sw sw-planned"></i>Planlagt</span>
       <span><i class="sw sw-pending"></i>Foreløbig</span>
@@ -1453,7 +1457,7 @@ async function renderAdmin(root) {
       ${isSchools ? `<select name="municipality_id" aria-label="Kommune">${selectOptions(o.municipalities, r.municipality_id, 'Vælg kommune…')}</select>
         <input name="postal_code" placeholder="Postnr." value="${esc(r.postal_code || '')}" aria-label="Postnummer" inputmode="numeric" maxlength="4" class="input-short">` : ''}
       ${tab === 'consultants' ? `<input name="initials" placeholder="Initialer, fx KB" value="${esc(r.initials || '')}" aria-label="Initialer" maxlength="6" class="input-short">
-        <input name="email" type="email" placeholder="Apple-e-mail" value="${esc(r.email || '')}" aria-label="E-mail">` : ''}`;
+        <input name="email" type="email" placeholder="Apple-e-mail (til Apples skema)" value="${esc(r.email || '')}" aria-label="E-mail">` : ''}`;
   };
   const describe = (r) => {
     if (isUsers) return `<b>${esc(r.name)}</b><span class="muted">${esc(r.email)}</span><span class="tag ${r.role === 'admin' ? 'tag-admin' : ''}">${r.role === 'admin' ? 'Kompas-administrator' : r.role === 'viewer' ? 'Ser alle resellere · kun læse' : `Ser ${esc(r.reseller)}`}</span>${userState(r)}`;
@@ -1542,17 +1546,15 @@ async function renderAdmin(root) {
     if (feedBtn) {
       const showFeed = async (reset) => {
         try {
-          const { feedPath, pagePath, appleLink } = reset ? await api.post(`/api/admin/consultants/${r.id}/feed`, {}) : await api.get(`/api/admin/consultants/${r.id}/feed`);
+          const { feedPath, pagePath } = reset ? await api.post(`/api/admin/consultants/${r.id}/feed`, {}) : await api.get(`/api/admin/consultants/${r.id}/feed`);
           const page = new URL(pagePath, location.href).toString();
           const webcal = new URL(feedPath, location.href).toString().replace(/^https?:/, 'webcal:');
           li.querySelector('.temp-pw')?.remove();
           li.insertAdjacentHTML('beforeend', `<div class="temp-pw feed-box">
-            <p class="small"><b>Konsulentside:</b> ${esc(r.name)}s afholdte og kommende kurser, antal sessioner og linket til Apples spørgeskema.</p>
+            <p class="small"><b>Konsulentside:</b> ${esc(r.name)}s afholdte og kommende kurser, antal Apple-workshops og knappen, der åbner Apples skema udfyldt.</p>
             <div class="copyrow"><input readonly value="${esc(page)}" aria-label="Konsulentside til ${esc(r.name)}"><button type="button" class="btn btn-sm" data-copy="${esc(page)}">Kopiér</button><a class="btn btn-sm" href="${esc(page)}" target="_blank" rel="noopener">Åbn</a></div>
             <p class="small"><b>Kalender:</b> kurserne i Apple Kalender (Arkiv › Nyt kalenderabonnement) eller på iPhone (Indstillinger › Kalender › Konti › Tilføj konto › Andet). Linket findes også på konsulentsiden.</p>
             <div class="copyrow"><input readonly value="${esc(webcal)}" aria-label="Kalenderlink til ${esc(r.name)}"><button type="button" class="btn btn-sm" data-copy="${esc(webcal)}">Kopiér</button></div>
-            <p class="small"><b>Personligt Apple-link:</b> ${appleLink ? `Engagement Checkout med ${esc(r.name)}s navn og e-mail udfyldt. Det står også på konsulentsiden.` : 'Skriv konsulentens Apple-e-mail (Redigér), så får konsulenten sit personlige link til Engagement Checkout på sin side.'}</p>
-            ${appleLink ? `<div class="copyrow"><input readonly value="${esc(appleLink)}" aria-label="Apple-link til ${esc(r.name)}"><button type="button" class="btn btn-sm" data-copy="${esc(appleLink)}">Kopiér</button></div>` : ''}
             <p class="muted small">Linkene virker uden login. Er de delt ved en fejl, så <button type="button" class="linkbtn" data-reset>lav nye links</button>.</p></div>`);
           const box = li.querySelector('.temp-pw');
           box.querySelectorAll('[data-copy]').forEach((b) => { b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy); toast('Link kopieret'); } catch { b.previousElementSibling.select(); } }; });
@@ -1584,25 +1586,21 @@ async function renderAdmin(root) {
 }
 
 // --- Til Apple ---------------------------------------------------------------------------------
-// Held courses with the fields of Apple's APL Engagement Checkout, in the form's own order, so the
-// consultant copies from here, a spreadsheet or a printout instead of looking things up in the tracker.
-const APPLE_SURVEY = 'https://essentials.applesurveys.com/jfe/form/SV_7UiJTisrllOFbsG';
+// Held courses for Apple's APL Engagement Checkout: one line per course with a link that opens Apple's
+// form filled in and the Indberettet tick. The answers themselves fold out under each course.
+const APPLE_MISSING = [['E-mailadresse til specialist', 'konsulentens e-mail'], ['Postnummer', 'postnummer'], ['Antal deltagere', 'deltagere']];
+const appleMissing = (a) => APPLE_MISSING.filter(([label]) => !a.fields.find(([, l]) => l === label)?.[2]).map(([, text]) => text);
 
 async function renderApple(root) {
   const f = state.appleFilters;
   const o = state.options;
   root.innerHTML = `
-    <div class="pagehead apple-head">
+    <div class="pagehead">
       <div><p class="eyebrow">APL Engagement Checkout</p><h1>Til Apple</h1>
-        <p class="muted">Afholdte kurser med de oplysninger, Apples skema beder om, i samme rækkefølge som skemaet. Tryk på en værdi for at kopiere den, eller hent det hele som regneark eller PDF. Foreløbige og kommende kurser er ikke med.</p></div>
-      <div class="pagehead-actions no-print">
-        <a class="btn" href="${APPLE_SURVEY}" target="_blank" rel="noopener">Åbn Apples skema</a>
-        <button class="btn" id="apple-xlsx" type="button">Hent Excel</button>
-        <button class="btn" id="apple-csv" type="button">Hent CSV</button>
-        <button class="btn" id="apple-print" type="button">Udskriv / PDF</button>
-      </div>
+        <p class="muted">Afholdte kurser, der skal indberettes til Apple. Åbn udfyldt åbner Apples skema med det, trackeren ved. Foreløbige og kommende kurser er ikke med.</p></div>
+      <div class="pagehead-actions"><button class="btn" id="apple-xlsx" type="button">Eksportér til Excel</button></div>
     </div>
-    <div class="filters apple-filters no-print">
+    <div class="filters apple-filters">
       <div class="field field-status"><span id="ap-label">Vis</span>
         <div class="seg" role="radiogroup" aria-labelledby="ap-label">
           ${[['no', 'Ikke indberettet'], ['yes', 'Indberettet'], ['', 'Alle']].map(([val, l]) => `<label><input type="radio" name="ap-sent" value="${val}" ${f.sent === val ? 'checked' : ''}><span>${l}</span></label>`).join('')}
@@ -1616,16 +1614,14 @@ async function renderApple(root) {
     <div id="apple-body"><div class="loading">Indlæser…</div></div>`;
   ['year', 'consultant', 'reseller'].forEach((k) => { $(`#ap-${k}`).onchange = (e) => { f[k] = e.target.value; loadApple(); }; });
   $$('input[name="ap-sent"]').forEach((r) => { r.onchange = () => { f.sent = r.value; loadApple(); }; });
-  const download = async (format, btn) => {
+  $('#apple-xlsx').onclick = async (e) => {
+    const btn = e.currentTarget;
     btn.disabled = true;
     try {
-      const name = await transport.download(`/api/apple/export${qs({ ...f, format })}`);
-      if (name) toast(`Hentet: ${name}`);
-    } catch (e) { toast(e.message, 'err'); } finally { btn.disabled = false; }
+      const name = await transport.download(`/api/apple/export${qs({ ...f, format: 'xlsx' })}`);
+      if (name) toast(`Eksporteret: ${name}`);
+    } catch (ex) { toast(ex.message, 'err'); } finally { btn.disabled = false; }
   };
-  $('#apple-xlsx').onclick = (e) => download('xlsx', e.currentTarget);
-  $('#apple-csv').onclick = (e) => download('csv', e.currentTarget);
-  $('#apple-print').onclick = () => window.print();
   await loadApple();
 }
 
@@ -1633,42 +1629,43 @@ async function loadApple() {
   const rows = await api.get(`/api/apple${qs(state.appleFilters)}`);
   const body = $('#apple-body');
   if (!body) return;
-  const missing = (label) => rows.filter((a) => !a.fields.find(([, l]) => l === label)[2]).length;
-  const noMail = missing('E-mailadresse til specialist');
-  const noPostal = missing('Postnummer');
-  const noPart = missing('Antal deltagere');
-  $('#apple-summary').innerHTML = `${num(rows.length)} ${rows.length === 1 ? 'kursus' : 'kurser'}${
-    [[noMail, 'mangler konsulentens e-mail'], [noPostal, 'mangler postnummer'], [noPart, 'mangler deltagere']]
-      .filter(([n]) => n).map(([n, t]) => ` · ${num(n)} ${t}`).join('')}`;
+  const counts = APPLE_MISSING.map(([, text]) => [rows.filter((a) => appleMissing(a).includes(text)).length, text]);
+  $('#apple-summary').textContent = `${num(rows.length)} ${rows.length === 1 ? 'kursus' : 'kurser'}${counts.filter(([n]) => n).map(([n, t]) => ` · ${num(n)} mangler ${t}`).join('')}`;
   if (!rows.length) {
     body.innerHTML = `<div class="card"><p class="muted empty">${state.appleFilters.sent === 'no' ? 'Alle afholdte kurser i udvalget er indberettet til Apple.' : 'Ingen afholdte kurser matcher filtrene.'}</p></div>`;
     return;
   }
-  body.innerHTML = rows.map((a) => `
-    <section class="card apple-course ${a.apple_reported_at ? 'is-sent' : ''}" data-id="${a.id}">
-      <div class="card-head">
-        <div><h2>${esc(a.consultant || 'Ingen konsulent')} · ${esc(fmtDate(a.date))}</h2>
-          <p class="muted small">${esc(a.title)} · ${esc(a.school || 'Ingen skole')} · ${esc(a.reseller)}</p>
-          <p><a class="btn btn-sm" href="${esc(a.formLink)}" target="_blank" rel="noopener">Åbn Apples skema udfyldt</a></p></div>
-        <label class="apple-sent"><input type="checkbox" ${a.apple_reported_at ? 'checked' : ''}> Indberettet til Apple</label>
+  body.innerHTML = `<ul class="card card-flush apple-list">${rows.map((a) => {
+    const missing = appleMissing(a);
+    return `<li class="apple-row ${a.apple_reported_at ? 'is-sent' : ''}" data-id="${a.id}">
+      <div class="apple-row-main">
+        <div class="apple-row-info"><b class="nowrap">${esc(fmtDate(a.date))}</b> · <b>${esc(a.consultant || 'Ingen konsulent')}</b>
+          <div class="muted small">${esc(a.title)} · ${esc(a.school || 'Ingen skole')} · ${esc(a.reseller)}</div>
+          ${missing.length ? `<div class="small apple-missing">Mangler ${missing.map(esc).join(', ')}</div>` : ''}</div>
+        <div class="apple-row-actions">
+          <a class="btn btn-sm" href="${esc(a.formLink)}" target="_blank" rel="noopener">Åbn udfyldt</a>
+          <label class="apple-sent"><input type="checkbox" ${a.apple_reported_at ? 'checked' : ''}> Indberettet</label>
+        </div>
       </div>
-      <div class="apple-pages">${[...new Set(a.fields.map(([p]) => p))].map((p) => `
-        <div class="apple-page"><p class="eyebrow">${p}</p><dl>${a.fields.filter(([pg]) => pg === p).map(([, label, value, hint]) => `
-          <div class="apple-field"><dt>${esc(label)}</dt><dd>${value
-            ? `<button type="button" class="apple-copy" data-copy="${esc(value)}" title="Kopiér">${esc(value)}</button>`
-            : `<span class="apple-blank">Udfyld selv</span>`}${hint ? `<div class="muted small">${esc(hint)}</div>` : ''}</dd></div>`).join('')}
-        </dl></div>`).join('')}
-      </div>
-    </section>`).join('');
+      <details class="apple-details"><summary class="small">Vis svarene</summary>
+        <div class="apple-pages">${[...new Set(a.fields.map(([p]) => p))].map((p) => `
+          <div class="apple-page"><p class="eyebrow">${p}</p><dl>${a.fields.filter(([pg]) => pg === p).map(([, label, value, hint]) => `
+            <div class="apple-field"><dt>${esc(label)}</dt><dd>${value
+              ? `<button type="button" class="apple-copy" data-copy="${esc(value)}" title="Kopiér">${esc(value)}</button>`
+              : '<span class="apple-blank">Udfyld selv</span>'}${hint ? `<div class="muted small">${esc(hint)}</div>` : ''}</dd></div>`).join('')}
+          </dl></div>`).join('')}
+        </div></details>
+    </li>`;
+  }).join('')}</ul>`;
   $$('.apple-copy', body).forEach((b) => {
     b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy); toast('Kopieret'); } catch { toast('Kunne ikke kopiere', 'err'); } };
   });
   $$('.apple-sent input', body).forEach((box) => {
     box.onchange = async () => {
-      const card = box.closest('.apple-course');
+      const row = box.closest('.apple-row');
       try {
-        await api.put(`/api/activities/${card.dataset.id}/apple`, { reported: box.checked });
-        card.classList.toggle('is-sent', box.checked);
+        await api.put(`/api/activities/${row.dataset.id}/apple`, { reported: box.checked });
+        row.classList.toggle('is-sent', box.checked);
         toast(box.checked ? 'Markeret som indberettet til Apple' : 'Markering fjernet');
       } catch (ex) { box.checked = !box.checked; toast(ex.message, 'err'); }
     };
