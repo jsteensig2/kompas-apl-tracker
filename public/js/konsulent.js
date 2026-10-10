@@ -31,16 +31,50 @@ const noteBtn = (a) => {
   return ` <button type="button" class="note-btn ${n ? 'has-notes' : ''}" data-notes="${a.id}" title="${label}" aria-label="${label}">${NOTE_ICON}${n || ''}</button>`;
 };
 
+// Til Apple: the answers for Apple's APL Engagement Checkout, in the form's own order, ready to copy.
+const appleBtn = (a) => `<button type="button" class="btn btn-sm nowrap" data-apple="${a.id}">Til Apple</button>`;
+const PAGES = ['Side 1', 'Side 2', 'Side 3', 'Side 4'];
+// The tracker's hints point at Administration, which consultants don't have.
+const OWN_HINTS = { 'E-mailadresse til specialist': 'Din egen e-mail', Postnummer: 'Skolens postnummer' };
+const appleFields = (a) => `<div class="apple-pages">${PAGES.map((p) => `
+  <div class="apple-page"><p class="eyebrow">${p}</p><dl>${a.apple.filter(([pg]) => pg === p).map(([, label, value, h]) => [label, value, OWN_HINTS[label] || h]).map(([label, value, hint]) => `
+    <div class="apple-field"><dt>${esc(label)}</dt><dd>${value
+      ? `<button type="button" class="apple-copy" data-copy="${esc(value)}" title="Kopiér">${esc(value)}</button>`
+      : '<span class="apple-blank">Udfyld selv</span>'}${hint ? `<div class="muted small">${esc(hint)}</div>` : ''}</dd></div>`).join('')}
+  </dl></div>`).join('')}</div>`;
+
+function bindCopy(root) {
+  root.querySelectorAll('.apple-copy').forEach((b) => {
+    b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy); toast('Kopieret'); } catch { toast('Kunne ikke kopiere'); } };
+  });
+}
+
+function openApple(id) {
+  const a = data.held.find((x) => String(x.id) === String(id));
+  const dlg = document.getElementById('apple-dialog');
+  if (!a || !dlg) return;
+  dlg.innerHTML = `<div class="card-head"><div><p class="eyebrow">Til Apple</p><h2>${esc(a.title)}</h2>
+      <p class="muted small">${esc(fmtDate(a.date))}${a.school ? ` · ${esc(a.school)}` : ''}</p></div>
+      <button type="button" class="btn btn-sm" data-close>Luk</button></div>
+    <p class="small">Åbn Apples skema og udfyld det i samme rækkefølge som her. Tryk på en værdi for at kopiere den.</p>
+    <p><a class="btn btn-primary btn-sm" href="${APPLE_SURVEY}" target="_blank" rel="noopener">Åbn Apples skema</a></p>
+    ${appleFields(a)}`;
+  bindCopy(dlg);
+  dlg.querySelector('[data-close]').onclick = () => dlg.close();
+  dlg.onclick = (e) => { if (e.target === dlg) dlg.close(); };
+  dlg.showModal();
+}
+
 function table(rows, planned) {
   if (!rows.length) return `<p class="empty">${planned ? 'Ingen planlagte kurser lige nu.' : 'Ingen afholdte kurser endnu.'}</p>`;
   return `<div class="table-wrap"><table class="table">
-    <thead><tr><th>Dato</th><th>Kursus</th><th>Skole</th><th>Varighed</th>${planned ? '' : '<th class="num">Deltagere</th><th class="num">Apple-workshops</th>'}</tr></thead>
+    <thead><tr><th>Dato</th><th>Kursus</th><th>Skole</th><th>Varighed</th>${planned ? '' : '<th class="num">Deltagere</th><th class="num">Apple-workshops</th><th><span class="sr">Til Apple</span></th>'}</tr></thead>
     <tbody>${rows.map((a) => `<tr class="${rowClass(a, planned)}">
       <td class="nowrap">${esc(fmtDate(a.date))}${timeText(a) ? `<div class="muted small">${timeText(a)}</div>` : ''}</td>
       <td>${a.reschedule ? STAR : ''}<b>${esc(a.title)}</b>${a.pending ? ` ${PENDING}` : ''}${noteBtn(a)}<div class="muted small">${esc(a.reseller)}</div></td>
       <td>${esc(a.school || '–')}${a.municipality ? `<div class="muted small">${esc(a.municipality)}</div>` : ''}</td>
       <td>${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}</td>
-      ${planned ? '' : `<td class="num">${a.participants}</td><td class="num">${a.sessions}</td>`}
+      ${planned ? '' : `<td class="num">${a.participants}</td><td class="num">${a.sessions}</td><td>${appleBtn(a)}</td>`}
     </tr>`).join('')}</tbody></table></div>
     <ul class="cards-list k-cards">${rows.map((a) => `
       <li class="card act-card ${rowClass(a, planned)}">
@@ -50,7 +84,7 @@ function table(rows, planned) {
         <dl class="act-meta">
           <div><dt>Varighed</dt><dd>${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}</dd></div>
           ${planned ? '' : `<div><dt>Apple-workshops</dt><dd>${a.sessions}</dd></div><div><dt>Deltagere</dt><dd>${a.participants}</dd></div>`}
-        </dl>
+        </dl>${planned ? '' : `<div class="k-card-apple">${appleBtn(a)}</div>`}
       </li>`).join('')}</ul>`;
 }
 
@@ -237,6 +271,9 @@ function render() {
         <p>Husk at registrere alle dine afholdte workshops hos Apple, også når du har nået de ${GOAL}. Du skal afholde mindst ${GOAL} workshops om året for at bevare din status som Apple Professional Learning Specialist.${thisYear >= GOAL ? '' : ` Du mangler ${GOAL - thisYear} i ${year}.`}</p>
         <p>Hvis du ikke kan finde dit personlige link til spørgeskemaet ”Engagement Checkout Survey”, kan du også benytte dette åbne link. Den eneste forskel er, at du her selv skal indtaste navn, land og e-mail.</p>
         <div class="copyrow"><a class="btn btn-primary" href="${APPLE_SURVEY}" target="_blank" rel="noopener">Åbn Engagement Checkout Survey</a><button type="button" class="btn" id="copy-survey">Kopiér link</button></div>
+        ${data.held.length ? `<h3 class="k-apple-sub">Svarene til skemaet</h3>
+        <p class="small">Tryk <b>Til Apple</b> ved et afholdt kursus nedenfor for at se svarene i samme rækkefølge som Apples skema og kopiere dem. Du kan også hente alle dine afholdte kurser som regneark eller PDF. Felter, som kun du kender, står som "Udfyld selv".</p>
+        <div class="copyrow"><a class="btn" href="/k/${encodeURIComponent(token)}/apple?format=xlsx">Hent Excel</a><button type="button" class="btn" id="apple-print">Udskriv / PDF</button></div>` : ''}
         ${years.length > 1 ? `<p class="muted small">Apple-workshops pr. år: ${years.map(([y, n]) => `${y}: ${n}`).join(' · ')}</p>` : ''}
       </section>
 
@@ -249,10 +286,22 @@ function render() {
         </dl>${table(data.planned, true)}</section>
       <section class="card card-flush"><div class="card-head card-head-pad"><h2>Afholdte kurser</h2><span class="muted small">Nyeste først</span></div>${table(data.held, false)}</section>
     </main>
-    <dialog id="notes-dialog" class="dialog"></dialog>`;
+    <dialog id="notes-dialog" class="dialog"></dialog>
+    <dialog id="apple-dialog" class="dialog dialog-wide"></dialog>
+    <section id="apple-print-list" class="apple-print-list" aria-hidden="true">
+      <h1>Til Apple · ${esc(data.name)}</h1>
+      ${data.held.map((a) => `<section class="card apple-course"><h2>${esc(fmtDate(a.date))} · ${esc(a.title)}</h2>
+        <p class="muted small">${esc(a.school || '')}${a.municipality ? ` · ${esc(a.municipality)}` : ''}</p>${appleFields(a)}</section>`).join('')}
+    </section>`;
 
   bindSignup();
   bindNotes();
+  document.querySelectorAll('[data-apple]').forEach((b) => { b.onclick = () => openApple(b.dataset.apple); });
+  document.getElementById('apple-print')?.addEventListener('click', () => {
+    document.body.classList.add('print-apple');
+    window.print();
+  });
+  window.onafterprint = () => document.body.classList.remove('print-apple');
   if (data.messages?.some((m) => m.unread)) {
     fetch(`/k/${encodeURIComponent(token)}/messages/read`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).catch(() => {});
   }

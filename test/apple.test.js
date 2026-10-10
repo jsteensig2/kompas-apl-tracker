@@ -85,3 +85,23 @@ test('Excel export has one row per course with the columns in the form order', a
   const csv = await (await call('admin', '/api/apple/export?format=csv')).text();
   assert.ok(csv.replace(/^﻿/, '').startsWith('Område;Navn på specialist'));
 });
+
+test('a consultant gets the Apple answers for their own held courses on their page', async () => {
+  const opts = await json('admin', '/api/options');
+  const sr = opts.consultants.find((c) => c.name === 'Søren Rasmussen');
+  const { pagePath } = await json('admin', `/api/admin/consultants/${sr.id}/feed`);
+  const data = await (await fetch(`${base}${pagePath}/data`)).json();
+  assert.ok(data.held.length > 0);
+  assert.ok(data.held.every((a) => a.apple.length === 19));
+  assert.ok(data.held.every((a) => a.apple[1][2] === 'Søren Rasmussen'));
+  const r = await fetch(`${base}${pagePath}/apple?format=xlsx`);
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get('content-disposition'), /apple-registrering-soeren-rasmussen-/);
+  const wb = XLSX.read(new Uint8Array(await r.arrayBuffer()));
+  const table = XLSX.utils.sheet_to_json(wb.Sheets['Til Apple'], { header: 1, defval: '' });
+  assert.equal(table.length - 1, data.held.length);
+  assert.ok(table.slice(1).every((row) => row[1] === 'Søren Rasmussen'));
+  assert.equal((await fetch(`${base}/k/${'0'.repeat(48)}/apple`)).status, 404);
+  // The admin export filtered on a name with ø still downloads (ASCII file name).
+  assert.equal((await call('admin', `/api/apple/export?consultant=${sr.id}`)).status, 200);
+});

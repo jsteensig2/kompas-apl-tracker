@@ -130,6 +130,8 @@ Fungerer som en Doodle. Foreløbige kurser fra i dag og frem, som ikke har nogen
 
 Fanen **Til Apple** (kun Kompas) viser afholdte kurser med de oplysninger, Apples APL Engagement Checkout beder specialisten om, i skemaets egen rækkefølge (side 1-4). Værdierne kopieres med ét tryk, og listen kan hentes som Excel/CSV (én række pr. kursus, kolonner i skemaets rækkefølge, datoer som dd/mm/åååå) eller udskrives som PDF. Filtre: år, konsulent, reseller og Ikke sendt / Sendt til Apple. Konsulentens e-mail skrives under Administration › Konsulenter og skolens postnummer under Administration › Skoler. Felter, som kun konsulenten kender (niveau, implementeringsstadie, Experiences Catalog, sessionskontekst), står som "Udfyld selv". Foreløbige og kommende kurser er aldrig med.
 
+På konsulentsiden (`/k/<token>`) har hvert afholdt kursus en knap **Til Apple**, der viser de samme svar til kopiering, og boksen "Registrering hos Apple" kan hente konsulentens egne afholdte kurser som Excel (`/k/<token>/apple`) eller udskrive dem som PDF.
+
 ## Senere udvidelser (ikke bygget)
 
 Apple compliance-mål (fx 34 / 40 workshops) er bevidst ikke implementeret. Dashboardets tal
