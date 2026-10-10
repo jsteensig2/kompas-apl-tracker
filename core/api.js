@@ -567,7 +567,7 @@ export function createApi(db, { XLSX } = {}) {
     // File names must stay ASCII (HTTP header): Søren -> soeren.
     const slug = who.toLowerCase().replace(/æ/g, 'ae').replace(/ø/g, 'oe').replace(/å/g, 'aa').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     const base = `apple-registrering-${slug || 'alle'}-${todayIso()}`;
-    const headings = [...APPLE_HEADINGS, 'Kursus (titel)', 'Reseller', 'Sendt til Apple'];
+    const headings = [...APPLE_HEADINGS, 'Kursus (titel)', 'Reseller', 'Indberettet til Apple'];
     const line = (a) => [...a.fields.map(([, , v]) => v), a.title, a.reseller, a.apple_reported_at ? dmy(a.apple_reported_at.slice(0, 10)) : ''];
     if (format === 'csv') {
       const cell = (v) => { const t = String(v ?? ''); return /[";\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
@@ -586,7 +586,7 @@ export function createApi(db, { XLSX } = {}) {
     return { filename: `${base}.xlsx`, contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', data: new Uint8Array(data) };
   }
 
-  // Kompas ticks a course off once it is registered with Apple, so it drops out of "Ikke sendt".
+  // Kompas ticks a course off once it is registered with Apple, so it drops out of "Ikke indberettet".
   function setAppleReported(user, id, body) {
     requireAdmin(user);
     getActivity(user, id);
@@ -832,7 +832,7 @@ export function createApi(db, { XLSX } = {}) {
       notes: notesFor(a.id, { consultantId: c.id }),
     }));
     const apple = new Map(appleRows({ consultant: c.id }).map((a) => [a.id, a]));
-    const held = rows.filter((a) => a.status === 'held').map((a) => ({ ...a, apple: apple.get(a.id)?.fields || [], appleForm: apple.get(a.id)?.formLink || null }))
+    const held = rows.filter((a) => a.status === 'held').map((a) => ({ ...a, apple: apple.get(a.id)?.fields || [], appleForm: apple.get(a.id)?.formLink || null, apple_reported_at: apple.get(a.id)?.apple_reported_at || null }))
       .sort((x, y) => y.date.localeCompare(x.date) || (y.start_time || '').localeCompare(x.start_time || ''));
     const planned = rows.filter((a) => a.status === 'planned')
       .sort((x, y) => x.date.localeCompare(y.date) || (x.start_time || '').localeCompare(y.start_time || ''));
@@ -1068,6 +1068,15 @@ export function createApi(db, { XLSX } = {}) {
     return notesFor(activityId, { consultantId: c.id });
   }
 
+  // The consultant ticks a held course as reported to Apple (the same mark as Til Apple › Indberettet til Apple).
+  function setConsultantAppleReported(token, activityId, body) {
+    const c = consultantByToken(token);
+    const a = db.get(`SELECT id FROM activities a WHERE id = ? AND consultant_id = ? AND ${HELD_SQL}`, [activityId, c.id, todayIso()]);
+    if (!a) throw new HttpError(404, 'Kurset findes ikke blandt dine afholdte kurser.');
+    db.run('UPDATE activities SET apple_reported_at = ? WHERE id = ?', [truthy(body?.reported) ? new Date().toISOString() : null, activityId]);
+    return { id: activityId, apple_reported_at: db.get('SELECT apple_reported_at FROM activities WHERE id = ?', [activityId]).apple_reported_at };
+  }
+
   function deleteConsultantNote(token, noteId) {
     const c = consultantByToken(token);
     const n = db.get('SELECT activity_id FROM course_notes WHERE id = ? AND consultant_id = ?', [noteId, c.id]);
@@ -1188,5 +1197,5 @@ export function createApi(db, { XLSX } = {}) {
     return { found, missing, remaining: Math.max(todo.length - limit, 0), next: done.at(-1)?.id || 0 };
   }
 
-  return { handle, feed, findPostalCodes, consultantOverview, consultantAppleExport, setConsultantAppleEmail, setSignup, markMessagesRead, consultantNotes, deleteConsultantNote, calendarUrlFor: (user) => db.get('SELECT calendar_url FROM users WHERE id = ?', [user.id])?.calendar_url || '' };
+  return { handle, feed, findPostalCodes, consultantOverview, consultantAppleExport, setConsultantAppleEmail, setConsultantAppleReported, setSignup, markMessagesRead, consultantNotes, deleteConsultantNote, calendarUrlFor: (user) => db.get('SELECT calendar_url FROM users WHERE id = ?', [user.id])?.calendar_url || '' };
 }

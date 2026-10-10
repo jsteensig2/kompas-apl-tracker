@@ -182,3 +182,22 @@ test('the OpenStreetMap answer prefers the school and keeps only a 4-digit code'
   assert.equal(await nominatimPostal('X', '', fake([])), null);
   assert.equal(await nominatimPostal('X', '', fake([{ address: { postcode: 'DK-28' } }])), null);
 });
+
+test('a consultant marks their own held course as reported to Apple, and Kompas sees it', async () => {
+  const opts = await json('admin', '/api/options');
+  const sr = opts.consultants.find((c) => c.name === 'Søren Rasmussen');
+  const { pagePath } = await json('admin', `/api/admin/consultants/${sr.id}/feed`);
+  const [course] = (await (await fetch(`${base}${pagePath}/data`)).json()).held;
+  const put = (id, reported) => fetch(`${base}${pagePath}/courses/${id}/apple`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reported }) });
+  const r = await put(course.id, true);
+  assert.equal(r.status, 200);
+  assert.ok((await r.json()).apple_reported_at);
+  assert.ok((await (await fetch(`${base}${pagePath}/data`)).json()).held.find((a) => a.id === course.id).apple_reported_at);
+  assert.ok((await json('admin', '/api/apple?sent=yes')).some((a) => a.id === course.id));
+  await put(course.id, false);
+  assert.ok((await json('admin', '/api/apple?sent=no')).some((a) => a.id === course.id));
+  const other = (await json('admin', '/api/activities?status=held')).find((a) => a.consultant_id && a.consultant_id !== sr.id);
+  assert.equal((await put(other.id, true)).status, 404);
+  const planned = (await json('admin', '/api/activities?status=planned')).find((a) => a.consultant_id === sr.id);
+  if (planned) assert.equal((await put(planned.id, true)).status, 404);
+});

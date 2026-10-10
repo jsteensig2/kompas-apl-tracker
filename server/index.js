@@ -111,6 +111,7 @@ export function createServer({ dbFile = process.env.DB_FILE || fileURLToPath(new
     }
   };
   app.put('/k/:token/apple-email', kRoute((req) => api.setConsultantAppleEmail(req.params.token, req.body || {})));
+  app.put('/k/:token/courses/:id/apple', kRoute((req) => api.setConsultantAppleReported(req.params.token, Number(req.params.id), req.body || {})));
   app.post('/k/:token/courses/:id/notes', kRoute((req) => api.consultantNotes(req.params.token, Number(req.params.id), req.body || {})));
   app.delete('/k/:token/notes/:id', kRoute((req) => api.deleteConsultantNote(req.params.token, Number(req.params.id))));
 
