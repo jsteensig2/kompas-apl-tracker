@@ -4,7 +4,7 @@
 // headers in the file. This module maps the headers, validates every row against the reference
 // lists and either returns a preview (commit = false) or inserts the valid rows (commit = true).
 // The server always validates again on commit; the preview is only for the user.
-import { descriptionForTitle } from './library.js';
+import { descriptionForTitle, uniformTitle } from './library.js';
 
 // Municipalities in Greenland (or a school name such as "Flere skoler – Kujalleq").
 const GL_HINT = /avannaata|kujalleq|qeqertalik|qeqqata|sermersooq|grønland|kalaallit/i;
@@ -325,6 +325,10 @@ export function runImport({ db, today, user }, body) {
       warnings.push(`Ingen titel, sat til "${title}"`);
     }
     if (raw?._group) title = `${title} – ${raw._group}`;
+    // Uniform names (Jakob, 2026-10-12): "Modul 1 (pædagoger)" and other known spellings get the standard name.
+    const municipalityName = municipalityId ? db.get('SELECT name FROM municipalities WHERE id = ?', [municipalityId])?.name : '';
+    const uniform = uniformTitle(db, title, { startTime, municipality: municipalityName }).title;
+    if (uniform !== title) { warnings.push(`Titlen "${title}" ensrettet til "${uniform}"`); title = uniform; }
 
     const pending = PENDING_HINT.test(text('status'));
     const status = (date && date > today) || pending ? 'planned' : 'held';

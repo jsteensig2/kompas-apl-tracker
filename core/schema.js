@@ -1,5 +1,6 @@
 // Database schema (SQLite). Shared by the Node server and the browser preview.
 // All choice lists are reference tables so Kompas can manage them without code changes.
+import { isHtk, moduleCourse } from './course-names.js';
 
 export const SCHEMA = `
 PRAGMA foreign_keys = ON;
@@ -197,9 +198,12 @@ export function migrate(db) {
   if (!cols('activities').includes('course_description_id')) {
     db.exec('ALTER TABLE activities ADD COLUMN course_description_id INTEGER REFERENCES course_descriptions(id) ON DELETE SET NULL');
   }
+  // Uniform course names (Jakob, 2026-10-12): a description says which module it is.
+  if (!cols('course_descriptions').includes('module')) db.exec("ALTER TABLE course_descriptions ADD COLUMN module TEXT NOT NULL DEFAULT ''");
   db.exec('CREATE TABLE IF NOT EXISTS app_migrations (name TEXT PRIMARY KEY, ran_at TEXT NOT NULL DEFAULT (datetime(\'now\')))');
   once(db, 'apl-types-2026-10-04', () => resetAplTypes(db));
   once(db, 'htk-times-2026-10-06', () => setHtkTimes(db));
+  once(db, 'htk-course-names-2026-10-12', () => uniformHtkNames(db));
   allowViewerRole(db);
 }
 
@@ -242,6 +246,59 @@ function setHtkTimes(db) {
   const teachers = set('%lærer%', '14:00', '16:30');
   const pedagogues = set('%pædagog%', '09:00', '11:30');
   if (teachers || pedagogues) console.log(`Tidspunkter sat på Høje-Taastrup-kurser: ${teachers} for lærere, ${pedagogues} for pædagoger.`);
+  return true;
+}
+
+// Jakob (2026-10-12): Høje-Taastrup module courses get one name each, "Modul N – Lærere" or
+// "Modul N – Pædagoger", and the course description of that name (created when missing). A title
+// without the target group gets it from the time (09:00 pædagoger, 14:00 lærere). Old titles that
+// named the target group are kept as the description's other titles, so imports find it. Courses
+// that cannot be placed keep their title; they show up in Bibliotek under titles without a description.
+function uniformHtkNames(db) {
+  if (!db.get('SELECT COUNT(*) AS n FROM activities').n) return false; // not seeded yet
+  const rows = db.all(`SELECT a.id, a.title, a.start_time, a.course_description_id, m.name AS municipality
+    FROM activities a LEFT JOIN schools s ON s.id = a.school_id
+    JOIN municipalities m ON m.id = COALESCE(a.municipality_id, s.municipality_id)`).filter((r) => isHtk(r.municipality));
+  const fysisk = db.get("SELECT id FROM apl_types WHERE name = 'Workshop Fysisk'")?.id ?? null;
+  const descriptions = new Map();
+  const descriptionFor = (c) => {
+    if (descriptions.has(c.title)) return descriptions.get(c.title);
+    // A description Kompas already made under an old spelling ("Modul 1 (pædagoger)") gets the new name.
+    let d = db.get('SELECT id, title, audience, module, match_titles FROM course_descriptions WHERE title = ? COLLATE NOCASE', [c.title])
+      || db.all('SELECT id, title, audience, module, match_titles FROM course_descriptions ORDER BY id').find((x) => moduleCourse(x.title)?.title === c.title);
+    if (d && d.title.toLowerCase() !== c.title.toLowerCase()) {
+      d.match_titles = [d.match_titles, d.title].filter(Boolean).join('\n');
+      db.run(`UPDATE course_descriptions SET title = ?, updated_at = datetime('now') WHERE id = ?`, [c.title, d.id]);
+      db.run(`UPDATE activities SET title = ?, updated_at = datetime('now') WHERE course_description_id = ?`, [c.title, d.id]);
+      d.title = c.title;
+    }
+    if (!d) {
+      const id = Number(db.run('INSERT INTO course_descriptions (title, audience, module, apl_type_id) VALUES (?, ?, ?, ?)',
+        [c.title, c.audience, c.module, fysisk]).lastInsertRowid);
+      d = { id, title: c.title, match_titles: '' };
+    } else if (!d.audience || !d.module) {
+      db.run('UPDATE course_descriptions SET audience = ?, module = ? WHERE id = ?', [d.audience || c.audience, d.module || c.module, d.id]);
+    }
+    d.aliases = new Set(String(d.match_titles || '').split('\n').map((t) => t.trim()).filter(Boolean));
+    descriptions.set(c.title, d);
+    return d;
+  };
+  let renamed = 0;
+  for (const r of rows) {
+    const c = moduleCourse(r.title, { startTime: r.start_time, municipality: r.municipality });
+    if (!c) continue;
+    const d = descriptionFor(c);
+    if (!c.byTime && r.title.trim().toLowerCase() !== d.title.toLowerCase()) d.aliases.add(r.title.trim());
+    if (r.title !== d.title) renamed += 1;
+    db.run(`UPDATE activities SET title = ?, course_description_id = COALESCE(course_description_id, ?), updated_at = datetime('now') WHERE id = ?`,
+      [d.title, d.id, r.id]);
+  }
+  for (const d of descriptions.values()) {
+    const lower = new Set();
+    const list = [...d.aliases].filter((t) => !lower.has(t.toLowerCase()) && lower.add(t.toLowerCase()));
+    db.run('UPDATE course_descriptions SET match_titles = ? WHERE id = ?', [list.join('\n'), d.id]);
+  }
+  if (renamed) console.log(`Ensartede kursusnavne i Høje-Taastrup: ${renamed} kurser omdøbt.`);
   return true;
 }
 
