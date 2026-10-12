@@ -35,7 +35,9 @@ export const transport = {
   async download(path) {
     const res = await fetch(path, { credentials: 'same-origin', headers: viewAsHeader() });
     if (!res.ok) await parse(res);
-    const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') || '')?.[1] || 'export';
+    const cd = res.headers.get('content-disposition') || '';
+    const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(cd)?.[1];
+    const name = (utf8 && decodeURIComponent(utf8)) || /filename="([^"]+)"/.exec(cd)?.[1] || 'export';
     const url = URL.createObjectURL(await res.blob());
     const a = Object.assign(document.createElement('a'), { href: url, download: name });
     document.body.append(a);

@@ -100,13 +100,60 @@ const askIfSent = () => {
 document.addEventListener('visibilitychange', askIfSent);
 window.addEventListener('focus', askIfSent);
 
+// Bibliotek: the materials of a course, and the library of course descriptions.
+const fileHref = (it) => `/k/${encodeURIComponent(token)}/library/${it.id}/file`;
+const fmtSize = (n) => (n >= 1048576 ? `${(n / 1048576).toLocaleString('da-DK', { maximumFractionDigits: 1 })} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+// A link to a guide in Kompas Guidebygger (Kopiér link in the guide) is shown as a guide.
+const GUIDEBUILDER = /^https:\/\/claude\.ai\/(code\/)?artifact\/LHFrjyg4jzezL83ae6Ffpn/i;
+const isGuideLink = (url) => GUIDEBUILDER.test(String(url || ''));
+function kindBadge(it) {
+  if (it.kind === 'link') return isGuideLink(it.url) ? ['GUIDE', 'guide'] : ['LINK', 'link'];
+  if (it.kind === 'guide') return ['GUIDE', 'guide'];
+  const ext = (/\.([a-z0-9]{2,5})$/i.exec(it.filename || '')?.[1] || '').toLowerCase();
+  if (ext === 'pdf') return ['PDF', 'pdf'];
+  if (['key', 'ppt', 'pptx'].includes(ext)) return [ext === 'key' ? 'KEY' : 'PPT', 'slides'];
+  return [(ext || 'FIL').toUpperCase().slice(0, 4), 'file'];
+}
+const guides = new Map();
+function matRow(it) {
+  const [badge, cls] = kindBadge(it);
+  if (it.kind === 'guide') guides.set(String(it.id), it);
+  const name = it.kind === 'guide' ? `<button type="button" class="mat-name linkbtn" data-guide="${it.id}">${esc(it.name)}</button>`
+    : `<a class="mat-name" href="${esc(it.kind === 'link' ? it.url : fileHref(it))}" target="_blank" rel="noopener">${esc(it.name)}</a>`;
+  const sub = it.kind === 'file' ? fmtSize(it.size) : it.kind === 'link' ? (isGuideLink(it.url) ? 'Guide i Kompas Guidebygger' : esc(it.url.replace(/^https?:\/\//, '').replace(/\/$/, ''))) : 'Guide';
+  return `<li class="mat-row"><span class="mat-kind mat-${cls}" aria-hidden="true">${badge}</span><div class="mat-main">${name}<div class="muted small">${sub}</div></div></li>`;
+}
+const matList = (items) => `<ul class="mat-list">${items.map(matRow).join('')}</ul>`;
+const courseMats = (a) => (a.materials?.length ? `<details class="k-mats"><summary>Materialer (${a.materials.length})</summary>${matList(a.materials)}</details>` : '');
+
+function openGuide(id) {
+  const it = guides.get(String(id));
+  const dlg = document.getElementById('guide-dialog');
+  if (!it || !dlg) return;
+  dlg.innerHTML = `<div class="dlg-head"><h2>${esc(it.name)}</h2><button type="button" class="linkbtn" data-close>Luk</button></div><div class="guide-body">${richText(it.body)}</div>`;
+  dlg.querySelector('[data-close]').onclick = () => dlg.close();
+  dlg.onclick = (e) => { if (e.target === dlg) dlg.close(); };
+  dlg.showModal();
+}
+
+function librarySection() {
+  const lib = data.library;
+  if (!lib || (!lib.descriptions.length && !lib.general.length)) return '';
+  const block = (label, text) => (text ? `<div><h3>${label}</h3><p>${esc(text)}</p></div>` : '');
+  return `<section class="card card-flush" id="library"><div class="card-head card-head-pad"><h2>Bibliotek</h2><span class="muted small">Kursusbeskrivelser, materialer og guides</span></div>
+    ${lib.descriptions.map((d) => `<details class="k-lib-desc"><summary><b>${esc(d.title)}</b><span class="muted small">${[d.audience, d.length_text, `${d.items.length} ${d.items.length === 1 ? 'materiale' : 'materialer'}`].filter(Boolean).map(esc).join(' · ')}</span></summary>
+      <div class="k-lib-body">${d.summary ? `<p>${esc(d.summary)}</p>` : ''}${block('Læringsmål', d.goals)}${block('Program', d.program)}${d.items.length ? matList(d.items) : ''}</div></details>`).join('')}
+    ${lib.general.length ? `<div class="k-lib-desc"><b>Guides og fælles materialer</b>${matList(lib.general)}</div>` : ''}
+  </section>`;
+}
+
 function table(rows, planned) {
   if (!rows.length) return `<p class="empty">${planned ? 'Ingen planlagte kurser lige nu.' : 'Ingen afholdte kurser endnu.'}</p>`;
   return `<div class="table-wrap"><table class="table">
     <thead><tr><th>Dato</th><th>Kursus</th><th>Skole</th><th>Varighed</th>${planned ? '' : '<th class="num">Deltagere</th><th class="num">Apple-workshops</th><th><span class="sr">Til Apple</span></th>'}</tr></thead>
     <tbody>${rows.map((a) => `<tr class="${rowClass(a, planned)}">
       <td class="nowrap">${esc(fmtDate(a.date))}${timeText(a) ? `<div class="muted small">${timeText(a)}</div>` : ''}</td>
-      <td>${a.reschedule ? STAR : ''}<b>${esc(a.title)}</b>${a.pending ? ` ${PENDING}` : ''}${noteBtn(a)}<div class="muted small">${esc(a.reseller)}</div></td>
+      <td>${a.reschedule ? STAR : ''}<b>${esc(a.title)}</b>${a.pending ? ` ${PENDING}` : ''}${noteBtn(a)}<div class="muted small">${esc(a.reseller)}</div>${courseMats(a)}</td>
       <td>${esc(a.school || '–')}${a.municipality ? `<div class="muted small">${esc(a.municipality)}</div>` : ''}</td>
       <td>${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}</td>
       ${planned ? '' : `<td class="num">${a.participants}</td><td class="num">${a.sessions}</td><td>${appleBtn(a)}</td>`}
@@ -119,7 +166,7 @@ function table(rows, planned) {
         <dl class="act-meta">
           <div><dt>Varighed</dt><dd>${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}</dd></div>
           ${planned ? '' : `<div><dt>Apple-workshops</dt><dd>${a.sessions}</dd></div><div><dt>Deltagere</dt><dd>${a.participants}</dd></div>`}
-        </dl>${planned ? '' : `<div class="k-card-apple">${appleBtn(a)}</div>`}
+        </dl>${courseMats(a)}${planned ? '' : `<div class="k-card-apple">${appleBtn(a)}</div>`}
       </li>`).join('')}</ul>`;
 }
 
@@ -322,12 +369,16 @@ function render() {
           <div><dt>${PENDING}</dt><dd>Datoen er aftalt, men skolen eller kommunen har endnu ikke godkendt kurset endeligt. Hold datoen fri, men regn ikke med kurset, før det skifter til Planlagt. I din kalender står der "(Foreløbig)" foran titlen.</dd></div>
         </dl>${table(data.planned, true)}</section>
       <section class="card card-flush"><div class="card-head card-head-pad"><h2>Afholdte kurser</h2><span class="muted small">Nyeste først</span></div>${table(data.held, false)}</section>
+
+      ${librarySection()}
     </main>
+    <dialog id="guide-dialog" class="dialog dialog-wide"></dialog>
     <dialog id="notes-dialog" class="dialog"></dialog>
     <dialog id="apple-dialog" class="dialog dialog-wide"></dialog>`;
 
   bindSignup();
   bindNotes();
+  document.querySelectorAll('[data-guide]').forEach((b) => { b.onclick = () => openGuide(b.dataset.guide); });
   document.querySelectorAll('[data-apple]').forEach((b) => { b.onclick = () => openApple(b.dataset.apple); });
   document.querySelectorAll('[data-apple-go]').forEach((b) => { b.addEventListener('click', () => { awaiting = Number(b.dataset.appleGo); }); });
   document.getElementById('apple-email-form').onsubmit = async (e) => {

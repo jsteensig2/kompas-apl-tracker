@@ -64,6 +64,8 @@ const state = {
   adminTab: 'consultants',
   appleFilters: { year: String(new Date().getFullYear()), consultant: '', reseller: '', sent: 'no' },
   demoUsers: [],
+  libraryId: null, // the course description open in Bibliotek ('new' while creating one)
+  libraryFilter: { q: '', kind: '' },
 };
 const isAdmin = () => state.me?.role === 'admin';
 // Admins and read-only viewers (e.g. Apple) see all resellers; only admins can change anything.
@@ -84,10 +86,11 @@ function toast(msg, kind = 'ok') {
 // --- Navigation ----------------------------------------------------------------------------
 // Beskeder is paused (Jakob, 2026-10-06): the tab is hidden, the messages are kept. Set to true to resume.
 const SHOW_BESKEDER = false;
-const VIEWS = ['dashboard', 'activities', 'register', 'import', 'calendar', 'signup', 'apple', 'messages', 'admin', 'password'];
+const VIEWS = ['dashboard', 'activities', 'register', 'import', 'calendar', 'signup', 'apple', 'library', 'messages', 'admin', 'password'];
 
-function go(view, { editing = null, prefill = null, copyOf = null } = {}) {
-  if (!isAdmin() && ['register', 'admin', 'import', 'signup', 'apple', 'messages'].includes(view)) view = 'dashboard';
+function go(view, { editing = null, prefill = null, copyOf = null, libraryId = null } = {}) {
+  if (!isAdmin() && ['register', 'admin', 'import', 'signup', 'apple', 'library', 'messages'].includes(view)) view = 'dashboard';
+  state.libraryId = libraryId;
   if (view === 'messages' && !SHOW_BESKEDER) view = 'dashboard';
   state.view = view;
   state.editing = editing;
@@ -108,7 +111,7 @@ function renderShell() {
   const me = state.me;
   const nav = [['dashboard', 'Overblik'], ['activities', 'Aktiviteter']];
   nav.push(['calendar', 'Kalender']);
-  if (isAdmin()) nav.push(['signup', 'Tilmelding'], ['apple', 'Til Apple'], ...(SHOW_BESKEDER ? [['messages', 'Beskeder']] : []), ['admin', 'Administration']);
+  if (isAdmin()) nav.push(['signup', 'Tilmelding'], ['apple', 'Til Apple'], ['library', 'Bibliotek'], ...(SHOW_BESKEDER ? [['messages', 'Beskeder']] : []), ['admin', 'Administration']);
   $('#app').innerHTML = `
     <header class="topbar">
       <div class="topbar-inner">
@@ -694,6 +697,18 @@ function renderRegister(root) {
     ...(pre ? Object.fromEntries(Object.entries(pre).filter(([, x]) => x !== '' && x != null)) : {}),
   };
   const quickTitles = o.titles.slice(0, 8);
+  // Kursusbeskrivelse: active ones, plus the one the course already has. A new course gets the one its title matches.
+  const descs = o.descriptions || [];
+  const descFor = (title) => {
+    const t = String(title || '').trim().replace(/\s+/g, ' ').toLowerCase();
+    if (!t) return null;
+    const active = descs.filter((d) => d.active);
+    const same = (x) => x.trim().replace(/\s+/g, ' ').toLowerCase() === t;
+    return active.find((d) => same(d.title)) || active.find((d) => String(d.match_titles || '').split('\n').some((x) => x.trim() && same(x))) || null;
+  };
+  const currentDesc = a ? a.course_description_id : copy ? copy.course_description_id : null;
+  const descOptions = descs.filter((d) => d.active || d.id === currentDesc).map((d) => ({ id: d.id, name: d.active ? d.title : `${d.title} (udgået)` }));
+  const descValue = a || copy ? currentDesc || '' : descFor(v.title)?.id || '';
   root.innerHTML = `
     <div class="pagehead">
       <div><p class="eyebrow">${a ? 'Redigér aktivitet' : copy ? 'Kopi af kursus' : 'Ny aktivitet'}</p><h1>${a ? esc(a.title) : copy ? `Dublér: ${esc(copy.title)}` : 'Registrér aktivitet'}</h1></div>
@@ -726,6 +741,8 @@ function renderRegister(root) {
           <datalist id="titles">${o.titles.map((t) => `<option value="${esc(t)}">`).join('')}</datalist>
           <div class="chips" aria-label="Mest brugte emner">${quickTitles.map((t) => `<button type="button" class="chip" data-title="${esc(t)}">${esc(t)}</button>`).join('')}</div>
         </div>
+        ${descOptions.length ? `<label class="field"><span>Kursusbeskrivelse <small class="muted" id="desc-hint"></small></span>
+          <select id="a-desc" name="course_description_id">${selectOptions(descOptions, descValue, 'Ingen')}</select></label>` : ''}
         <div class="field combo">
           <label for="a-school">Skole</label>
           <input id="a-school" type="text" role="combobox" aria-expanded="false" aria-controls="school-list" aria-autocomplete="list"
@@ -773,7 +790,7 @@ function renderRegister(root) {
             <button type="button" class="btn btn-sm" id="del-no">Annullér</button></span>` : ''}
       </div>
     </form>
-    ${a ? '<section class="card notes-card" id="notes" aria-live="polite"></section>' : ''}`;
+    ${a ? '<section class="card materials-card" id="materials"></section><section class="card notes-card" id="notes" aria-live="polite"></section>' : ''}`;
 
   const form = $('#act-form');
   ['#a-start', '#a-end'].forEach((sel) => $(sel).addEventListener('blur', (e) => { e.target.value = normClock(e.target.value); }));
@@ -825,7 +842,19 @@ function renderRegister(root) {
   };
   $('#a-pending').addEventListener('change', showNeeded);
   planHint();
-  $$('[data-title]').forEach((b) => { b.onclick = () => { $('#a-title').value = b.dataset.title; $('#a-school').focus(); }; });
+  // The description follows the title until the user picks one themselves.
+  let descTouched = Boolean(a || copy);
+  const suggestDesc = () => {
+    const sel = $('#a-desc');
+    if (!sel || descTouched) return;
+    const d = descFor($('#a-title').value);
+    sel.value = d ? d.id : '';
+    $('#desc-hint').textContent = d ? '· foreslået ud fra titlen' : '';
+  };
+  $('#a-desc')?.addEventListener('change', () => { descTouched = true; $('#desc-hint').textContent = ''; });
+  $('#a-title').addEventListener('input', suggestDesc);
+  suggestDesc();
+  $$('[data-title]').forEach((b) => { b.onclick = () => { $('#a-title').value = b.dataset.title; suggestDesc(); $('#a-school').focus(); }; });
 
   // Paid by follows the reseller until the user picks something else.
   let paidTouched = Boolean(a);
@@ -947,6 +976,7 @@ function renderRegister(root) {
   };
 
   if (a) {
+    renderCourseMaterials($('#materials'), a.id);
     renderNotes($('#notes'), a.id);
     $('#dup').onclick = () => go('register', { copyOf: a });
     $('#del').onclick = () => { $('#del-confirm').hidden = false; $('#del').hidden = true; };
@@ -1424,6 +1454,344 @@ async function renderMonth() {
   if ($('#mday-reg')) $('#mday-reg').onclick = () => go('register', { prefill: { date: sel } });
 }
 
+// --- Bibliotek ------------------------------------------------------------------------------
+// Course descriptions and their materials (files, links, guides). A course in the registration
+// points at its description and gets its materials; consultants see them on their own page.
+
+const VIS_LABEL = { consultants: 'Konsulenter', kompas: 'Kun Kompas' };
+const fmtSize = (n) => (n >= 1048576 ? `${(n / 1048576).toLocaleString('da-DK', { maximumFractionDigits: 1 })} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+// A short badge from the file type: PDF, KEY, PPT, DOC, BILLEDE …
+// A link to a guide in Kompas Guidebygger (Kopiér link in the guide) is shown as a guide.
+const GUIDEBUILDER = /^https:\/\/claude\.ai\/(code\/)?artifact\/LHFrjyg4jzezL83ae6Ffpn/i;
+const isGuideLink = (url) => GUIDEBUILDER.test(String(url || ''));
+function kindBadge(it) {
+  if (it.kind === 'link') return isGuideLink(it.url) ? ['GUIDE', 'guide'] : ['LINK', 'link'];
+  if (it.kind === 'guide') return ['GUIDE', 'guide'];
+  const ext = (/\.([a-z0-9]{2,5})$/i.exec(it.filename || '')?.[1] || '').toLowerCase();
+  if (ext === 'pdf') return ['PDF', 'pdf'];
+  if (['key', 'ppt', 'pptx'].includes(ext)) return [ext === 'key' ? 'KEY' : 'PPT', 'slides'];
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'heic'].includes(ext)) return ['BILLEDE', 'file'];
+  return [(ext || 'FIL').toUpperCase().slice(0, 4), 'file'];
+}
+const itemSub = (it) => [it.kind === 'file' ? fmtSize(it.size) : it.kind === 'link' ? (isGuideLink(it.url) ? 'Guide i Kompas Guidebygger' : esc(it.url.replace(/^https?:\/\//, '').replace(/\/$/, ''))) : 'Guide',
+  `opdateret ${fmtDate(it.updated_at.slice(0, 10))}`].join(' · ');
+
+// One material as a row. `actions` is extra buttons on the right.
+function itemRowHtml(it, actions = '') {
+  const [badge, cls] = kindBadge(it);
+  return `<li class="mat-row" data-item="${it.id}">
+    <span class="mat-kind mat-${cls}" aria-hidden="true">${badge}</span>
+    <div class="mat-main"><button type="button" class="mat-name linkbtn" data-open-item="${it.id}">${esc(it.name)}</button>
+      <div class="muted small">${itemSub(it)}${it.descriptions?.length ? ` · ${it.descriptions.map((d) => esc(d.title)).join(', ')}` : ''}</div></div>
+    <div class="mat-side"><span class="vis vis-${it.visibility}">${VIS_LABEL[it.visibility] || ''}</span>${actions}</div>
+  </li>`;
+}
+
+function dialogEl(id, wide = false) {
+  let dlg = $(`#${id}`);
+  if (!dlg) {
+    dlg = document.createElement('dialog');
+    dlg.id = id;
+    dlg.className = `dialog${wide ? ' dialog-wide' : ''}`;
+    document.body.append(dlg);
+    dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+  }
+  return dlg;
+}
+
+// Opens a material: a file is downloaded (PDFs open in the browser), a link opens in a new tab, a guide in a box.
+async function openItem(it) {
+  if (it.kind === 'link') { window.open(it.url, '_blank', 'noopener'); return; }
+  if (it.kind === 'guide') {
+    const dlg = dialogEl('guide-dialog', true);
+    dlg.innerHTML = `<div class="dlg-head"><h2>${esc(it.name)}</h2><button type="button" class="linkbtn" data-close>Luk</button></div>
+      <div class="guide-body">${richText(it.body)}</div>`;
+    $('[data-close]', dlg).onclick = () => dlg.close();
+    if (!dlg.open) dlg.showModal();
+    return;
+  }
+  try { await transport.download(`/api/library/items/${it.id}/file`); } catch (ex) { toast(ex.message, 'err'); }
+}
+// Plain text with line breaks; web addresses become links.
+const richText = (t) => esc(t).replace(/https?:\/\/[^\s<]+[^\s<.,;:!?)]/g, (u) => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`);
+
+const readBase64 = (file) => new Promise((resolve, reject) => {
+  const r = new FileReader();
+  r.onload = () => resolve(String(r.result).split(',')[1] || '');
+  r.onerror = () => reject(new Error('Filen kunne ikke læses.'));
+  r.readAsDataURL(file);
+});
+
+// Create or edit a material. `fixed`: { activity_id } for a course's own material, or
+// { course_description_ids } preselected when added from a description. Resolves true when saved.
+function openItemDialog(item = null, fixed = {}, descriptions = []) {
+  return new Promise((resolve) => {
+    const dlg = dialogEl('item-dialog');
+    const forCourse = Boolean(fixed.activity_id || item?.activity_id);
+    const linked = new Set((item?.descriptions || []).map((d) => d.id).concat(fixed.course_description_ids || []));
+    let kind = item?.kind || 'file';
+    let saved = false;
+    dlg.innerHTML = `<form class="item-form" novalidate>
+      <div class="dlg-head"><h2>${item ? 'Redigér materiale' : forCourse ? 'Materiale til dette kursus' : 'Nyt materiale'}</h2><button type="button" class="linkbtn" data-close>Luk</button></div>
+      ${item ? '' : `<div class="seg seg-lg" role="radiogroup" aria-label="Slags">
+        ${[['file', 'Fil'], ['link', 'Link'], ['guide', 'Guide']].map(([k, l]) => `<label><input type="radio" name="kind" value="${k}" ${k === kind ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>`}
+      <label class="field" data-for="file"><span>${item ? 'Erstat filen <small class="muted">· valgfrit</small>' : 'Fil <small class="muted">· højst 20 MB, læg større filer som et link</small>'}</span><input type="file" id="it-file"></label>
+      ${item?.kind === 'file' ? `<p class="muted small" data-for="file">Nuværende fil: ${esc(item.filename)} (${fmtSize(item.size)})</p>` : ''}
+      <label class="field" data-for="link"><span>Link</span><input type="url" id="it-url" placeholder="https://" value="${esc(item?.url || '')}">
+        <small class="hint">En guide fra Kompas Guidebygger: åbn guiden, tryk Kopiér link, og sæt linket ind her.</small></label>
+      <label class="field"><span>Navn <small class="muted" data-for="file">· tomt = filens navn</small></span><input id="it-name" maxlength="200" value="${esc(item?.name || '')}" placeholder="fx Slides til Modul 1"></label>
+      <label class="field" data-for="guide"><span>Guidens tekst <small class="muted">· links bliver klikbare</small></span><textarea id="it-body" rows="9" maxlength="50000">${esc(item?.body || '')}</textarea></label>
+      <div class="field"><span id="it-vis-label">Hvem kan se det</span>
+        <div class="seg" role="radiogroup" aria-labelledby="it-vis-label">
+          ${Object.entries(VIS_LABEL).map(([k, l]) => `<label><input type="radio" name="visibility" value="${k}" ${(item?.visibility || 'consultants') === k ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>
+        <small class="hint">Konsulenter ser materialet på deres egen side, ved deres kurser. Kun Kompas er fx en intern drejebog.</small></div>
+      ${forCourse || !descriptions.length ? '' : `<fieldset class="field desc-pick"><legend>Hører til kursusbeskrivelser <small class="muted">· ingen = fælles materiale</small></legend>
+        <div class="desc-checks">${descriptions.map((d) => `<label class="check-inline"><input type="checkbox" name="desc" value="${d.id}" ${linked.has(d.id) ? 'checked' : ''}> ${esc(d.title)}</label>`).join('')}</div></fieldset>`}
+      <p class="form-error" role="alert" hidden></p>
+      <div class="form-actions"><button type="submit" class="btn btn-primary">${item ? 'Gem' : 'Tilføj'}</button><button type="button" class="btn" data-close>Annullér</button>
+        ${item ? '<span class="spacer"></span><button type="button" class="btn btn-danger-ghost" data-del>Slet</button>' : ''}</div>
+    </form>`;
+    const form = $('form', dlg);
+    const err = $('.form-error', dlg);
+    const showKind = () => $$('[data-for]', dlg).forEach((el) => { el.hidden = el.dataset.for !== kind; });
+    $$('input[name="kind"]', dlg).forEach((r) => { r.onchange = () => { kind = r.value; showKind(); }; });
+    showKind();
+    $$('[data-close]', dlg).forEach((b) => { b.onclick = () => dlg.close(); });
+    dlg.onclose = () => resolve(saved);
+    $('[data-del]', dlg)?.addEventListener('click', async (e) => {
+      const b = e.currentTarget;
+      if (b.dataset.sure !== '1') { b.dataset.sure = '1'; b.textContent = 'Slet permanent?'; b.classList.add('btn-danger'); return; }
+      try { await api.del(`/api/library/items/${item.id}`); toast('Materialet er slettet'); saved = true; dlg.close(); } catch (ex) { toast(ex.message, 'err'); }
+    });
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const body = { kind, name: $('#it-name', dlg).value, visibility: $('input[name="visibility"]:checked', dlg).value, ...fixed };
+      if (!forCourse && descriptions.length) body.course_description_ids = $$('input[name="desc"]:checked', dlg).map((x) => Number(x.value));
+      if (kind === 'link') body.url = $('#it-url', dlg).value.trim();
+      if (kind === 'guide') body.body = $('#it-body', dlg).value;
+      const f = $('#it-file', dlg).files[0];
+      if (kind === 'file' && f) {
+        if (f.size > 20 * 1024 * 1024) { err.textContent = 'Filen er for stor. Den må højst fylde 20 MB. Læg større filer som et link.'; err.hidden = false; return; }
+        body.file = { name: f.name, type: f.type, data: await readBase64(f) };
+      }
+      const btn = $('[type=submit]', dlg);
+      btn.disabled = true;
+      btn.textContent = body.file ? 'Uploader…' : 'Gemmer…';
+      try {
+        if (item) await api.put(`/api/library/items/${item.id}`, body);
+        else await api.post('/api/library/items', body);
+        toast(item ? 'Materialet er gemt' : 'Materialet er tilføjet');
+        saved = true;
+        dlg.close();
+      } catch (ex) {
+        err.textContent = ex.message;
+        err.hidden = false;
+        btn.disabled = false;
+        btn.textContent = item ? 'Gem' : 'Tilføj';
+      }
+    };
+    if (!dlg.open) dlg.showModal();
+  });
+}
+
+const countsHtml = (c) => `<span><b>${c.held}</b> afholdt</span><span><b>${c.planned}</b> planlagt</span><span><b>${c.pending}</b> foreløbige</span>`;
+
+async function renderLibrary(root) {
+  if (state.libraryId) return renderDescription(root, state.libraryId);
+  const lib = await api.get('/api/library');
+  const f = state.libraryFilter;
+  const suggested = lib.unlinked.filter((u) => u.suggestion);
+  const unlinkedTotal = lib.unlinked.reduce((n, u) => n + u.n, 0);
+  const activeDescs = lib.descriptions.filter((d) => d.active).map((d) => ({ id: d.id, name: d.title }));
+  root.innerHTML = `
+    <div class="pagehead">
+      <div><p class="eyebrow">Kursusbeskrivelser, materialer og guides</p><h1>Bibliotek</h1>
+        <p class="muted">Kobl et kursus til en kursusbeskrivelse, så følger materialerne med. Konsulenterne ser dem på deres egen side.</p></div>
+      <div class="pagehead-actions"><button type="button" class="btn" id="lib-new-item">+ Materiale</button><button type="button" class="btn btn-primary" id="lib-new-desc">+ Ny kursusbeskrivelse</button></div>
+    </div>
+    ${lib.descriptions.length && unlinkedTotal ? `<section class="card card-flush link-card">
+      <details ${suggested.length ? 'open' : ''}><summary class="card-head card-head-pad"><h2>Kobl kurser til en kursusbeskrivelse</h2>
+        <span class="muted small">${num(unlinkedTotal)} ${unlinkedTotal === 1 ? 'kursus er' : 'kurser er'} ikke koblet${suggested.length ? ` · ${suggested.length} med forslag` : ''}</span></summary>
+        <div class="table-wrap lib-link-wrap"><table class="table"><thead><tr><th>Titel i registreringen</th><th class="num">Kurser</th><th>Kursusbeskrivelse</th><th><span class="sr">Kobl</span></th></tr></thead>
+          <tbody>${[...suggested, ...lib.unlinked.filter((u) => !u.suggestion)].map((u, i) => `<tr data-title-row="${i}">
+            <td>${esc(u.title)}</td><td class="num">${u.n}</td>
+            <td><select aria-label="Kursusbeskrivelse til ${esc(u.title)}">${selectOptions(activeDescs, u.suggestion || '', 'Vælg …')}</select></td>
+            <td><button type="button" class="btn btn-sm ${u.suggestion ? 'btn-primary' : ''}" data-link-title="${i}">Kobl ${u.n === 1 ? 'kurset' : `${u.n} kurser`}</button></td></tr>`).join('')}</tbody></table></div>
+      </details></section>` : ''}
+    <div class="lib-tools">
+      <input type="search" id="lib-q" placeholder="Søg i titler, beskrivelser og materialer" aria-label="Søg i biblioteket" value="${esc(f.q)}">
+      <div class="seg" role="radiogroup" aria-label="Vis">
+        ${[['', 'Alt'], ['file', 'Filer'], ['link', 'Links'], ['guide', 'Guides']].map(([k, l]) => `<label><input type="radio" name="lib-kind" value="${k}" ${f.kind === k ? 'checked' : ''}><span>${l}</span></label>`).join('')}
+      </div>
+    </div>
+    <section>
+      <div class="section-head"><h2>Kursusbeskrivelser</h2><span class="muted small">${lib.descriptions.filter((d) => d.active).length} aktive</span></div>
+      ${lib.descriptions.length ? `<div class="desc-grid">${lib.descriptions.map((d) => `
+        <button type="button" class="card desc-card ${d.active ? '' : 'is-inactive'}" data-desc="${d.id}" data-search="${esc(`${d.title} ${d.summary} ${d.audience}`.toLowerCase())}">
+          <span class="desc-tags">${[d.apl_type, d.audience, d.length_text].filter(Boolean).map((t) => `<span class="tag">${esc(t)}</span>`).join('')}${d.active ? '' : '<span class="tag">Udgået</span>'}</span>
+          <span class="desc-title">${esc(d.title)}</span>
+          ${d.summary ? `<span class="desc-summary muted">${esc(d.summary)}</span>` : ''}
+          <span class="desc-counts">${countsHtml(d.counts)}<span><b>${d.items}</b> ${d.items === 1 ? 'materiale' : 'materialer'}</span></span>
+        </button>`).join('')}</div>`
+        : '<div class="card empty-card"><p>Der er ingen kursusbeskrivelser endnu. Opret fx <b>Modul 1 (pædagoger)</b>, så kan kurserne med den titel kobles til den.</p></div>'}
+    </section>
+    <section class="card card-flush">
+      <div class="card-head card-head-pad"><h2>Materialer</h2><span class="muted small">${lib.items.length} i alt</span></div>
+      ${lib.items.length ? `<ul class="mat-list card-pad">${lib.items.map((it) => itemRowHtml(it, `<button type="button" class="btn btn-sm" data-edit-item="${it.id}">Redigér</button>`)).join('')}</ul>`
+        : '<p class="card-pad muted">Ingen materialer endnu. Upload fx slides, en drejebog eller skriv en guide.</p>'}
+    </section>`;
+
+  const byId = new Map(lib.items.map((it) => [String(it.id), it]));
+  const filter = () => {
+    const q = f.q.trim().toLowerCase();
+    $$('[data-desc]').forEach((el) => { el.hidden = Boolean(q) && !el.dataset.search.includes(q); });
+    $$('.mat-row').forEach((el) => {
+      const it = byId.get(el.dataset.item);
+      const hay = `${it.name} ${it.filename} ${it.url} ${it.body} ${it.descriptions.map((d) => d.title).join(' ')}`.toLowerCase();
+      el.hidden = (Boolean(q) && !hay.includes(q)) || (Boolean(f.kind) && it.kind !== f.kind);
+    });
+  };
+  $('#lib-q').oninput = (e) => { f.q = e.target.value; filter(); };
+  $$('input[name="lib-kind"]').forEach((r) => { r.onchange = () => { f.kind = r.value; filter(); }; });
+  filter();
+  const reload = () => renderLibrary(root);
+  $('#lib-new-desc').onclick = () => { state.libraryId = 'new'; render(); };
+  $('#lib-new-item').onclick = async () => { if (await openItemDialog(null, {}, lib.descriptions)) reload(); };
+  $$('[data-desc]').forEach((b) => { b.onclick = () => { state.libraryId = Number(b.dataset.desc); render(); window.scrollTo(0, 0); }; });
+  $$('[data-open-item]').forEach((b) => { b.onclick = () => openItem(byId.get(b.dataset.openItem)); });
+  $$('[data-edit-item]').forEach((b) => { b.onclick = async () => { if (await openItemDialog(byId.get(b.dataset.editItem), {}, lib.descriptions)) reload(); }; });
+  const rows = [...suggested, ...lib.unlinked.filter((u) => !u.suggestion)];
+  $$('[data-link-title]').forEach((b) => {
+    b.onclick = async () => {
+      const u = rows[Number(b.dataset.linkTitle)];
+      const id = b.closest('tr').querySelector('select').value;
+      if (!id) { toast('Vælg først en kursusbeskrivelse', 'err'); return; }
+      b.disabled = true;
+      try {
+        const r = await api.post('/api/library/link-title', { title: u.title, course_description_id: Number(id) });
+        toast(`${r.linked} ${r.linked === 1 ? 'kursus er' : 'kurser er'} koblet`);
+        state.options = await api.get('/api/options');
+        reload();
+      } catch (ex) { toast(ex.message, 'err'); b.disabled = false; }
+    };
+  });
+}
+
+const STATUS_PILL = { held: '<span class="pill pill-held">Afholdt</span>', planned: '<span class="pill pill-planned">Planlagt</span>', pending: '<span class="pill pill-pending">Foreløbig</span>' };
+
+async function renderDescription(root, id) {
+  const isNew = id === 'new';
+  const d = isNew ? { title: '', summary: '', audience: '', apl_type_id: '', length_text: '', goals: '', program: '', match_titles: '', active: 1, items: [], courses: [], counts: { held: 0, planned: 0, pending: 0 } }
+    : await api.get(`/api/library/descriptions/${id}`);
+  const lib = isNew ? null : await api.get('/api/library');
+  const back = () => { state.libraryId = null; render(); window.scrollTo(0, 0); };
+  const linkedIds = new Set(d.items.map((i) => i.id));
+  const addable = lib ? lib.items.filter((i) => !linkedIds.has(i.id)) : [];
+  root.innerHTML = `
+    <div class="pagehead">
+      <div><p class="eyebrow"><a href="#library" id="desc-back">Bibliotek</a> › Kursusbeskrivelse</p><h1>${isNew ? 'Ny kursusbeskrivelse' : esc(d.title)}</h1></div>
+      ${isNew ? '' : `<div class="pagehead-actions"><button type="button" class="btn btn-danger-ghost" id="desc-del">Slet kursusbeskrivelse</button></div>`}
+    </div>
+    <div class="desc-layout">
+      <form class="card form" id="desc-form" novalidate autocomplete="off">
+        <div class="form-grid">
+          <label class="field field-wide"><span>Titel</span><input name="title" required maxlength="200" value="${esc(d.title)}" placeholder="fx Modul 1 (pædagoger)"></label>
+          <label class="field field-wide"><span>Kort beskrivelse</span><textarea name="summary" rows="3" maxlength="4000" placeholder="Hvad handler kurset om, og hvad får deltagerne med hjem?">${esc(d.summary)}</textarea></label>
+          <label class="field"><span>Målgruppe</span><input name="audience" maxlength="200" value="${esc(d.audience)}" placeholder="fx Pædagoger"></label>
+          <label class="field"><span>Varighed</span><input name="length_text" maxlength="200" value="${esc(d.length_text)}" placeholder="fx 2½ time"></label>
+          <label class="field"><span>Type af APL-aktivitet</span><select name="apl_type_id">${selectOptions(state.options.aplTypes, d.apl_type_id || '', 'Ikke valgt')}</select></label>
+          <label class="field active-field"><span>Status</span><span class="check-inline"><input type="checkbox" name="active" value="1" ${d.active ? 'checked' : ''}> Aktiv <small class="muted">· udgåede kan ikke vælges til nye kurser</small></span></label>
+          <label class="field field-wide"><span>Læringsmål <small class="muted">· ét pr. linje</small></span><textarea name="goals" rows="4" maxlength="8000">${esc(d.goals)}</textarea></label>
+          <label class="field field-wide"><span>Program <small class="muted">· fx "09:00–09:20 Velkomst", ét punkt pr. linje</small></span><textarea name="program" rows="5" maxlength="8000">${esc(d.program)}</textarea></label>
+          <label class="field field-wide"><span>Andre titler for kurset <small class="muted">· ét pr. linje. Kurser med en af disse titler kobles automatisk</small></span><textarea name="match_titles" rows="2">${esc(d.match_titles)}</textarea></label>
+        </div>
+        <p class="form-error" role="alert" hidden></p>
+        <div class="form-actions"><button type="submit" class="btn btn-primary">${isNew ? 'Opret kursusbeskrivelse' : 'Gem ændringer'}</button>
+          <button type="button" class="btn" id="desc-cancel">${isNew ? 'Annullér' : 'Tilbage til Bibliotek'}</button></div>
+      </form>
+      ${isNew ? '<p class="muted desc-aside">Når kursusbeskrivelsen er oprettet, kan du tilføje slides, drejebog og guides til den.</p>' : `
+      <section class="card card-flush">
+        <div class="card-head card-head-pad"><h2>Materialer</h2><button type="button" class="btn btn-sm" id="desc-add">+ Nyt materiale</button></div>
+        ${d.items.length ? `<ul class="mat-list card-pad">${d.items.map((it) => itemRowHtml(it, `<button type="button" class="linkbtn" data-unlink="${it.id}" title="Tager materialet af beskrivelsen. Det bliver i biblioteket">Fjern</button>`)).join('')}</ul>`
+          : '<p class="card-pad muted">Ingen materialer endnu.</p>'}
+        ${addable.length ? `<div class="card-pad add-existing"><select id="desc-existing" aria-label="Materiale fra biblioteket">${selectOptions(addable.map((i) => ({ id: i.id, name: i.name })), '', 'Tilføj fra biblioteket …')}</select>
+          <button type="button" class="btn btn-sm" id="desc-existing-add">Tilføj</button></div>` : ''}
+      </section>`}
+    </div>
+    ${isNew ? '' : `<section class="card card-flush">
+      <div class="card-head card-head-pad"><h2>Brugt på kurser</h2><span class="muted small">${d.courses.length} i alt</span></div>
+      <div class="desc-stats card-pad">${countsHtml(d.counts)}</div>
+      ${d.courses.length ? `<div class="table-wrap desc-courses"><table class="table"><thead><tr><th>Dato</th><th>Kursus</th><th>Skole</th><th>Konsulent</th><th>Status</th></tr></thead>
+        <tbody>${d.courses.map((a) => `<tr class="clickable" data-course="${a.id}" tabindex="0"><td class="nowrap">${fmtDate(a.date)}${timeSub(a)}</td><td>${esc(a.title)}<div class="muted small">${esc(a.reseller)}</div></td>
+          <td>${esc(a.school || '–')}${a.municipality ? `<div class="muted small">${esc(a.municipality)}</div>` : ''}</td><td>${esc(a.consultant || '–')}</td><td>${STATUS_PILL[a.status]}</td></tr>`).join('')}</tbody></table></div>`
+        : '<p class="card-pad muted">Ingen kurser er koblet endnu. Kurser med titlen kobles, når de oprettes, og eksisterende kan kobles fra Bibliotek.</p>'}
+    </section>`}`;
+
+  $('#desc-back').onclick = (e) => { e.preventDefault(); back(); };
+  $('#desc-cancel').onclick = back;
+  const form = $('#desc-form');
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(form));
+    data.active = form.active.checked;
+    const err = $('.form-error', form);
+    try {
+      const saved = isNew ? await api.post('/api/library/descriptions', data) : await api.put(`/api/library/descriptions/${id}`, data);
+      state.options = await api.get('/api/options');
+      toast(isNew ? 'Kursusbeskrivelsen er oprettet' : 'Ændringer gemt');
+      state.libraryId = saved.id;
+      render();
+    } catch (ex) { err.textContent = ex.message; err.hidden = false; }
+  };
+  if (isNew) { form.title.focus(); return; }
+  const reload = () => renderDescription(root, id);
+  const byId = new Map(d.items.map((it) => [String(it.id), it]));
+  $$('[data-open-item]').forEach((b) => { b.onclick = () => openItem(byId.get(b.dataset.openItem)); });
+  $$('[data-unlink]').forEach((b) => {
+    b.onclick = async () => { try { await api.del(`/api/library/descriptions/${id}/items/${b.dataset.unlink}`); toast('Fjernet fra kursusbeskrivelsen'); reload(); } catch (ex) { toast(ex.message, 'err'); } };
+  });
+  $('#desc-add').onclick = async () => { if (await openItemDialog(null, { course_description_ids: [id] }, lib.descriptions)) reload(); };
+  $('#desc-existing-add')?.addEventListener('click', async () => {
+    const v = $('#desc-existing').value;
+    if (!v) return;
+    try { await api.put(`/api/library/descriptions/${id}/items/${v}`, {}); toast('Materialet er tilføjet'); reload(); } catch (ex) { toast(ex.message, 'err'); }
+  });
+  const openCourse = async (cid) => { try { go('register', { editing: await api.get(`/api/activities/${cid}`) }); } catch (ex) { toast(ex.message, 'err'); } };
+  $$('[data-course]').forEach((tr) => {
+    tr.onclick = () => openCourse(tr.dataset.course);
+    tr.onkeydown = (e) => { if (e.key === 'Enter') openCourse(tr.dataset.course); };
+  });
+  $('#desc-del').onclick = async (e) => {
+    const b = e.currentTarget;
+    if (b.dataset.sure !== '1') { b.dataset.sure = '1'; b.textContent = `Slet? ${d.courses.length ? `${d.courses.length} kurser mister koblingen` : 'Kan ikke fortrydes'}`; b.classList.add('btn-danger'); return; }
+    try {
+      await api.del(`/api/library/descriptions/${id}`);
+      state.options = await api.get('/api/options');
+      toast('Kursusbeskrivelsen er slettet. Materialerne er stadig i biblioteket');
+      back();
+    } catch (ex) { toast(ex.message, 'err'); }
+  };
+}
+
+// The materials box under a course in the form: those from its description, and its own.
+async function renderCourseMaterials(box, activityId) {
+  let m;
+  try { m = await api.get(`/api/activities/${activityId}/materials`); } catch (ex) { box.innerHTML = `<p class="form-error">${esc(ex.message)}</p>`; return; }
+  const all = new Map([...m.inherited, ...m.own].map((it) => [String(it.id), it]));
+  box.innerHTML = `<div class="card-head"><h2>Materialer</h2><span class="muted small">Konsulenten ser dem markeret Konsulenter på sin side</span></div>
+    ${m.description ? `<p class="small">Fra kursusbeskrivelsen <a href="#library" data-desc-link="${m.description.id}">${esc(m.description.title)}</a>${m.inherited.length ? '' : ': ingen materialer endnu'}</p>`
+      : '<p class="small muted">Kurset er ikke koblet til en kursusbeskrivelse. Vælg en i feltet Kursusbeskrivelse ovenfor.</p>'}
+    ${m.inherited.length ? `<ul class="mat-list">${m.inherited.map((it) => itemRowHtml(it)).join('')}</ul>` : ''}
+    <p class="small mat-own-head"><b>Kun dette kursus</b></p>
+    ${m.own.length ? `<ul class="mat-list">${m.own.map((it) => itemRowHtml(it, `<button type="button" class="btn btn-sm" data-edit-own="${it.id}">Redigér</button>`)).join('')}</ul>` : '<p class="small muted">Fx en deltagerliste eller en tilpasset præsentation.</p>'}
+    <button type="button" class="btn btn-sm" id="own-add">+ Tilføj fil eller link til dette kursus</button>`;
+  const reload = () => renderCourseMaterials(box, activityId);
+  $$('[data-open-item]', box).forEach((b) => { b.onclick = () => openItem(all.get(b.dataset.openItem)); });
+  $$('[data-edit-own]', box).forEach((b) => { b.onclick = async () => { if (await openItemDialog(all.get(b.dataset.editOwn), { activity_id: activityId })) reload(); }; });
+  $('#own-add', box).onclick = async () => { if (await openItemDialog(null, { activity_id: activityId })) reload(); };
+  $('[data-desc-link]', box)?.addEventListener('click', (e) => { e.preventDefault(); state.libraryId = Number(e.currentTarget.dataset.descLink); go('library', { libraryId: state.libraryId }); });
+}
+
 // --- Administration ------------------------------------------------------------------------
 const ADMIN_TABS = [
   ['consultants', 'Konsulenter'], ['schools', 'Skoler'], ['municipalities', 'Kommuner'],
@@ -1820,6 +2188,7 @@ async function render() {
     else if (state.view === 'calendar') await renderCalendar(root);
     else if (state.view === 'signup') await renderSignup(root);
     else if (state.view === 'apple') await renderApple(root);
+    else if (state.view === 'library') await renderLibrary(root);
     else if (state.view === 'messages') await renderMessages(root);
     else if (state.view === 'import') renderImport(root);
     else await renderDashboard(root);

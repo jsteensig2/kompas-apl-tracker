@@ -632,3 +632,82 @@ dt .note-btn { margin-left: 0; opacity: 1; cursor: default; }
 .k-card-apple { margin-top: 10px; }
 .k-apple-email { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin: 8px 0; }
 .k-apple-email .field { flex: 1 1 240px; max-width: 360px; }
+
+/* Bibliotek: course descriptions and their materials (files, links, guides). */
+.lib-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.lib-tools input[type="search"] { flex: 1 1 280px; min-width: 0; min-height: 40px; padding: 0 12px; }
+.section-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+.section-head h2 { margin: 0; }
+.desc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.desc-card { display: flex; flex-direction: column; gap: 10px; text-align: left; font: inherit; color: var(--ink); cursor: pointer; }
+.desc-card:hover { border-color: var(--accent); }
+.desc-card:focus-visible { outline: 2px solid var(--focus); }
+.desc-card.is-inactive { opacity: 0.65; }
+.desc-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.desc-title { font-size: 1.05rem; font-weight: 600; }
+.desc-summary { font-size: 0.9rem; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.desc-counts, .desc-stats { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 0.85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.desc-counts { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--line); }
+.desc-counts b, .desc-stats b { color: var(--ink); font-weight: 600; }
+.desc-stats { padding-bottom: 12px; }
+.empty-card p { margin: 0; }
+.link-card summary { list-style: none; cursor: pointer; padding-bottom: 16px; }
+.link-card summary::-webkit-details-marker { display: none; }
+.link-card summary h2::before { content: "▸ "; color: var(--muted); }
+.link-card details[open] summary h2::before { content: "▾ "; }
+.lib-link-wrap { max-height: 420px; overflow: auto; border-top: 1px solid var(--line); }
+.lib-link-wrap select { min-height: 34px; max-width: 260px; }
+.desc-layout { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 900px) { .desc-layout { grid-template-columns: minmax(0, 1fr); } }
+.desc-aside { margin: 0; padding: 20px 4px; }
+.desc-courses { border-top: 1px solid var(--line); }
+.active-field .check-inline { min-height: 44px; }
+.check-inline { display: inline-flex; align-items: center; gap: 8px; font-size: 0.92rem; cursor: pointer; }
+.check-inline input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); flex: none; }
+.add-existing { display: flex; gap: 8px; flex-wrap: wrap; padding-bottom: 20px; }
+.add-existing select { flex: 1 1 200px; min-width: 0; min-height: 34px; }
+.mat-list { list-style: none; display: flex; flex-direction: column; padding-bottom: 12px; }
+ul.mat-list { margin: 0; }
+ul.mat-list:not(.card-pad) { padding-left: 0; }
+.mat-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); min-width: 0; }
+.mat-row:first-child { border-top: 0; }
+.mat-kind { display: inline-grid; place-items: center; width: 40px; height: 40px; flex: none; border-radius: 8px; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.04em;
+  background: var(--surface-2); color: var(--muted); }
+.mat-pdf { background: var(--pending-soft); color: var(--pending-ink); }
+.mat-slides { background: var(--accent-soft); color: var(--accent); }
+.mat-guide { background: var(--planned-soft); color: var(--planned-ink); }
+.mat-main { flex: 1; min-width: 0; }
+.mat-name { padding: 0; font-size: 0.95rem; text-align: left; overflow-wrap: anywhere; }
+.mat-main .small { overflow-wrap: anywhere; }
+.mat-side { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.vis { font-size: 0.75rem; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.vis-kompas { border-style: dashed; }
+@media (max-width: 560px) { .mat-row { flex-wrap: wrap; } .mat-side { width: 100%; justify-content: flex-start; padding-left: 52px; } }
+.materials-card .mat-list { padding-bottom: 4px; }
+.materials-card > p { margin: 0 0 8px; }
+.mat-own-head { margin: 12px 0 4px !important; }
+.item-form { display: flex; flex-direction: column; gap: 14px; }
+.item-form .form-actions { margin-top: 4px; }
+.item-form textarea { padding: 10px 12px; line-height: 1.45; resize: vertical; }
+.item-form input:not([type="radio"]):not([type="checkbox"]) { min-height: 40px; padding: 0 10px; }
+.item-form input[type="file"] { padding: 8px 10px; }
+.desc-pick { border: 0; padding: 0; margin: 0; }
+.desc-pick legend { font-size: 0.78rem; font-weight: 600; color: var(--muted); padding: 0; margin-bottom: 6px; }
+.desc-checks { display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow: auto; }
+.guide-body { white-space: pre-wrap; line-height: 1.55; overflow-wrap: anywhere; }
+.dlg-head h2 { margin: 0; }
+/* Konsulentside: materials under each course, and the library. */
+.k-mats { margin-top: 6px; }
+.k-mats summary { cursor: pointer; color: var(--accent); font-weight: 500; font-size: 0.88rem; }
+.k-mats .mat-list { padding: 4px 0 0; }
+.k-mats .mat-kind { width: 32px; height: 32px; font-size: 0.56rem; }
+.k-lib-desc { border-top: 1px solid var(--line); padding: 14px 20px; }
+.k-lib-desc:first-of-type { border-top: 0; }
+.k-lib-desc summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.k-lib-desc summary::-webkit-details-marker { display: none; }
+.k-lib-desc summary b::before { content: "▸ "; color: var(--muted); }
+.k-lib-desc[open] summary b::before { content: "▾ "; }
+.k-lib-body { display: grid; gap: 10px; padding-top: 10px; }
+.k-lib-body h3 { margin: 0; font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.k-lib-body p { margin: 0; white-space: pre-wrap; }
+@media (max-width: 760px) { .table-wrap.lib-link-wrap, .table-wrap.desc-courses { display: block; } }

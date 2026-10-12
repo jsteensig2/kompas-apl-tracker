@@ -142,6 +142,51 @@ export function migrate(db) {
     created_at     TEXT NOT NULL DEFAULT (datetime('now'))
   )`);
   db.exec('CREATE INDEX IF NOT EXISTS idx_course_notes_activity ON course_notes (activity_id)');
+  // Bibliotek (Jakob, 2026-10-12): course descriptions, and materials (files, links, guides) that belong
+  // to descriptions, to the whole library, or to one single course (activity_id).
+  db.exec(`CREATE TABLE IF NOT EXISTS course_descriptions (
+    id            INTEGER PRIMARY KEY,
+    title         TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    summary       TEXT NOT NULL DEFAULT '',
+    audience      TEXT NOT NULL DEFAULT '',
+    apl_type_id   INTEGER REFERENCES apl_types(id) ON DELETE SET NULL,
+    length_text   TEXT NOT NULL DEFAULT '',
+    goals         TEXT NOT NULL DEFAULT '',
+    program       TEXT NOT NULL DEFAULT '',
+    match_titles  TEXT NOT NULL DEFAULT '',          -- other course titles that mean this course, one per line
+    active        INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  // kind: 'file' | 'link' | 'guide'; visibility: 'consultants' | 'kompas' (checked in code, so more levels can come).
+  db.exec(`CREATE TABLE IF NOT EXISTS library_items (
+    id            INTEGER PRIMARY KEY,
+    name          TEXT NOT NULL,
+    kind          TEXT NOT NULL,
+    url           TEXT,
+    body          TEXT NOT NULL DEFAULT '',
+    filename      TEXT,
+    content_type  TEXT,
+    size          INTEGER,
+    visibility    TEXT NOT NULL DEFAULT 'consultants',
+    activity_id   INTEGER REFERENCES activities(id) ON DELETE CASCADE,
+    created_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  // Uploaded files live in the database itself, so they are part of every database backup.
+  db.exec(`CREATE TABLE IF NOT EXISTS library_files (
+    item_id  INTEGER PRIMARY KEY REFERENCES library_items(id) ON DELETE CASCADE,
+    data     BLOB NOT NULL
+  )`);
+  db.exec(`CREATE TABLE IF NOT EXISTS library_links (
+    item_id                INTEGER NOT NULL REFERENCES library_items(id) ON DELETE CASCADE,
+    course_description_id  INTEGER NOT NULL REFERENCES course_descriptions(id) ON DELETE CASCADE,
+    PRIMARY KEY (item_id, course_description_id)
+  )`);
+  if (!cols('activities').includes('course_description_id')) {
+    db.exec('ALTER TABLE activities ADD COLUMN course_description_id INTEGER REFERENCES course_descriptions(id) ON DELETE SET NULL');
+  }
   db.exec('CREATE TABLE IF NOT EXISTS app_migrations (name TEXT PRIMARY KEY, ran_at TEXT NOT NULL DEFAULT (datetime(\'now\')))');
   once(db, 'apl-types-2026-10-04', () => resetAplTypes(db));
   once(db, 'htk-times-2026-10-06', () => setHtkTimes(db));
