@@ -1461,8 +1461,11 @@ async function renderMonth() {
 const VIS_LABEL = { consultants: 'Konsulenter', kompas: 'Kun Kompas' };
 const fmtSize = (n) => (n >= 1048576 ? `${(n / 1048576).toLocaleString('da-DK', { maximumFractionDigits: 1 })} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 // A short badge from the file type: PDF, KEY, PPT, DOC, BILLEDE …
+// A link to a guide in Kompas Guidebygger (Kopiér link in the guide) is shown as a guide.
+const GUIDEBUILDER = /^https:\/\/claude\.ai\/(code\/)?artifact\/LHFrjyg4jzezL83ae6Ffpn/i;
+const isGuideLink = (url) => GUIDEBUILDER.test(String(url || ''));
 function kindBadge(it) {
-  if (it.kind === 'link') return ['LINK', 'link'];
+  if (it.kind === 'link') return isGuideLink(it.url) ? ['GUIDE', 'guide'] : ['LINK', 'link'];
   if (it.kind === 'guide') return ['GUIDE', 'guide'];
   const ext = (/\.([a-z0-9]{2,5})$/i.exec(it.filename || '')?.[1] || '').toLowerCase();
   if (ext === 'pdf') return ['PDF', 'pdf'];
@@ -1470,7 +1473,7 @@ function kindBadge(it) {
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'heic'].includes(ext)) return ['BILLEDE', 'file'];
   return [(ext || 'FIL').toUpperCase().slice(0, 4), 'file'];
 }
-const itemSub = (it) => [it.kind === 'file' ? fmtSize(it.size) : it.kind === 'link' ? esc(it.url.replace(/^https?:\/\//, '').replace(/\/$/, '')) : 'Guide',
+const itemSub = (it) => [it.kind === 'file' ? fmtSize(it.size) : it.kind === 'link' ? (isGuideLink(it.url) ? 'Guide i Kompas Guidebygger' : esc(it.url.replace(/^https?:\/\//, '').replace(/\/$/, ''))) : 'Guide',
   `opdateret ${fmtDate(it.updated_at.slice(0, 10))}`].join(' · ');
 
 // One material as a row. `actions` is extra buttons on the right.
@@ -1534,7 +1537,8 @@ function openItemDialog(item = null, fixed = {}, descriptions = []) {
         ${[['file', 'Fil'], ['link', 'Link'], ['guide', 'Guide']].map(([k, l]) => `<label><input type="radio" name="kind" value="${k}" ${k === kind ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>`}
       <label class="field" data-for="file"><span>${item ? 'Erstat filen <small class="muted">· valgfrit</small>' : 'Fil <small class="muted">· højst 20 MB, læg større filer som et link</small>'}</span><input type="file" id="it-file"></label>
       ${item?.kind === 'file' ? `<p class="muted small" data-for="file">Nuværende fil: ${esc(item.filename)} (${fmtSize(item.size)})</p>` : ''}
-      <label class="field" data-for="link"><span>Link</span><input type="url" id="it-url" placeholder="https://" value="${esc(item?.url || '')}"></label>
+      <label class="field" data-for="link"><span>Link</span><input type="url" id="it-url" placeholder="https://" value="${esc(item?.url || '')}">
+        <small class="hint">En guide fra Kompas Guidebygger: åbn guiden, tryk Kopiér link, og sæt linket ind her.</small></label>
       <label class="field"><span>Navn <small class="muted" data-for="file">· tomt = filens navn</small></span><input id="it-name" maxlength="200" value="${esc(item?.name || '')}" placeholder="fx Slides til Modul 1"></label>
       <label class="field" data-for="guide"><span>Guidens tekst <small class="muted">· links bliver klikbare</small></span><textarea id="it-body" rows="9" maxlength="50000">${esc(item?.body || '')}</textarea></label>
       <div class="field"><span id="it-vis-label">Hvem kan se det</span>

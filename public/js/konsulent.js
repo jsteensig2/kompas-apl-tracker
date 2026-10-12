@@ -103,8 +103,11 @@ window.addEventListener('focus', askIfSent);
 // Bibliotek: the materials of a course, and the library of course descriptions.
 const fileHref = (it) => `/k/${encodeURIComponent(token)}/library/${it.id}/file`;
 const fmtSize = (n) => (n >= 1048576 ? `${(n / 1048576).toLocaleString('da-DK', { maximumFractionDigits: 1 })} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+// A link to a guide in Kompas Guidebygger (Kopiér link in the guide) is shown as a guide.
+const GUIDEBUILDER = /^https:\/\/claude\.ai\/(code\/)?artifact\/LHFrjyg4jzezL83ae6Ffpn/i;
+const isGuideLink = (url) => GUIDEBUILDER.test(String(url || ''));
 function kindBadge(it) {
-  if (it.kind === 'link') return ['LINK', 'link'];
+  if (it.kind === 'link') return isGuideLink(it.url) ? ['GUIDE', 'guide'] : ['LINK', 'link'];
   if (it.kind === 'guide') return ['GUIDE', 'guide'];
   const ext = (/\.([a-z0-9]{2,5})$/i.exec(it.filename || '')?.[1] || '').toLowerCase();
   if (ext === 'pdf') return ['PDF', 'pdf'];
@@ -117,7 +120,7 @@ function matRow(it) {
   if (it.kind === 'guide') guides.set(String(it.id), it);
   const name = it.kind === 'guide' ? `<button type="button" class="mat-name linkbtn" data-guide="${it.id}">${esc(it.name)}</button>`
     : `<a class="mat-name" href="${esc(it.kind === 'link' ? it.url : fileHref(it))}" target="_blank" rel="noopener">${esc(it.name)}</a>`;
-  const sub = it.kind === 'file' ? fmtSize(it.size) : it.kind === 'link' ? esc(it.url.replace(/^https?:\/\//, '').replace(/\/$/, '')) : 'Guide';
+  const sub = it.kind === 'file' ? fmtSize(it.size) : it.kind === 'link' ? (isGuideLink(it.url) ? 'Guide i Kompas Guidebygger' : esc(it.url.replace(/^https?:\/\//, '').replace(/\/$/, ''))) : 'Guide';
   return `<li class="mat-row"><span class="mat-kind mat-${cls}" aria-hidden="true">${badge}</span><div class="mat-main">${name}<div class="muted small">${sub}</div></div></li>`;
 }
 const matList = (items) => `<ul class="mat-list">${items.map(matRow).join('')}</ul>`;
