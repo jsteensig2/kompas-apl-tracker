@@ -246,11 +246,12 @@ export function createApi(db, { XLSX } = {}) {
   const nameExists = (table, name, exceptId = 0) =>
     db.get(`SELECT id FROM ${table} WHERE name = ? COLLATE NOCASE AND id <> ?`, [name, exceptId]);
 
-  // Noter are for Kompas and the consultants only, so resellers and viewers never get the count.
+  // Noter and Bibliotek are for Kompas and the consultants only, so resellers and viewers never get the counts.
   function withNoteCounts(user, rows) {
     if (!isAdmin(user) || !rows.length) return rows;
     const counts = new Map(db.all('SELECT activity_id, COUNT(*) AS n FROM course_notes GROUP BY activity_id').map((r) => [r.activity_id, r.n]));
-    return rows.map((r) => ({ ...r, notes: counts.get(r.id) || 0 }));
+    const materials = library.materialCounts();
+    return rows.map((r) => ({ ...r, notes: counts.get(r.id) || 0, materials: materials.get(r.id) || 0 }));
   }
 
   // Dobbeltbooking: a consultant on more than one course the same day. Only Kompas is warned;

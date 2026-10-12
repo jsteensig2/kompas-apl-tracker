@@ -209,6 +209,14 @@ test('Send til kurser: one material goes to many chosen courses at once', async 
   assert.equal((await call('admin', `/api/library/items/${link.id}/courses`, send('PUT', { activity_ids: [999999] }))).status, 404);
   assert.equal((await json('admin', `/api/library/items/${link.id}/courses`)).activity_ids.length, 3);
 
+  // The activity list shows Kompas how many materials each course has; resellers never get the count.
+  const own2 = await add({ kind: 'link', name: 'Deltagerliste', url: 'https://x.dk/d', activity_id: a4.id });
+  const list = await json('admin', '/api/activities?year=2030');
+  const count = (a) => list.find((x) => x.id === a.id).materials;
+  assert.deepEqual([count(a1), count(a2), count(a4)], [3, 1, 2]);
+  assert.ok((await json('Atea', '/api/activities?year=2030')).every((x) => x.materials === undefined));
+  await call('admin', `/api/library/items/${own2.id}`, { method: 'DELETE' });
+
   // Deleting a course or the material removes the links.
   await call('admin', `/api/activities/${a3.id}`, { method: 'DELETE' });
   assert.equal((await json('admin', `/api/library/items/${link.id}/courses`)).activity_ids.length, 2);
