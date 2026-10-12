@@ -1,4 +1,5 @@
 // Bibliotek: course descriptions and the materials that belong to them (files, links and guides).
+// A course description is an attached document (PDF, Word, ...) with a few facts for finding it.
 //
 // A course in the registration points at its course description (activities.course_description_id)
 // and so gets every material of that description. A single course can also have materials of its own
@@ -10,6 +11,10 @@ export const VISIBILITY = ['consultants', 'kompas'];
 export const MAX_FILE_BYTES = 20 * 1024 * 1024;
 
 const ITEM_COLS = 'i.id, i.name, i.kind, i.url, i.body, i.filename, i.content_type, i.size, i.visibility, i.activity_id, i.updated_at';
+// The attached document, as { filename, content_type, size } or null.
+const DOC_COLS = 'd.doc_filename, d.doc_content_type, d.doc_size';
+const docOut = ({ doc_filename, doc_content_type, doc_size, ...d }) =>
+  ({ ...d, document: doc_filename ? { filename: doc_filename, content_type: doc_content_type || '', size: doc_size || 0 } : null });
 const norm = (s) => String(s ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 // The other titles a description is known by, one per line.
 const aliases = (d) => String(d.match_titles || '').split('\n').map((t) => t.trim()).filter(Boolean);
@@ -44,25 +49,57 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
     if (!apl_type_id) apl_type_id = null;
     const match_titles = [...new Set(String(b.match_titles ?? '').split('\n').map((t) => t.trim()).filter((t) => t && norm(t) !== norm(title)))].join('\n');
     const active = b.active === undefined ? 1 : (b.active === true || b.active === 1 || /^(1|true|on)$/i.test(String(b.active)) ? 1 : 0);
-    return { title, summary: text(b.summary, 4000), audience: text(b.audience, 200), apl_type_id, length_text: text(b.length_text, 200),
-      goals: text(b.goals, 8000), program: text(b.program, 8000), match_titles, active };
+    return { title, audience: text(b.audience, 200), apl_type_id, length_text: text(b.length_text, 200), match_titles, active };
   }
-  const DESC_FIELDS = ['title', 'summary', 'audience', 'apl_type_id', 'length_text', 'goals', 'program', 'match_titles', 'active'];
+  // Summary, goals and program are no longer edited (the document holds them); they keep what earlier versions saved.
+  const DESC_FIELDS = ['title', 'audience', 'apl_type_id', 'length_text', 'match_titles', 'active'];
+
+  // body.document: { name, type, data } replaces the document; body.remove_document takes it off.
+  function saveDocument(id, b) {
+    if (b.document) {
+      const f = fileInput(b.document);
+      db.run('UPDATE course_descriptions SET doc_filename = ?, doc_content_type = ?, doc_size = ? WHERE id = ?', [f.filename, f.content_type, f.size, id]);
+      db.run('DELETE FROM course_description_files WHERE description_id = ?', [id]);
+      db.run('INSERT INTO course_description_files (description_id, data) VALUES (?, ?)', [id, f.data]);
+    } else if (b.remove_document) {
+      db.run('UPDATE course_descriptions SET doc_filename = NULL, doc_content_type = NULL, doc_size = NULL WHERE id = ?', [id]);
+      db.run('DELETE FROM course_description_files WHERE description_id = ?', [id]);
+    }
+  }
+
+  function inTransaction(fn) {
+    db.exec('BEGIN');
+    try {
+      const out = fn();
+      db.exec('COMMIT');
+      return out;
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+  }
 
   function createDescription(user, body) {
     requireAdmin(user);
     const d = descriptionInput(body);
-    const { lastInsertRowid } = db.run(`INSERT INTO course_descriptions (${DESC_FIELDS.join(', ')}) VALUES (${DESC_FIELDS.map(() => '?').join(', ')})`,
-      DESC_FIELDS.map((k) => d[k]));
-    return getDescription(user, Number(lastInsertRowid));
+    const id = inTransaction(() => {
+      const { lastInsertRowid } = db.run(`INSERT INTO course_descriptions (${DESC_FIELDS.join(', ')}) VALUES (${DESC_FIELDS.map(() => '?').join(', ')})`,
+        DESC_FIELDS.map((k) => d[k]));
+      saveDocument(Number(lastInsertRowid), body);
+      return Number(lastInsertRowid);
+    });
+    return getDescription(user, id);
   }
 
   function updateDescription(user, id, body) {
     requireAdmin(user);
     descriptionRow(id);
     const d = descriptionInput(body, id);
-    db.run(`UPDATE course_descriptions SET ${DESC_FIELDS.map((k) => `${k} = ?`).join(', ')}, updated_at = datetime('now') WHERE id = ?`,
-      [...DESC_FIELDS.map((k) => d[k]), id]);
+    inTransaction(() => {
+      db.run(`UPDATE course_descriptions SET ${DESC_FIELDS.map((k) => `${k} = ?`).join(', ')}, updated_at = datetime('now') WHERE id = ?`,
+        [...DESC_FIELDS.map((k) => d[k]), id]);
+      saveDocument(id, body);
+    });
     return getDescription(user, id);
   }
 
@@ -73,12 +110,14 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
     descriptionRow(id);
     db.run('UPDATE activities SET course_description_id = NULL WHERE course_description_id = ?', [id]);
     db.run('DELETE FROM library_links WHERE course_description_id = ?', [id]);
+    db.run('DELETE FROM course_description_files WHERE description_id = ?', [id]);
     db.run('DELETE FROM course_descriptions WHERE id = ?', [id]);
     return { ok: true };
   }
 
   function descriptionRow(id) {
-    const d = db.get(`SELECT d.*, t.name AS apl_type FROM course_descriptions d LEFT JOIN apl_types t ON t.id = d.apl_type_id WHERE d.id = ?`, [id]);
+    const d = db.get(`SELECT d.id, d.title, d.audience, d.apl_type_id, d.length_text, d.match_titles, d.active, d.created_at, d.updated_at,
+        ${DOC_COLS}, t.name AS apl_type FROM course_descriptions d LEFT JOIN apl_types t ON t.id = d.apl_type_id WHERE d.id = ?`, [id]);
     if (!d) throw new HttpError(404, 'Kursusbeskrivelsen findes ikke.');
     return d;
   }
@@ -109,7 +148,7 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
       LEFT JOIN municipalities m ON m.id = a.municipality_id LEFT JOIN consultants c ON c.id = a.consultant_id
       WHERE a.course_description_id = ? ORDER BY a.date DESC, a.start_time DESC, a.id DESC`, [id])
       .map((a) => ({ ...a, status: a.pending ? 'pending' : a.date <= todayIso() ? 'held' : 'planned' }));
-    return { ...d, counts: { held: c.held || 0, planned: c.planned || 0, pending: c.pending || 0 }, items: itemsOf(id), courses };
+    return { ...docOut(d), counts: { held: c.held || 0, planned: c.planned || 0, pending: c.pending || 0 }, items: itemsOf(id), courses };
   }
 
   // --- Overview -------------------------------------------------------------------------------
@@ -125,11 +164,11 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
     requireAdmin(user);
     const counts = courseCounts();
     const itemCounts = new Map(db.all('SELECT course_description_id AS id, COUNT(*) AS n FROM library_links GROUP BY course_description_id').map((r) => [r.id, r.n]));
-    const descriptions = db.all(`SELECT d.id, d.title, d.summary, d.audience, d.length_text, d.active, t.name AS apl_type
+    const descriptions = db.all(`SELECT d.id, d.title, d.audience, d.length_text, d.active, ${DOC_COLS}, t.name AS apl_type
         FROM course_descriptions d LEFT JOIN apl_types t ON t.id = d.apl_type_id ORDER BY d.active DESC, d.title COLLATE NOCASE`)
       .map((d) => {
         const c = counts.get(d.id) || {};
-        return { ...d, counts: { held: c.held || 0, planned: c.planned || 0, pending: c.pending || 0 }, items: itemCounts.get(d.id) || 0 };
+        return { ...docOut(d), counts: { held: c.held || 0, planned: c.planned || 0, pending: c.pending || 0 }, items: itemCounts.get(d.id) || 0 };
       });
     const linkNames = new Map();
     for (const r of db.all(`SELECT l.item_id, d.id, d.title FROM library_links l JOIN course_descriptions d ON d.id = l.course_description_id ORDER BY d.title COLLATE NOCASE`)) {
@@ -274,6 +313,17 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
     return { filename: it.filename || it.name, contentType: it.content_type || 'application/octet-stream', data: f.data };
   }
 
+  function documentOf(d) {
+    const f = d?.doc_filename && db.get('SELECT data FROM course_description_files WHERE description_id = ?', [d.id]);
+    if (!f) throw new HttpError(404, 'Kursusbeskrivelsen har ikke noget dokument.');
+    return { filename: d.doc_filename, contentType: d.doc_content_type || 'application/octet-stream', data: f.data };
+  }
+
+  function downloadDocument(user, id) {
+    requireAdmin(user);
+    return documentOf(descriptionRow(id));
+  }
+
   function downloadItem(user, id) {
     requireAdmin(user);
     return fileOf(itemRow(id));
@@ -284,9 +334,10 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
     const a = db.get('SELECT id, course_description_id FROM activities WHERE id = ?', [activityId]);
     if (!a) return { description: null, inherited: [], own: [] };
     const vis = (rows) => (consultantsOnly ? rows.filter((r) => r.visibility === 'consultants') : rows);
-    const description = a.course_description_id ? db.get('SELECT id, title FROM course_descriptions WHERE id = ?', [a.course_description_id]) : null;
+    const d = a.course_description_id ? db.get(`SELECT d.id, d.title, ${DOC_COLS} FROM course_descriptions d WHERE d.id = ?`, [a.course_description_id]) : null;
+    const description = d ? docOut(d) : null;
     return {
-      description: description || null,
+      description,
       inherited: description ? vis(itemsOf(description.id)) : [],
       own: vis(db.all(`SELECT ${ITEM_COLS} FROM library_items i WHERE i.activity_id = ? ORDER BY i.name COLLATE NOCASE`, [activityId]).map(itemOut)),
     };
@@ -302,12 +353,15 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
 
   // What a consultant may see: active descriptions, and library materials marked Konsulenter.
   function consultantLibrary() {
-    const descriptions = db.all(`SELECT d.id, d.title, d.summary, d.audience, d.length_text, d.goals, d.program, t.name AS apl_type
-        FROM course_descriptions d LEFT JOIN apl_types t ON t.id = d.apl_type_id WHERE d.active = 1 ORDER BY d.title COLLATE NOCASE`)
-      .map((d) => ({ ...d, items: itemsOf(d.id).filter((i) => i.visibility === 'consultants') }));
-    const general = db.all(`SELECT ${ITEM_COLS} FROM library_items i WHERE i.activity_id IS NULL AND i.visibility = 'consultants'
-        AND NOT EXISTS (SELECT 1 FROM library_links l WHERE l.item_id = i.id) ORDER BY i.name COLLATE NOCASE`).map(itemOut);
-    return { descriptions, general };
+    const descriptions = db.all(`SELECT d.id, d.title, d.audience, d.length_text, ${DOC_COLS}, t.name AS apl_type
+        FROM course_descriptions d LEFT JOIN apl_types t ON t.id = d.apl_type_id WHERE d.active = 1 ORDER BY d.title COLLATE NOCASE`).map(docOut);
+    // Every library material marked Konsulenter, with the descriptions it belongs to.
+    const names = new Map();
+    for (const r of db.all(`SELECT l.item_id, d.title FROM library_links l JOIN course_descriptions d ON d.id = l.course_description_id
+        WHERE d.active = 1 ORDER BY d.title COLLATE NOCASE`)) names.set(r.item_id, [...(names.get(r.item_id) || []), r.title]);
+    const materials = db.all(`SELECT ${ITEM_COLS} FROM library_items i WHERE i.activity_id IS NULL AND i.visibility = 'consultants'
+        ORDER BY i.name COLLATE NOCASE`).map((r) => ({ ...itemOut(r), descriptions: names.get(r.id) || [] }));
+    return { descriptions, materials };
   }
 
   // A consultant may open a material marked Konsulenter that is in the library, or that belongs to one of their own courses.
@@ -317,6 +371,14 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
     return fileOf(it);
   }
 
-  return { overview, createDescription, updateDescription, deleteDescription, getDescription, linkTitle,
+  // Consultants may open the document of every active course description, and of the descriptions of their own courses.
+  function consultantDocument(consultantId, id) {
+    const d = db.get(`SELECT id, doc_filename, doc_content_type FROM course_descriptions d WHERE id = ?
+      AND (active = 1 OR EXISTS (SELECT 1 FROM activities a WHERE a.course_description_id = d.id AND a.consultant_id = ?))`, [id, consultantId]);
+    if (!d) throw new HttpError(404, 'Kursusbeskrivelsen findes ikke.');
+    return documentOf(d);
+  }
+
+  return { downloadDocument, consultantDocument, overview, createDescription, updateDescription, deleteDescription, getDescription, linkTitle,
     createItem, updateItem, deleteItem, setItemLink, downloadItem, activityMaterials, materialsFor, consultantLibrary, consultantFile };
 }

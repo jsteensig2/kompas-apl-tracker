@@ -184,6 +184,16 @@ export function migrate(db) {
     course_description_id  INTEGER NOT NULL REFERENCES course_descriptions(id) ON DELETE CASCADE,
     PRIMARY KEY (item_id, course_description_id)
   )`);
+  // The course description itself is an attached document (Jakob, 2026-10-12): PDF, Word or the like.
+  if (!cols('course_descriptions').includes('doc_filename')) {
+    db.exec('ALTER TABLE course_descriptions ADD COLUMN doc_filename TEXT');
+    db.exec('ALTER TABLE course_descriptions ADD COLUMN doc_content_type TEXT');
+    db.exec('ALTER TABLE course_descriptions ADD COLUMN doc_size INTEGER');
+  }
+  db.exec(`CREATE TABLE IF NOT EXISTS course_description_files (
+    description_id  INTEGER PRIMARY KEY REFERENCES course_descriptions(id) ON DELETE CASCADE,
+    data            BLOB NOT NULL
+  )`);
   if (!cols('activities').includes('course_description_id')) {
     db.exec('ALTER TABLE activities ADD COLUMN course_description_id INTEGER REFERENCES course_descriptions(id) ON DELETE SET NULL');
   }

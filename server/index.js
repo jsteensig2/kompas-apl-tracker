@@ -25,7 +25,7 @@ export function createServer({ dbFile = process.env.DB_FILE || fileURLToPath(new
     next();
   });
   // Bibliotek: uploaded files come as base64 in JSON (up to 20 MB each); everything else stays small.
-  app.use('/api/library/items', express.json({ limit: '30mb' }));
+  app.use('/api/library', express.json({ limit: '30mb' }));
   app.use(express.json({ limit: '5mb' }));
   app.get('/healthz', (_req, res) => res.send('ok'));
   app.use(authMiddleware(db));
@@ -104,6 +104,15 @@ export function createServer({ dbFile = process.env.DB_FILE || fileURLToPath(new
   app.post('/k/:token/courses/:id/notes', kRoute((req) => api.consultantNotes(req.params.token, Number(req.params.id), req.body || {})));
   app.delete('/k/:token/notes/:id', kRoute((req) => api.deleteConsultantNote(req.params.token, Number(req.params.id))));
 
+  // Bibliotek: the consultant opens a course description from their page.
+  app.get('/k/:token/library/description/:id/document', (req, res) => {
+    try {
+      res.setHeader('Cache-Control', 'no-store');
+      sendFile(res, api.consultantDocument(req.params.token, Number(req.params.id)));
+    } catch (err) {
+      res.status(err.status || 500).json({ error: err.status ? err.message : 'Der opstod en fejl på serveren.' });
+    }
+  });
   // Bibliotek: the consultant opens a material from their page.
   app.get('/k/:token/library/:id/file', (req, res) => {
     try {

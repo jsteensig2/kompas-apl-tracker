@@ -136,11 +136,16 @@ På konsulentsiden (`/k/<token>`) har hvert afholdt kursus en knap **Til Apple**
 
 ## Bibliotek (kursusbeskrivelser og materialer)
 
-Fanen **Bibliotek** (kun Kompas) samler kursusbeskrivelser og materialer: filer (højst 20 MB, gemt i databasen og dermed med i backuppen), links og guides skrevet direkte i appen. Et materiale kan høre til flere kursusbeskrivelser, til hele biblioteket, eller kun til ét kursus (fx en deltagerliste).
+Fanen **Bibliotek** (kun Kompas) har to dele:
+
+- **Kursusbeskrivelser**: hver kursusbeskrivelse er et vedhæftet dokument (PDF, Word eller lignende) med titel, målgruppe, varighed og APL-type, så kurserne kan kobles til den. PDF'er åbner i browseren, andre filer hentes.
+- **Materialer**: filer, links og guides skrevet direkte i appen. Et materiale kan høre til flere kursusbeskrivelser, til hele biblioteket, eller kun til ét kursus (fx en deltagerliste).
+
+Filer må højst fylde 20 MB og gemmes i databasen, så de er med i backuppen.
 
 - Et kursus får sin kursusbeskrivelse i feltet **Kursusbeskrivelse** i formularen. Nye kurser (også fra import, kalender og Tilmelding) kobles automatisk, når titlen er den samme som beskrivelsens titel eller en af dens "andre titler".
 - Eksisterende kurser kobles fra Bibliotek › **Kobl kurser til en kursusbeskrivelse**, én titel ad gangen. En titel, der kobles på den måde, huskes som en anden titel for beskrivelsen.
-- Hvert materiale er synligt for **Konsulenter** eller **Kun Kompas**. Konsulenten ser materialerne ved sine egne kurser og hele biblioteket nederst på sin side. Resellere og Apple ser ikke biblioteket endnu.
+- Hvert materiale er synligt for **Konsulenter** eller **Kun Kompas**. Konsulenten ser kursusbeskrivelsen og materialerne ved sine egne kurser, og begge dele af biblioteket nederst på sin side. Resellere og Apple ser ikke biblioteket endnu.
 
 ## Senere udvidelser (ikke bygget)
 
