@@ -1629,6 +1629,10 @@ async function openSendDialog(item, descriptions) {
     const countFor = (id) => data.courses.filter((a) => a.course_description_id === id).length;
     dlg.innerHTML = `<form class="item-form send-form" novalidate>
       <div class="dlg-head"><h2>Send ${esc(item.name)} til kurser</h2><button type="button" class="linkbtn" data-close>Luk</button></div>
+      <div class="field"><span id="send-vis-label">Hvem kan se det</span>
+        <div class="seg" role="radiogroup" aria-labelledby="send-vis-label">
+          ${Object.entries(VIS_LABEL).map(([k, l]) => `<label><input type="radio" name="send-vis" value="${k}" ${(data.item.visibility || 'consultants') === k ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>
+        <small class="hint">Konsulenter ser materialet ved deres kurser. Kun Kompas er fx en intern drejebog.</small></div>
       ${descriptions.length ? `<fieldset class="field desc-pick"><legend>Alle datoer af disse kurser <small class="muted">· også dem, der kommer til senere</small></legend>
         <div class="desc-checks">${descriptions.filter((d) => d.active || descIds.has(d.id)).map((d) => `<label class="check-inline"><input type="checkbox" name="desc" value="${d.id}" ${descIds.has(d.id) ? 'checked' : ''}> ${esc(d.title)} <small class="muted">(${countFor(d.id)})</small></label>`).join('')}</div></fieldset>` : ''}
       <fieldset class="field"><legend>Udvalgte kurser <small class="muted" id="send-count"></small></legend>
@@ -1668,7 +1672,7 @@ async function openSendDialog(item, descriptions) {
     dlg.onclose = () => resolve(saved);
     $('form', dlg).onsubmit = async (e) => {
       e.preventDefault();
-      const body = { activity_ids: [...chosen] };
+      const body = { activity_ids: [...chosen], visibility: $('input[name="send-vis"]:checked', dlg).value };
       if (descriptions.length) body.course_description_ids = $$('input[name="desc"]:checked', dlg).map((x) => Number(x.value));
       try {
         await api.put(`/api/library/items/${item.id}/courses`, body);
