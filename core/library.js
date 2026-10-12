@@ -53,9 +53,9 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
 
   function descriptionInput(b = {}, id = 0) {
     const title = text(b.title, 200);
-    if (!title) throw new HttpError(400, 'Kursusbeskrivelsen skal have en titel.');
+    if (!title) throw new HttpError(400, 'Kurset skal have et navn.');
     if (db.get('SELECT id FROM course_descriptions WHERE title = ? COLLATE NOCASE AND id <> ?', [title, id])) {
-      throw new HttpError(400, `Der findes allerede en kursusbeskrivelse, der hedder ${title}.`);
+      throw new HttpError(400, `Der findes allerede et kursus, der hedder ${title}.`);
     }
     let apl_type_id = int(b.apl_type_id);
     if (apl_type_id && !db.get('SELECT id FROM apl_types WHERE id = ?', [apl_type_id])) throw new HttpError(400, 'APL-typen findes ikke.');
@@ -137,7 +137,7 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
   function descriptionRow(id) {
     const d = db.get(`SELECT d.id, d.title, d.audience, d.module, d.apl_type_id, d.length_text, d.match_titles, d.active, d.created_at, d.updated_at,
         ${DOC_COLS}, t.name AS apl_type FROM course_descriptions d LEFT JOIN apl_types t ON t.id = d.apl_type_id WHERE d.id = ?`, [id]);
-    if (!d) throw new HttpError(404, 'Kursusbeskrivelsen findes ikke.');
+    if (!d) throw new HttpError(404, 'Kurset findes ikke.');
     return d;
   }
 
@@ -457,7 +457,7 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
   function consultantDocument(consultantId, id) {
     const d = db.get(`SELECT id, doc_filename, doc_content_type FROM course_descriptions d WHERE id = ?
       AND (active = 1 OR EXISTS (SELECT 1 FROM activities a WHERE a.course_description_id = d.id AND a.consultant_id = ?))`, [id, consultantId]);
-    if (!d) throw new HttpError(404, 'Kursusbeskrivelsen findes ikke.');
+    if (!d) throw new HttpError(404, 'Kurset findes ikke.');
     return documentOf(d);
   }
 

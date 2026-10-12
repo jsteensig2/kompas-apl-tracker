@@ -126,14 +126,6 @@ function matRow(it, extra = '') {
   return `<li class="mat-row"><span class="mat-kind mat-${cls}" aria-hidden="true">${badge}</span><div class="mat-main">${name}<div class="muted small">${sub}${of}${extra}</div></div></li>`;
 }
 const matList = (items) => `<ul class="mat-list">${items.map((it) => matRow(it)).join('')}</ul>`;
-// A course description as a row that opens its document.
-function docRow(d) {
-  if (!d.document) return `<li class="mat-row"><span class="mat-kind mat-missing" aria-hidden="true">MANGLER</span><div class="mat-main"><span class="mat-name">${esc(d.title)}</span><div class="muted small">Dokumentet er ikke lagt ind endnu</div></div></li>`;
-  const [badge, cls] = kindBadge({ kind: 'file', filename: d.document.filename });
-  const facts = [d.audience, d.length_text].filter(Boolean).map(esc).join(' · ');
-  return `<li class="mat-row"><span class="mat-kind mat-${cls}" aria-hidden="true">${badge}</span><div class="mat-main"><a class="mat-name" href="${esc(docHref(d))}" target="_blank" rel="noopener">${esc(d.title)}</a>
-    <div class="muted small">${[facts, fmtSize(d.document.size)].filter(Boolean).join(' · ')}</div></div></li>`;
-}
 const courseDoc = (a) => (a.description?.document ? `<a class="k-doc" href="${esc(docHref(a.description))}" target="_blank" rel="noopener">Kursusbeskrivelse</a>` : '');
 const courseMats = (a) => courseDoc(a) + (a.materials?.length ? `<details class="k-mats"><summary>Materialer (${a.materials.length})</summary>${matList(a.materials)}</details>` : '');
 
@@ -148,12 +140,10 @@ function openGuide(id) {
 }
 
 function librarySection() {
-  const lib = data.library;
-  if (!lib || (!lib.descriptions.length && !lib.materials.length)) return '';
-  const part = (title, n, body) => `<details class="k-lib-desc"><summary><b>${title}</b><span class="muted small">${n}</span></summary><div class="k-lib-body">${body}</div></details>`;
-  return `<section class="card card-flush" id="library"><div class="card-head card-head-pad"><h2>Bibliotek</h2></div>
-    ${lib.descriptions.length ? part('Kursusbeskrivelser', lib.descriptions.length, `<ul class="mat-list">${lib.descriptions.map(docRow).join('')}</ul>`) : ''}
-    ${lib.materials.length ? part('Materialer', lib.materials.length, matList(lib.materials)) : ''}
+  const mats = data.library?.materials || [];
+  if (!mats.length) return '';
+  return `<section class="card card-flush" id="library"><div class="card-head card-head-pad"><h2>Bibliotek</h2><span class="muted small">${mats.length} ${mats.length === 1 ? 'materiale' : 'materialer'}</span></div>
+    <div class="card-pad">${matList(mats)}</div>
   </section>`;
 }
 

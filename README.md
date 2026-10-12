@@ -134,17 +134,18 @@ På konsulentsiden (`/k/<token>`) har hvert afholdt kursus en knap **Til Apple**
 
 **Åbn Apples skema udfyldt:** Hvert kursus (i fanen og i konsulentens Til Apple-dialog) har et link til Apples skema (Qualtrics `SV_7UiJTisrllOFbsG`, dansk) med de kendte svar udfyldt via `Q_PopulateResponse`. Spørgsmålenes id'er (`QID…`) står ved hvert felt i `appleFields` i `core/api.js`. Konsulenten går siderne igennem, udfylder resten og indsender selv.
 
-## Bibliotek (kursusbeskrivelser og materialer)
+## Bibliotek (materialer) og Kurser
 
-Fanen **Bibliotek** (kun Kompas) har to dele:
+Fanen **Bibliotek** (kun Kompas) indeholder kun **materialer**: filer (fx slides, drejebog eller en kursusbeskrivelse som PDF/Word), links og guides skrevet direkte i appen. Filer må højst fylde 20 MB og gemmes i databasen, så de er med i backuppen.
 
-- **Kursusbeskrivelser**: hver kursusbeskrivelse er et vedhæftet dokument (PDF, Word eller lignende) med titel, målgruppe, varighed og APL-type, så kurserne kan kobles til den. PDF'er åbner i browseren, andre filer hentes.
-- **Materialer**: filer, links og guides skrevet direkte i appen. Et materiale kan høre til flere kursusbeskrivelser, til hele biblioteket, eller kun til ét kursus (fx en deltagerliste).
+- **Send til kurser** (ved hvert materiale) sender et materiale ud på mange kurser på én gang: alle datoer af bestemte kurser (også fremtidige) og/eller kurser, du vælger enkeltvis (søg, filtrér på Kommende/Afholdte, Vælg alle viste). Under et enkelt kursus i formularen kan et materiale fra biblioteket også tilføjes eller fjernes, og et kursus kan have sine egne filer (fx en deltagerliste).
+- Hvert materiale er synligt for **Konsulenter** eller **Kun Kompas**. Konsulenten ser materialerne ved sine egne kurser og hele biblioteket nederst på sin side. Resellere og Apple ser ikke biblioteket endnu.
 
-Filer må højst fylde 20 MB og gemmes i databasen, så de er med i backuppen.
+Listen over kurser (i koden: kursusbeskrivelser) ligger under **Administration › Kurser**:
 
-- Et kursus vælges i feltet **Kursus** i formularen og får så kursusbeskrivelsens titel som navn. Nye kurser (også fra import, kalender og Tilmelding) kobles automatisk og får beskrivelsens navn, når titlen er den samme som beskrivelsens titel eller en af dens "andre titler". Skifter en beskrivelse titel, skifter dens kurser navn med.
-- Eksisterende kurser kobles fra Bibliotek › **Kobl kurser til en kursusbeskrivelse**, én titel ad gangen, og får beskrivelsens navn. En titel, der kobles på den måde, huskes som en anden titel for beskrivelsen.
+- Et kursus vælges i feltet **Kursus** i formularen og får så kursets navn. Nye kurser (også fra import, kalender og Tilmelding) kobles automatisk og får kursets navn, når titlen er den samme som kursets navn eller en af dets "andre titler". Skifter et kursus navn, skifter dets registreringer navn med.
+- Eksisterende registreringer kobles under Administration › Kurser › **Kobl registrerede kurser til et kursus**, én titel ad gangen. En titel, der kobles på den måde, huskes som en anden titel for kurset.
+- Dokumenter, der blev lagt på en kursusbeskrivelse i en tidligere version, vises stadig ved kurset og kan fjernes der.
 
 ### Ensartede kursusnavne (moduler for lærere og pædagoger)
 
@@ -152,9 +153,7 @@ Modulkurser hedder **Modul N – Lærere** eller **Modul N – Pædagoger** (`co
 
 - Gamle stavemåder som "Modul 2 (lærere)", "LÆRERE Modul 2" eller "Modul 1 (pædagoger)" ensrettes i formularen og ved import.
 - I Høje-Taastrup får en titel uden målgruppe den fra tidspunktet: kl. 09:00 er pædagoger og kl. 14:00 er lærere.
-- Ved første opstart omdøbes Høje-Taastrups eksisterende modulkurser én gang, og de kobles til en kursusbeskrivelse pr. modul og målgruppe (oprettes, hvis den mangler). Kurser, der ikke kan placeres, beholder deres navn og står i Bibliotek under titler uden kursusbeskrivelse.
-- **Send til kurser** (ved hvert materiale under Materialer) sender et materiale ud på mange kurser på én gang: alle kurser med bestemte kursusbeskrivelser og/eller kurser, du vælger enkeltvis (søg, filtrér på Kommende/Afholdte, Vælg alle viste). Under et enkelt kursus kan et materiale fra biblioteket også tilføjes eller fjernes.
-- Hvert materiale er synligt for **Konsulenter** eller **Kun Kompas**. Konsulenten ser kursusbeskrivelsen og materialerne ved sine egne kurser, og begge dele af biblioteket nederst på sin side. Resellere og Apple ser ikke biblioteket endnu.
+- Ved første opstart omdøbes Høje-Taastrups eksisterende modulkurser én gang, og de kobles til en kursusbeskrivelse pr. modul og målgruppe (oprettes, hvis den mangler). Kurser, der ikke kan placeres, beholder deres navn og står under Administration › Kurser som titler, der ikke er koblet.
 
 ## Senere udvidelser (ikke bygget)
 
