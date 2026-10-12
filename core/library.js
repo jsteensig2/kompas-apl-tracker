@@ -356,7 +356,8 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
     };
   }
 
-  // body: { activity_ids, course_description_ids? }. Replaces the chosen courses (and descriptions, when given).
+  // body: { activity_ids, course_description_ids?, visibility? }. Replaces the chosen courses (and descriptions
+  // and who can see it, when given).
   function sendToCourses(user, id, b = {}) {
     requireAdmin(user);
     libraryItem(id);
@@ -368,6 +369,10 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
         db.run('INSERT INTO library_course_links (item_id, activity_id) VALUES (?, ?)', [id, aid]);
       }
       if (Array.isArray(b.course_description_ids)) linkDescriptions(id, b.course_description_ids);
+      if (b.visibility !== undefined) {
+        if (!VISIBILITY.includes(b.visibility)) throw new HttpError(400, 'Vælg Konsulenter eller Kun Kompas.');
+        db.run(`UPDATE library_items SET visibility = ?, updated_at = datetime('now') WHERE id = ?`, [b.visibility, id]);
+      }
     });
     return itemCourses(user, id);
   }

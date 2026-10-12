@@ -200,6 +200,14 @@ test('Send til kurser: one material goes to many chosen courses at once', async 
   const kd = await (await fetch(`${base}${await page(kim)}/data`)).json();
   assert.deepEqual(kd.planned.find((a) => a.id === a1.id).materials.map((i) => i.name), ['Evaluering']);
 
+  // Who can see it is chosen in the same save; Kun Kompas hides it from the consultant's courses.
+  const vis = await json('admin', `/api/library/items/${link.id}/courses`, send('PUT', { activity_ids: [a1.id, a2.id, a3.id], visibility: 'kompas' }));
+  assert.equal(vis.item.visibility, 'kompas');
+  assert.deepEqual((await (await fetch(`${base}${await page(kim)}/data`)).json()).planned.find((a) => a.id === a1.id).materials, []);
+  assert.equal((await call('admin', `/api/library/items/${link.id}/courses`, send('PUT', { activity_ids: [a1.id], visibility: 'alle' }))).status, 400);
+  assert.equal((await json('admin', `/api/library/items/${link.id}/courses`)).activity_ids.length, 3);
+  await json('admin', `/api/library/items/${link.id}/courses`, send('PUT', { activity_ids: [a1.id, a2.id, a3.id], visibility: 'consultants' }));
+
   // Taken off one course from the course; added to one from the course.
   assert.deepEqual((await json('admin', `/api/library/items/${link.id}/courses/${a2.id}`, { method: 'DELETE' })).inherited, []);
   assert.deepEqual((await json('admin', `/api/library/items/${link.id}/courses/${a2.id}`, { method: 'PUT' })).inherited.map((i) => i.name), ['Evaluering']);
