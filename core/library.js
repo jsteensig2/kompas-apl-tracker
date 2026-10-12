@@ -425,6 +425,15 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
   // A material both in the description and sent to the course shows once, as the description's.
   const dedupe = (rows) => rows.filter((r, i) => rows.findIndex((x) => x.id === r.id) === i);
 
+  // How many materials each course has (its description's, those sent to it, and its own), for the lists.
+  function materialCounts() {
+    return new Map(db.all(`SELECT activity_id, COUNT(DISTINCT item_id) AS n FROM (
+        SELECT activity_id, id AS item_id FROM library_items WHERE activity_id IS NOT NULL
+        UNION SELECT a.id, l.item_id FROM activities a JOIN library_links l ON l.course_description_id = a.course_description_id
+        UNION SELECT activity_id, item_id FROM library_course_links
+      ) GROUP BY activity_id`).map((r) => [r.activity_id, r.n]));
+  }
+
   function activityMaterials(user, activityId) {
     requireAdmin(user);
     if (!db.get('SELECT id FROM activities WHERE id = ?', [activityId])) throw new HttpError(404, 'Aktiviteten findes ikke.');
@@ -462,5 +471,5 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
   }
 
   return { downloadDocument, consultantDocument, overview, createDescription, updateDescription, deleteDescription, getDescription, linkTitle,
-    createItem, updateItem, deleteItem, setItemLink, itemCourses, sendToCourses, sendToCourse, downloadItem, activityMaterials, materialsFor, consultantLibrary, consultantFile };
+    createItem, updateItem, deleteItem, setItemLink, itemCourses, sendToCourses, sendToCourse, materialCounts, downloadItem, activityMaterials, materialsFor, consultantLibrary, consultantFile };
 }

@@ -354,6 +354,9 @@ function consultantState(c) {
 // Noter: a small speech bubble with the number of notes; the notes themselves are on the course page.
 const NOTE_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5A1.5 1.5 0 0 1 4 2h8a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 12 11H7l-3 2.5V11a1.5 1.5 0 0 1-1.5-1.5z"/></svg>';
 // Admins click it to read and write notes without leaving the list; an empty, faint bubble means no notes yet.
+// Materials from Bibliotek on the course: a paper clip with the count (Kompas only, like the notes).
+const matMark = (a) => (a.materials ? ` <span class="mat-mark" title="${a.materials} ${a.materials === 1 ? 'materiale' : 'materialer'}" aria-label="${a.materials} ${a.materials === 1 ? 'materiale' : 'materialer'}">${CLIP_ICON}${a.materials}</span>` : '');
+const CLIP_ICON = '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg>';
 const noteMark = (a) => {
   if (a.notes == null) return ''; // resellers and viewers never see notes
   const label = a.notes ? `${a.notes} ${a.notes === 1 ? 'note' : 'noter'}` : 'Skriv en note';
@@ -431,7 +434,7 @@ function activityLine(a) {
     <li class="latest-item ${rowState(a)}">
       <div class="latest-date">${fmtDate(a.date, true)}${a.start_time ? `<div class="muted small">${a.start_time}</div>` : ''}</div>
       <div class="latest-body">
-        <div class="latest-title">${star(a)}${esc(a.apl_type)} · ${esc(a.title)}${a.pending ? ` ${statusPill(a)}` : ''}${a.notes ? noteMark(a) : ''}</div>
+        <div class="latest-title">${star(a)}${esc(a.apl_type)} · ${esc(a.title)}${a.pending ? ` ${statusPill(a)}` : ''}${a.notes ? noteMark(a) : ''}${matMark(a)}</div>
         <div class="muted">${esc(a.school || '–')}${a.municipality ? ` · ${esc(a.municipality)}` : ''}</div>
         <div class="latest-meta">
           <span>${participantsCell(a, true)}</span><span>${esc(a.consultant || '')}${dblMark(a)}</span>
@@ -649,7 +652,7 @@ async function loadList() {
           <th class="num">Deltagere</th><th>Varighed</th><th>Konsulent</th><th>Reseller</th><th>Betalt af</th>${admin ? '<th><span class="sr">Redigér</span></th>' : ''}</tr></thead>
         <tbody>${rows.map((a) => `
           <tr class="${rowState(a)} ${admin ? 'clickable' : ''}" ${admin ? `data-edit="${a.id}"` : ''}>
-            <td class="nowrap">${fmtDate(a.date)}${timeSub(a)}</td><td>${statusCell(a)}</td><td>${esc(a.apl_type)}</td><td>${star(a)}<b>${esc(a.title)}</b>${noteMark(a)}</td>
+            <td class="nowrap">${fmtDate(a.date)}${timeSub(a)}</td><td>${statusCell(a)}</td><td>${esc(a.apl_type)}</td><td>${star(a)}<b>${esc(a.title)}</b>${noteMark(a)}${matMark(a)}</td>
             <td>${esc(a.school || '–')}</td><td>${esc(a.municipality || '–')}</td><td class="num">${participantsCell(a)}</td>
             <td class="nowrap">${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}</td><td>${esc(a.consultant || '–')}${dblMark(a)}</td>
             <td><span class="tag">${esc(a.reseller)}</span></td><td>${esc(a.paid_by || '–')}</td>
@@ -660,7 +663,7 @@ async function loadList() {
     <ul class="cards-list">${rows.map((a) => `
       <li class="card act-card ${rowState(a)} ${admin ? 'clickable' : ''}" ${admin ? `data-edit="${a.id}" role="button" tabindex="0"` : ''}>
         <div class="act-top"><span class="act-date">${fmtDate(a.date)}${withTime(a)} ${statusCell(a)}</span><span class="tag">${esc(a.reseller)}</span></div>
-        <div class="act-title">${star(a)}${esc(a.apl_type)} · ${esc(a.title)}${noteMark(a)}</div>
+        <div class="act-title">${star(a)}${esc(a.apl_type)} · ${esc(a.title)}${noteMark(a)}${matMark(a)}</div>
         <div class="muted">${esc(a.school || '–')}${a.municipality ? ` · ${esc(a.municipality)}` : ''}</div>
         <dl class="act-meta">
           <div><dt>Deltagere</dt><dd>${participantsCell(a)}</dd></div>
