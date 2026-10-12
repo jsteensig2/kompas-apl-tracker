@@ -100,8 +100,9 @@ const askIfSent = () => {
 document.addEventListener('visibilitychange', askIfSent);
 window.addEventListener('focus', askIfSent);
 
-// Bibliotek: the materials of a course, and the library of course descriptions.
+// Bibliotek: the course description (a document) and materials of a course, and the whole library.
 const fileHref = (it) => `/k/${encodeURIComponent(token)}/library/${it.id}/file`;
+const docHref = (d) => `/k/${encodeURIComponent(token)}/library/description/${d.id}/document`;
 const fmtSize = (n) => (n >= 1048576 ? `${(n / 1048576).toLocaleString('da-DK', { maximumFractionDigits: 1 })} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 // A link to a guide in Kompas Guidebygger (Kopiér link in the guide) is shown as a guide.
 const GUIDEBUILDER = /^https:\/\/claude\.ai\/(code\/)?artifact\/LHFrjyg4jzezL83ae6Ffpn/i;
@@ -115,16 +116,26 @@ function kindBadge(it) {
   return [(ext || 'FIL').toUpperCase().slice(0, 4), 'file'];
 }
 const guides = new Map();
-function matRow(it) {
+function matRow(it, extra = '') {
   const [badge, cls] = kindBadge(it);
   if (it.kind === 'guide') guides.set(String(it.id), it);
   const name = it.kind === 'guide' ? `<button type="button" class="mat-name linkbtn" data-guide="${it.id}">${esc(it.name)}</button>`
     : `<a class="mat-name" href="${esc(it.kind === 'link' ? it.url : fileHref(it))}" target="_blank" rel="noopener">${esc(it.name)}</a>`;
   const sub = it.kind === 'file' ? fmtSize(it.size) : it.kind === 'link' ? (isGuideLink(it.url) ? 'Guide i Kompas Guidebygger' : esc(it.url.replace(/^https?:\/\//, '').replace(/\/$/, ''))) : 'Guide';
-  return `<li class="mat-row"><span class="mat-kind mat-${cls}" aria-hidden="true">${badge}</span><div class="mat-main">${name}<div class="muted small">${sub}</div></div></li>`;
+  const of = it.descriptions?.length ? ` · ${it.descriptions.map(esc).join(', ')}` : '';
+  return `<li class="mat-row"><span class="mat-kind mat-${cls}" aria-hidden="true">${badge}</span><div class="mat-main">${name}<div class="muted small">${sub}${of}${extra}</div></div></li>`;
 }
-const matList = (items) => `<ul class="mat-list">${items.map(matRow).join('')}</ul>`;
-const courseMats = (a) => (a.materials?.length ? `<details class="k-mats"><summary>Materialer (${a.materials.length})</summary>${matList(a.materials)}</details>` : '');
+const matList = (items) => `<ul class="mat-list">${items.map((it) => matRow(it)).join('')}</ul>`;
+// A course description as a row that opens its document.
+function docRow(d) {
+  if (!d.document) return `<li class="mat-row"><span class="mat-kind mat-missing" aria-hidden="true">MANGLER</span><div class="mat-main"><span class="mat-name">${esc(d.title)}</span><div class="muted small">Dokumentet er ikke lagt ind endnu</div></div></li>`;
+  const [badge, cls] = kindBadge({ kind: 'file', filename: d.document.filename });
+  const facts = [d.audience, d.length_text].filter(Boolean).map(esc).join(' · ');
+  return `<li class="mat-row"><span class="mat-kind mat-${cls}" aria-hidden="true">${badge}</span><div class="mat-main"><a class="mat-name" href="${esc(docHref(d))}" target="_blank" rel="noopener">${esc(d.title)}</a>
+    <div class="muted small">${[facts, fmtSize(d.document.size)].filter(Boolean).join(' · ')}</div></div></li>`;
+}
+const courseDoc = (a) => (a.description?.document ? `<a class="k-doc" href="${esc(docHref(a.description))}" target="_blank" rel="noopener">Kursusbeskrivelse</a>` : '');
+const courseMats = (a) => courseDoc(a) + (a.materials?.length ? `<details class="k-mats"><summary>Materialer (${a.materials.length})</summary>${matList(a.materials)}</details>` : '');
 
 function openGuide(id) {
   const it = guides.get(String(id));
@@ -138,12 +149,11 @@ function openGuide(id) {
 
 function librarySection() {
   const lib = data.library;
-  if (!lib || (!lib.descriptions.length && !lib.general.length)) return '';
-  const block = (label, text) => (text ? `<div><h3>${label}</h3><p>${esc(text)}</p></div>` : '');
-  return `<section class="card card-flush" id="library"><div class="card-head card-head-pad"><h2>Bibliotek</h2><span class="muted small">Kursusbeskrivelser, materialer og guides</span></div>
-    ${lib.descriptions.map((d) => `<details class="k-lib-desc"><summary><b>${esc(d.title)}</b><span class="muted small">${[d.audience, d.length_text, `${d.items.length} ${d.items.length === 1 ? 'materiale' : 'materialer'}`].filter(Boolean).map(esc).join(' · ')}</span></summary>
-      <div class="k-lib-body">${d.summary ? `<p>${esc(d.summary)}</p>` : ''}${block('Læringsmål', d.goals)}${block('Program', d.program)}${d.items.length ? matList(d.items) : ''}</div></details>`).join('')}
-    ${lib.general.length ? `<div class="k-lib-desc"><b>Guides og fælles materialer</b>${matList(lib.general)}</div>` : ''}
+  if (!lib || (!lib.descriptions.length && !lib.materials.length)) return '';
+  const part = (title, n, body) => `<details class="k-lib-desc"><summary><b>${title}</b><span class="muted small">${n}</span></summary><div class="k-lib-body">${body}</div></details>`;
+  return `<section class="card card-flush" id="library"><div class="card-head card-head-pad"><h2>Bibliotek</h2></div>
+    ${lib.descriptions.length ? part('Kursusbeskrivelser', lib.descriptions.length, `<ul class="mat-list">${lib.descriptions.map(docRow).join('')}</ul>`) : ''}
+    ${lib.materials.length ? part('Materialer', lib.materials.length, matList(lib.materials)) : ''}
   </section>`;
 }
 

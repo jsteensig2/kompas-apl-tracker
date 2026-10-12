@@ -711,3 +711,11 @@ ul.mat-list:not(.card-pad) { padding-left: 0; }
 .k-lib-body h3 { margin: 0; font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .k-lib-body p { margin: 0; white-space: pre-wrap; }
 @media (max-width: 760px) { .table-wrap.lib-link-wrap, .table-wrap.desc-courses { display: block; } }
+/* Bibliotek: course descriptions are attached documents; the library has two parts. */
+.lib-tabs { margin: 4px 0 16px; }
+.mat-missing { background: transparent; border: 1px dashed var(--line); color: var(--muted); font-size: 0.5rem; }
+.desc-row.is-inactive .mat-name { color: var(--muted); }
+.desc-row .desc-counts { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 2px; padding: 0; border: 0; }
+.lib-tabs small { margin-left: 6px; }
+.doc-current { margin-bottom: 8px !important; padding-bottom: 0 !important; }
+.k-doc { display: inline-block; margin-top: 6px; margin-right: 12px; font-weight: 500; font-size: 0.88rem; }

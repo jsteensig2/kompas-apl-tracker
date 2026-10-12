@@ -832,7 +832,7 @@ export function createApi(db, { XLSX } = {}) {
       apl_type: a.apl_type, participants: a.participants, reseller: a.reseller, status: a.status, pending: a.pending, reschedule: a.reschedule, sessions: a.duration === 'full' ? 2 : 1,
       country: GREENLAND.has(String(a.municipality || '').toLowerCase()) ? 'Grønland' : 'Danmark',
       notes: notesFor(a.id, { consultantId: c.id }),
-      materials: consultantMaterials(a.id),
+      ...consultantMaterials(a.id),
     }));
     const apple = new Map(appleRows({ consultant: c.id }).map((a) => [a.id, a]));
     const held = rows.filter((a) => a.status === 'held').map((a) => ({ ...a, apple: apple.get(a.id)?.fields || [], appleForm: apple.get(a.id)?.formLink || null, apple_reported_at: apple.get(a.id)?.apple_reported_at || null }))
@@ -845,12 +845,13 @@ export function createApi(db, { XLSX } = {}) {
       library: library.consultantLibrary() };
   }
 
-  // Bibliotek on the consultant page: the materials of one course that consultants may see.
+  // Bibliotek on the consultant page: the course description and the materials of one course that consultants may see.
   function consultantMaterials(activityId) {
     const m = library.materialsFor(activityId, { consultantsOnly: true });
-    return [...m.inherited, ...m.own];
+    return { description: m.description, materials: [...m.inherited, ...m.own] };
   }
   const consultantFile = (token, itemId) => library.consultantFile(consultantByToken(token).id, itemId);
+  const consultantDocument = (token, descriptionId) => library.consultantDocument(consultantByToken(token).id, descriptionId);
 
   // --- Tilmelding ---------------------------------------------------------------------------
   // Works like a Doodle: Foreløbig courses from today on that have no consultant yet are open, and
@@ -1179,6 +1180,7 @@ export function createApi(db, { XLSX } = {}) {
       case 'GET /library/descriptions/:id': return { json: library.getDescription(user, id) };
       case 'PUT /library/descriptions/:id': return { json: library.updateDescription(user, id, body) };
       case 'DELETE /library/descriptions/:id': return { json: library.deleteDescription(user, id) };
+      case 'GET /library/descriptions/:id/document': return { file: library.downloadDocument(user, int(parts[2])) };
       case 'PUT /library/descriptions/:id/items/:id': return { json: library.setItemLink(user, int(parts[2]), id, true) };
       case 'DELETE /library/descriptions/:id/items/:id': return { json: library.setItemLink(user, int(parts[2]), id, false) };
       case 'POST /library/items': return { json: library.createItem(user, body) };
@@ -1221,5 +1223,5 @@ export function createApi(db, { XLSX } = {}) {
     return { found, missing, remaining: Math.max(todo.length - limit, 0), next: done.at(-1)?.id || 0 };
   }
 
-  return { handle, feed, findPostalCodes, consultantOverview, consultantFile, setConsultantAppleEmail, setConsultantAppleReported, setSignup, markMessagesRead, consultantNotes, deleteConsultantNote, calendarUrlFor: (user) => db.get('SELECT calendar_url FROM users WHERE id = ?', [user.id])?.calendar_url || '' };
+  return { handle, feed, findPostalCodes, consultantOverview, consultantFile, consultantDocument, setConsultantAppleEmail, setConsultantAppleReported, setSignup, markMessagesRead, consultantNotes, deleteConsultantNote, calendarUrlFor: (user) => db.get('SELECT calendar_url FROM users WHERE id = ?', [user.id])?.calendar_url || '' };
 }

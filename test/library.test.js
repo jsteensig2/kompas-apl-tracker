@@ -38,8 +38,8 @@ test('only Kompas can use the library', async () => {
 });
 
 test('a description links courses by title, and remembers titles linked by hand', async () => {
-  const d = await json('admin', '/api/library/descriptions', send('POST', { title: 'Modul 7 (pædagoger)', summary: 'Kom i gang', match_titles: 'M7 pæd' }));
-  assert.equal(d.title, 'Modul 7 (pædagoger)');
+  const d = await json('admin', '/api/library/descriptions', send('POST', { title: 'Modul 7 (pædagoger)', match_titles: 'M7 pæd' }));
+  assert.deepEqual([d.title, d.document], ['Modul 7 (pædagoger)', null]);
   assert.equal((await call('admin', '/api/library/descriptions', send('POST', { title: 'modul 7 (Pædagoger)' }))).status, 400);
 
   // New courses get the description from their title, also through another title.
@@ -93,8 +93,35 @@ test('materials: files, links and guides; files are downloaded again as they wer
   assert.equal((await call('admin', `/api/library/items/${link.id}/file`)).status, 404);
 });
 
+test('the course description is an attached document that can be replaced and removed', async () => {
+  const d = await json('admin', '/api/library/descriptions', send('POST', { title: 'Modul 10 (lærere)',
+    document: { name: 'Modul 10 – beskrivelse.pdf', type: 'application/pdf', data: b64('%PDF-1.4 beskrivelse') } }));
+  assert.deepEqual(d.document, { filename: 'Modul 10 – beskrivelse.pdf', content_type: 'application/pdf', size: 20 });
+  const res = await call('admin', `/api/library/descriptions/${d.id}/document`);
+  assert.equal(await res.text(), '%PDF-1.4 beskrivelse');
+  assert.match(res.headers.get('content-disposition'), /^inline; /);
+  assert.equal((await call('Atea', `/api/library/descriptions/${d.id}/document`)).status, 403);
+  assert.equal((await json('admin', '/api/library')).descriptions.find((x) => x.id === d.id).document.filename, 'Modul 10 – beskrivelse.pdf');
+
+  // Saving without a document keeps it; a new one replaces it; remove_document takes it off.
+  const kept = await json('admin', `/api/library/descriptions/${d.id}`, send('PUT', { title: 'Modul 10 (lærere)', audience: 'Lærere' }));
+  assert.deepEqual([kept.audience, kept.document.size], ['Lærere', 20]);
+  const word = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  const replaced = await json('admin', `/api/library/descriptions/${d.id}`, send('PUT', { title: 'Modul 10 (lærere)', document: { name: 'm10.docx', type: word, data: b64('docx') } }));
+  assert.equal(replaced.document.filename, 'm10.docx');
+  const w = await call('admin', `/api/library/descriptions/${d.id}/document`);
+  assert.deepEqual([await w.text(), w.headers.get('content-type'), w.headers.get('content-disposition').split(';')[0]], ['docx', word, 'attachment']);
+  assert.equal((await call('admin', `/api/library/descriptions/${d.id}`, send('PUT', { title: 'Modul 10 (lærere)', document: { name: 'stor.pdf', data: 'A'.repeat(28 * 1024 * 1024) } }))).status, 413);
+  assert.equal((await json('admin', `/api/library/descriptions/${d.id}`)).document.filename, 'm10.docx');
+  assert.equal((await json('admin', `/api/library/descriptions/${d.id}`, send('PUT', { title: 'Modul 10 (lærere)', remove_document: true }))).document, null);
+  assert.equal((await call('admin', `/api/library/descriptions/${d.id}/document`)).status, 404);
+});
+
 test('a consultant sees the materials of their own courses, never Kun Kompas or other consultants\' course files', async () => {
-  const d = await json('admin', '/api/library/descriptions', send('POST', { title: 'Modul 9 (lærere)', program: '09:00 Velkomst' }));
+  const d = await json('admin', '/api/library/descriptions', send('POST', { title: 'Modul 9 (lærere)',
+    document: { name: 'modul9.pdf', type: 'application/pdf', data: b64('beskrivelse 9') } }));
+  const old = await json('admin', '/api/library/descriptions', send('POST', { title: 'Modul 0 (udgået)', active: false,
+    document: { name: 'modul0.pdf', type: 'application/pdf', data: b64('gammel') } }));
   const add = (body) => json('admin', '/api/library/items', send('POST', body));
   const slides = await add({ kind: 'file', name: 'Slides', course_description_ids: [d.id], file: { name: 'slides.pdf', type: 'application/pdf', data: b64('slides') } });
   const secret = await add({ kind: 'file', name: 'Drejebog', visibility: 'kompas', course_description_ids: [d.id], file: { name: 'drejebog.pdf', type: 'application/pdf', data: b64('hemmelig') } });
@@ -114,10 +141,19 @@ test('a consultant sees the materials of their own courses, never Kun Kompas or 
   const data = await (await fetch(`${base}${kp}/data`)).json();
   const mine = data.planned.find((a) => a.id === kimCourse.id);
   assert.deepEqual(mine.materials.map((i) => i.name), ['Slides', 'deltagere.pdf']);
-  const desc = data.library.descriptions.find((x) => x.id === d.id);
-  assert.deepEqual([desc.program, desc.items.map((i) => i.name)], ['09:00 Velkomst', ['Slides']]);
-  assert.ok(data.library.general.some((i) => i.id === guide.id && i.body === 'Trin 1'));
+  assert.deepEqual([mine.description.id, mine.description.document.filename], [d.id, 'modul9.pdf']);
+  // Bibliotek has two parts: the course descriptions (documents) and every material for consultants.
+  assert.equal(data.library.descriptions.find((x) => x.id === d.id).document.filename, 'modul9.pdf');
+  assert.ok(!data.library.descriptions.some((x) => x.id === old.id));
+  assert.deepEqual(data.library.materials.find((i) => i.id === slides.id).descriptions, ['Modul 9 (lærere)']);
+  assert.ok(data.library.materials.some((i) => i.id === guide.id && i.body === 'Trin 1'));
+  assert.ok(!data.library.materials.some((i) => i.id === list.id || i.id === secret.id));
   assert.ok(!JSON.stringify(data).includes('hemmelig'));
+
+  const doc = (id) => fetch(`${base}${kp}/library/description/${id}/document`);
+  assert.equal(await (await doc(d.id)).text(), 'beskrivelse 9');
+  assert.equal((await doc(old.id)).status, 404);
+  assert.equal((await fetch(`${base}/k/${'0'.repeat(48)}/library/description/${d.id}/document`)).status, 404);
 
   const open = (id) => fetch(`${base}${kp}/library/${id}/file`);
   assert.equal(await (await open(slides.id)).text(), 'slides');
