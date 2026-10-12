@@ -719,3 +719,22 @@ ul.mat-list:not(.card-pad) { padding-left: 0; }
 .lib-tabs small { margin-left: 6px; }
 .doc-current { margin-bottom: 8px !important; padding-bottom: 0 !important; }
 .k-doc { display: inline-block; margin-top: 6px; margin-right: 12px; font-weight: 500; font-size: 0.88rem; }
+/* Bibliotek: Send til kurser. */
+.send-tools { margin: 4px 0 8px; }
+.send-all { margin-bottom: 4px; }
+.send-list { list-style: none; margin: 0; padding: 0; max-height: 46vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+.send-list li + li { border-top: 1px solid var(--line); }
+.send-list > li.muted { padding: 10px 12px; }
+.send-row { display: flex; align-items: center; gap: 12px; padding: 8px 12px; cursor: pointer; }
+.send-row:hover { background: var(--surface-2); }
+.send-date { width: 84px; flex: none; }
+.send-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.materials-card .add-existing, #materials .add-existing { padding: 4px 0 12px; }
+@media (max-width: 560px) {
+  .send-row { display: grid; grid-template-columns: auto 1fr auto; column-gap: 10px; row-gap: 2px; }
+  .send-date { width: auto; }
+  .send-main { grid-column: 2 / 4; grid-row: 2; }
+}
+.send-form fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.send-form legend { padding: 0; margin-bottom: 6px; font-weight: 600; }
+.send-row input[type="checkbox"], .send-all input[type="checkbox"] { width: 18px; height: 18px; min-height: 0; flex: none; margin: 0; padding: 0; }

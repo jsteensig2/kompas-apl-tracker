@@ -170,6 +170,52 @@ test('a consultant sees the materials of their own courses, never Kun Kompas or 
   assert.ok((await json('admin', '/api/library')).items.some((i) => i.id === slides.id));
 });
 
+test('Send til kurser: one material goes to many chosen courses at once', async () => {
+  const d = await json('admin', '/api/library/descriptions', send('POST', { title: 'Webinar: Keynote' }));
+  const add = (body) => json('admin', '/api/library/items', send('POST', body));
+  const link = await add({ kind: 'link', name: 'Evaluering', url: 'https://forms.example/eval' });
+  const secret = await add({ kind: 'guide', name: 'Intern tjekliste', body: 'x', visibility: 'kompas' });
+  const a1 = await course('Skolebesøg Vestskolen', kim);
+  const a2 = await course('Skolebesøg Østskolen', kim);
+  const a3 = await course('Skolebesøg Nordskolen', soren);
+  const a4 = await course('Webinar: Keynote', soren);
+  assert.equal(a4.course_description_id, d.id);
+
+  const before = await json('admin', `/api/library/items/${link.id}/courses`);
+  assert.deepEqual([before.activity_ids, before.course_description_ids], [[], []]);
+  assert.ok(before.courses.some((c) => c.id === a1.id && c.status === 'planned'));
+  assert.equal((await call('Atea', `/api/library/items/${link.id}/courses`)).status, 403);
+
+  // Chosen courses and a whole description in one save.
+  const r = await json('admin', `/api/library/items/${link.id}/courses`, send('PUT', { activity_ids: [a1.id, a2.id, a3.id, a1.id], course_description_ids: [d.id] }));
+  assert.deepEqual([r.activity_ids.sort(), r.course_description_ids], [[a1.id, a2.id, a3.id].sort(), [d.id]]);
+  for (const a of [a1, a2, a3, a4]) {
+    assert.deepEqual((await json('admin', `/api/activities/${a.id}/materials`)).inherited.map((i) => i.name), ['Evaluering'], a.title);
+  }
+  assert.equal((await json('admin', `/api/activities/${a1.id}/materials`)).inherited[0].sent, true);
+  assert.equal((await json('admin', '/api/library')).items.find((i) => i.id === link.id).courses, 3);
+
+  // Consultants see it at those courses; Kun Kompas stays hidden even when sent.
+  await json('admin', `/api/library/items/${secret.id}/courses`, send('PUT', { activity_ids: [a1.id] }));
+  const kd = await (await fetch(`${base}${await page(kim)}/data`)).json();
+  assert.deepEqual(kd.planned.find((a) => a.id === a1.id).materials.map((i) => i.name), ['Evaluering']);
+
+  // Taken off one course from the course; added to one from the course.
+  assert.deepEqual((await json('admin', `/api/library/items/${link.id}/courses/${a2.id}`, { method: 'DELETE' })).inherited, []);
+  assert.deepEqual((await json('admin', `/api/library/items/${link.id}/courses/${a2.id}`, { method: 'PUT' })).inherited.map((i) => i.name), ['Evaluering']);
+  // A course-only material cannot be sent elsewhere; an unknown course is refused.
+  const own = await add({ kind: 'link', name: 'Kun her', url: 'https://x.dk', activity_id: a1.id });
+  assert.equal((await call('admin', `/api/library/items/${own.id}/courses`, send('PUT', { activity_ids: [a2.id] }))).status, 400);
+  assert.equal((await call('admin', `/api/library/items/${link.id}/courses`, send('PUT', { activity_ids: [999999] }))).status, 404);
+  assert.equal((await json('admin', `/api/library/items/${link.id}/courses`)).activity_ids.length, 3);
+
+  // Deleting a course or the material removes the links.
+  await call('admin', `/api/activities/${a3.id}`, { method: 'DELETE' });
+  assert.equal((await json('admin', `/api/library/items/${link.id}/courses`)).activity_ids.length, 2);
+  await call('admin', `/api/library/items/${link.id}`, { method: 'DELETE' });
+  assert.deepEqual((await json('admin', `/api/activities/${a1.id}/materials`)).inherited.map((i) => i.name), ['Intern tjekliste']);
+});
+
 test('import and Sæt på give courses their description', async () => {
   const d = await json('admin', '/api/library/descriptions', send('POST', { title: 'Webinar: Didaktik' }));
   const o = await options();

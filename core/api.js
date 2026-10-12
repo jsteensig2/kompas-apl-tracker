@@ -1203,6 +1203,10 @@ export function createApi(db, { XLSX } = {}) {
       case 'POST /library/items': return { json: library.createItem(user, body) };
       case 'PUT /library/items/:id': return { json: library.updateItem(user, id, body) };
       case 'DELETE /library/items/:id': return { json: library.deleteItem(user, id) };
+      case 'GET /library/items/:id/courses': return { json: library.itemCourses(user, int(parts[2])) };
+      case 'PUT /library/items/:id/courses': return { json: library.sendToCourses(user, int(parts[2]), body) };
+      case 'PUT /library/items/:id/courses/:id': return { json: library.sendToCourse(user, int(parts[2]), id, true) };
+      case 'DELETE /library/items/:id/courses/:id': return { json: library.sendToCourse(user, int(parts[2]), id, false) };
       case 'GET /library/items/:id/file': return { file: library.downloadItem(user, int(parts[2])) };
       case 'GET /activities/:id/materials': return { json: library.activityMaterials(user, int(parts[1])) };
       case 'GET /messages': return { json: listMessages(user) };
