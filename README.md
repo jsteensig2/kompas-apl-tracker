@@ -134,6 +134,14 @@ På konsulentsiden (`/k/<token>`) har hvert afholdt kursus en knap **Til Apple**
 
 **Åbn Apples skema udfyldt:** Hvert kursus (i fanen og i konsulentens Til Apple-dialog) har et link til Apples skema (Qualtrics `SV_7UiJTisrllOFbsG`, dansk) med de kendte svar udfyldt via `Q_PopulateResponse`. Spørgsmålenes id'er (`QID…`) står ved hvert felt i `appleFields` i `core/api.js`. Konsulenten går siderne igennem, udfylder resten og indsender selv.
 
+## Bibliotek (kursusbeskrivelser og materialer)
+
+Fanen **Bibliotek** (kun Kompas) samler kursusbeskrivelser og materialer: filer (højst 20 MB, gemt i databasen og dermed med i backuppen), links og guides skrevet direkte i appen. Et materiale kan høre til flere kursusbeskrivelser, til hele biblioteket, eller kun til ét kursus (fx en deltagerliste).
+
+- Et kursus får sin kursusbeskrivelse i feltet **Kursusbeskrivelse** i formularen. Nye kurser (også fra import, kalender og Tilmelding) kobles automatisk, når titlen er den samme som beskrivelsens titel eller en af dens "andre titler".
+- Eksisterende kurser kobles fra Bibliotek › **Kobl kurser til en kursusbeskrivelse**, én titel ad gangen. En titel, der kobles på den måde, huskes som en anden titel for beskrivelsen.
+- Hvert materiale er synligt for **Konsulenter** eller **Kun Kompas**. Konsulenten ser materialerne ved sine egne kurser og hele biblioteket nederst på sin side. Resellere og Apple ser ikke biblioteket endnu.
+
 ## Senere udvidelser (ikke bygget)
 
 Apple compliance-mål (fx 34 / 40 workshops) er bevidst ikke implementeret. Dashboardets tal

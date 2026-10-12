@@ -9,6 +9,7 @@
 
 import { parseIcs, suggestFromEvent } from './ical.js';
 import { runImport, TEMPLATE_HEADERS, parseClock } from './import.js';
+import { createLibrary, descriptionForTitle } from './library.js';
 
 export class HttpError extends Error {
   constructor(status, message) {
@@ -45,14 +46,16 @@ const ACTIVITY_SELECT = `
          a.municipality_id, m.name AS municipality,
          a.consultant_id, c.name AS consultant,
          a.reseller_id, r.name AS reseller,
-         a.paid_by_id, p.name AS paid_by
+         a.paid_by_id, p.name AS paid_by,
+         a.course_description_id, cd.title AS course_description
   FROM activities a
   JOIN apl_types t ON t.id = a.apl_type_id
   JOIN resellers r ON r.id = a.reseller_id
   LEFT JOIN schools s ON s.id = a.school_id
   LEFT JOIN municipalities m ON m.id = a.municipality_id
   LEFT JOIN consultants c ON c.id = a.consultant_id
-  LEFT JOIN paid_by p ON p.id = a.paid_by_id`;
+  LEFT JOIN paid_by p ON p.id = a.paid_by_id
+  LEFT JOIN course_descriptions cd ON cd.id = a.course_description_id`;
 
 // Dobbeltbooking: two courses the same day clash, unless both have a start and an end time
 // and the times do not overlap (09:00–12:00 and 12:30–15:00 is fine).
@@ -237,6 +240,7 @@ function toCsv(rows) {
  * @param deps { XLSX } – SheetJS, used to write .xlsx exports
  */
 export function createApi(db, { XLSX } = {}) {
+  const library = createLibrary(db, { HttpError, requireAdmin, todayIso });
   const nameExists = (table, name, exceptId = 0) =>
     db.get(`SELECT id FROM ${table} WHERE name = ? COLLATE NOCASE AND id <> ?`, [name, exceptId]);
 
@@ -371,6 +375,7 @@ export function createApi(db, { XLSX } = {}) {
         schools: db.all(`SELECT s.id, s.name, s.municipality_id, m.name AS municipality
                          FROM schools s LEFT JOIN municipalities m ON m.id = s.municipality_id ORDER BY s.name`),
         titles: db.all(`SELECT title AS name, COUNT(*) AS n FROM activities GROUP BY title ORDER BY n DESC, title`).map((r) => r.name),
+        descriptions: db.all('SELECT id, title, match_titles, active FROM course_descriptions ORDER BY title COLLATE NOCASE'),
       };
     }
     const distinct = (idCol, table) => db.all(
@@ -429,6 +434,13 @@ export function createApi(db, { XLSX } = {}) {
     if (start_time && end_time && end_time <= start_time) errors.push('Sluttidspunktet skal være efter starttidspunktet.');
     const needed = neededInput(b.consultants_needed);
     if (needed === undefined) errors.push(NEEDED_ERROR);
+    // Kursusbeskrivelse: chosen in the form (empty = none). Left out, a new course gets the one its title matches.
+    let course_description_id;
+    if (Object.hasOwn(b, 'course_description_id')) {
+      course_description_id = int(b.course_description_id);
+      if (course_description_id && !db.get('SELECT id FROM course_descriptions WHERE id = ?', [course_description_id])) errors.push('Kursusbeskrivelsen findes ikke.');
+      if (!course_description_id) course_description_id = null;
+    }
     if (errors.length) throw new HttpError(400, errors.join(' '));
     if (school_id === 'new') {
       const existing = db.get('SELECT id FROM schools WHERE name = ? COLLATE NOCASE AND municipality_id IS ?', [schoolName, municipality_id]);
@@ -437,7 +449,7 @@ export function createApi(db, { XLSX } = {}) {
     }
     return { date: b.date, start_time, end_time, duration: b.duration, apl_type_id, title, school_id: school_id || null, municipality_id,
       participants, consultant_id, reseller_id, paid_by_id, pending: truthy(b.pending) ? 1 : 0,
-      reschedule: truthy(b.reschedule) ? 1 : 0, needed };
+      reschedule: truthy(b.reschedule) ? 1 : 0, needed, course_description_id };
   }
 
   // Consultants needed (Tilmelding): empty = not set, otherwise a whole number 1–50; undefined = invalid.
@@ -461,6 +473,7 @@ export function createApi(db, { XLSX } = {}) {
     const uid = String(body?.calendar_uid || '').slice(0, 300);
     if (uid) db.run('UPDATE activities SET calendar_uid = ? WHERE id = ?', [uid, lastInsertRowid]);
     if (a.pending && a.needed) db.run('UPDATE activities SET consultants_needed = ? WHERE id = ?', [a.needed, lastInsertRowid]);
+    db.run('UPDATE activities SET course_description_id = ? WHERE id = ?', [a.course_description_id === undefined ? descriptionForTitle(db, a.title) : a.course_description_id, lastInsertRowid]);
     return getActivity(user, Number(lastInsertRowid));
   }
 
@@ -472,6 +485,7 @@ export function createApi(db, { XLSX } = {}) {
       [...ACTIVITY_FIELDS.map((k) => a[k]), id]);
     // The form only sends the number needed for Foreløbig courses; otherwise it is left as it was.
     if (body && 'consultants_needed' in body && a.pending) db.run('UPDATE activities SET consultants_needed = ? WHERE id = ?', [a.needed, id]);
+    if (a.course_description_id !== undefined) db.run('UPDATE activities SET course_description_id = ? WHERE id = ?', [a.course_description_id, id]);
     return getActivity(user, id);
   }
 
@@ -818,6 +832,7 @@ export function createApi(db, { XLSX } = {}) {
       apl_type: a.apl_type, participants: a.participants, reseller: a.reseller, status: a.status, pending: a.pending, reschedule: a.reschedule, sessions: a.duration === 'full' ? 2 : 1,
       country: GREENLAND.has(String(a.municipality || '').toLowerCase()) ? 'Grønland' : 'Danmark',
       notes: notesFor(a.id, { consultantId: c.id }),
+      materials: consultantMaterials(a.id),
     }));
     const apple = new Map(appleRows({ consultant: c.id }).map((a) => [a.id, a]));
     const held = rows.filter((a) => a.status === 'held').map((a) => ({ ...a, apple: apple.get(a.id)?.fields || [], appleForm: apple.get(a.id)?.formLink || null, apple_reported_at: apple.get(a.id)?.apple_reported_at || null }))
@@ -826,8 +841,16 @@ export function createApi(db, { XLSX } = {}) {
       .sort((x, y) => x.date.localeCompare(y.date) || (x.start_time || '').localeCompare(y.start_time || ''));
     const byYear = {};
     for (const a of held) byYear[a.date.slice(0, 4)] = (byYear[a.date.slice(0, 4)] || 0) + a.sessions;
-    return { name: c.name, email: c.email || '', today: todayIso(), feedPath: `/calendar/feed/${c.feed_token}.ics`, held, planned, sessionsByYear: byYear, signup: signupList(c.id), messages: messagesFor(c.id) };
+    return { name: c.name, email: c.email || '', today: todayIso(), feedPath: `/calendar/feed/${c.feed_token}.ics`, held, planned, sessionsByYear: byYear, signup: signupList(c.id), messages: messagesFor(c.id),
+      library: library.consultantLibrary() };
   }
+
+  // Bibliotek on the consultant page: the materials of one course that consultants may see.
+  function consultantMaterials(activityId) {
+    const m = library.materialsFor(activityId, { consultantsOnly: true });
+    return [...m.inherited, ...m.own];
+  }
+  const consultantFile = (token, itemId) => library.consultantFile(consultantByToken(token).id, itemId);
 
   // --- Tilmelding ---------------------------------------------------------------------------
   // Works like a Doodle: Foreløbig courses from today on that have no consultant yet are open, and
@@ -938,9 +961,9 @@ export function createApi(db, { XLSX } = {}) {
       if (!lead.consultant_id) db.run("UPDATE activities SET consultant_id = ?, updated_at = datetime('now') WHERE id = ?", [ids[0], id]);
       for (const cid of lead.consultant_id ? ids : ids.slice(1)) {
         db.run(`INSERT INTO activities (date, start_time, end_time, duration, apl_type_id, title, school_id, municipality_id, participants, consultant_id,
-                  reseller_id, paid_by_id, pending, reschedule, consultants_needed, created_by)
+                  reseller_id, paid_by_id, pending, reschedule, consultants_needed, course_description_id, created_by)
                 SELECT date, start_time, end_time, duration, apl_type_id, title, school_id, municipality_id, participants, ?,
-                  reseller_id, paid_by_id, pending, reschedule, consultants_needed, ? FROM activities WHERE id = ?`, [cid, user.id, id]);
+                  reseller_id, paid_by_id, pending, reschedule, consultants_needed, course_description_id, ? FROM activities WHERE id = ?`, [cid, user.id, id]);
       }
       db.exec('COMMIT');
     } catch (e) {
@@ -1150,6 +1173,19 @@ export function createApi(db, { XLSX } = {}) {
       case 'PUT /signups/:id/needed': return { json: setNeeded(user, int(parts[1]), body) };
       case 'POST /signups/:id/assign': return { json: assignConsultants(user, int(parts[1]), body) };
       case 'DELETE /signups/:id/consultants/:id': return { json: removeSignup(user, int(parts[1]), int(parts[3])) };
+      case 'GET /library': return { json: library.overview(user) };
+      case 'POST /library/link-title': return { json: library.linkTitle(user, body) };
+      case 'POST /library/descriptions': return { json: library.createDescription(user, body) };
+      case 'GET /library/descriptions/:id': return { json: library.getDescription(user, id) };
+      case 'PUT /library/descriptions/:id': return { json: library.updateDescription(user, id, body) };
+      case 'DELETE /library/descriptions/:id': return { json: library.deleteDescription(user, id) };
+      case 'PUT /library/descriptions/:id/items/:id': return { json: library.setItemLink(user, int(parts[2]), id, true) };
+      case 'DELETE /library/descriptions/:id/items/:id': return { json: library.setItemLink(user, int(parts[2]), id, false) };
+      case 'POST /library/items': return { json: library.createItem(user, body) };
+      case 'PUT /library/items/:id': return { json: library.updateItem(user, id, body) };
+      case 'DELETE /library/items/:id': return { json: library.deleteItem(user, id) };
+      case 'GET /library/items/:id/file': return { file: library.downloadItem(user, int(parts[2])) };
+      case 'GET /activities/:id/materials': return { json: library.activityMaterials(user, int(parts[1])) };
       case 'GET /messages': return { json: listMessages(user) };
       case 'POST /messages': return { json: createMessage(user, body) };
       case 'DELETE /messages/:id': return { json: deleteMessage(user, id) };
@@ -1185,5 +1221,5 @@ export function createApi(db, { XLSX } = {}) {
     return { found, missing, remaining: Math.max(todo.length - limit, 0), next: done.at(-1)?.id || 0 };
   }
 
-  return { handle, feed, findPostalCodes, consultantOverview, setConsultantAppleEmail, setConsultantAppleReported, setSignup, markMessagesRead, consultantNotes, deleteConsultantNote, calendarUrlFor: (user) => db.get('SELECT calendar_url FROM users WHERE id = ?', [user.id])?.calendar_url || '' };
+  return { handle, feed, findPostalCodes, consultantOverview, consultantFile, setConsultantAppleEmail, setConsultantAppleReported, setSignup, markMessagesRead, consultantNotes, deleteConsultantNote, calendarUrlFor: (user) => db.get('SELECT calendar_url FROM users WHERE id = ?', [user.id])?.calendar_url || '' };
 }

@@ -4,6 +4,7 @@
 // headers in the file. This module maps the headers, validates every row against the reference
 // lists and either returns a preview (commit = false) or inserts the valid rows (commit = true).
 // The server always validates again on commit; the preview is only for the user.
+import { descriptionForTitle } from './library.js';
 
 // Municipalities in Greenland (or a school name such as "Flere skoler – Kujalleq").
 const GL_HINT = /avannaata|kujalleq|qeqertalik|qeqqata|sermersooq|grønland|kalaallit/i;
@@ -404,9 +405,9 @@ export function runImport({ db, today, user }, body) {
           ids.school = created.schools[k] ||= Number(db.run('INSERT INTO schools (name, municipality_id) VALUES (?, ?)', [schoolNames[sk], ids.municipality]).lastInsertRowid);
         }
         db.run(`INSERT INTO activities (date, start_time, end_time, duration, apl_type_id, title, school_id, municipality_id, participants,
-                  consultant_id, reseller_id, paid_by_id, pending, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                  consultant_id, reseller_id, paid_by_id, pending, course_description_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [r.date, r.start_time, r.end_time, r.duration, ids.type, r.title, ids.school ?? null, ids.municipality, r.participants,
-            consultantId, ids.reseller, ids.paidBy ?? null, r.pending ? 1 : 0, user.id]);
+            consultantId, ids.reseller, ids.paidBy ?? null, r.pending ? 1 : 0, descriptionForTitle(db, r.title), user.id]);
       }
       db.exec('COMMIT');
     } catch (e) {

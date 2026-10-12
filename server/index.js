@@ -24,6 +24,8 @@ export function createServer({ dbFile = process.env.DB_FILE || fileURLToPath(new
     }
     next();
   });
+  // Bibliotek: uploaded files come as base64 in JSON (up to 20 MB each); everything else stays small.
+  app.use('/api/library/items', express.json({ limit: '30mb' }));
   app.use(express.json({ limit: '5mb' }));
   app.get('/healthz', (_req, res) => res.send('ok'));
   app.use(authMiddleware(db));
@@ -102,6 +104,16 @@ export function createServer({ dbFile = process.env.DB_FILE || fileURLToPath(new
   app.post('/k/:token/courses/:id/notes', kRoute((req) => api.consultantNotes(req.params.token, Number(req.params.id), req.body || {})));
   app.delete('/k/:token/notes/:id', kRoute((req) => api.deleteConsultantNote(req.params.token, Number(req.params.id))));
 
+  // Bibliotek: the consultant opens a material from their page.
+  app.get('/k/:token/library/:id/file', (req, res) => {
+    try {
+      res.setHeader('Cache-Control', 'no-store');
+      sendFile(res, api.consultantFile(req.params.token, Number(req.params.id)));
+    } catch (err) {
+      res.status(err.status || 500).json({ error: err.status ? err.message : 'Der opstod en fejl på serveren.' });
+    }
+  });
+
   // Fetches the admin's own calendar (saved iCal link) and returns events to register.
   app.get('/api/calendar/events', async (req, res) => {
     try {
@@ -140,12 +152,7 @@ export function createServer({ dbFile = process.env.DB_FILE || fileURLToPath(new
   app.all('/api/*', (req, res) => {
     try {
       const result = api.handle({ method: req.method, path: req.path, query: req.query, body: req.body, user: req.user });
-      if (result.file) {
-        const { filename, contentType, data } = result.file;
-        res.setHeader('Content-Type', contentType);
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        return res.send(typeof data === 'string' ? data : Buffer.from(data));
-      }
+      if (result.file) return sendFile(res, result.file);
       res.json(result.json);
     } catch (err) {
       if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });
@@ -161,6 +168,16 @@ export function createServer({ dbFile = process.env.DB_FILE || fileURLToPath(new
   // SheetJS for reading Excel/CSV files in the browser (bulk import).
   app.get('/vendor/xlsx.full.min.js', (_req, res) => res.sendFile(fileURLToPath(new URL('../node_modules/xlsx/dist/xlsx.full.min.js', import.meta.url))));
   return { app, db };
+}
+
+// PDFs and photos open in the browser; anything else is downloaded, so an uploaded web page never runs on this site.
+const INLINE = new Set(['application/pdf', 'image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+function sendFile(res, { filename, contentType, data }) {
+  const inline = INLINE.has(contentType);
+  res.setHeader('Content-Type', inline || /^(text\/(csv|calendar)|application\/(vnd|zip|octet-stream))/.test(contentType) ? contentType : 'application/octet-stream');
+  const ascii = String(filename).replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
+  res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`);
+  return res.send(typeof data === 'string' ? data : Buffer.from(data));
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
