@@ -185,6 +185,12 @@ export function migrate(db) {
     course_description_id  INTEGER NOT NULL REFERENCES course_descriptions(id) ON DELETE CASCADE,
     PRIMARY KEY (item_id, course_description_id)
   )`);
+  // A library material sent to chosen courses (Send til kurser), besides the courses of its descriptions.
+  db.exec(`CREATE TABLE IF NOT EXISTS library_course_links (
+    item_id      INTEGER NOT NULL REFERENCES library_items(id) ON DELETE CASCADE,
+    activity_id  INTEGER NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
+    PRIMARY KEY (item_id, activity_id)
+  )`);
   // The course description itself is an attached document (Jakob, 2026-10-12): PDF, Word or the like.
   if (!cols('course_descriptions').includes('doc_filename')) {
     db.exec('ALTER TABLE course_descriptions ADD COLUMN doc_filename TEXT');

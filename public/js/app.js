@@ -1499,7 +1499,7 @@ function itemRowHtml(it, actions = '') {
   return `<li class="mat-row" data-item="${it.id}">
     <span class="mat-kind mat-${cls}" aria-hidden="true">${badge}</span>
     <div class="mat-main"><button type="button" class="mat-name linkbtn" data-open-item="${it.id}">${esc(it.name)}</button>
-      <div class="muted small">${itemSub(it)}${it.descriptions?.length ? ` · ${it.descriptions.map((d) => esc(d.title)).join(', ')}` : ''}</div></div>
+      <div class="muted small">${itemSub(it)}${it.descriptions?.length ? ` · ${it.descriptions.map((d) => esc(d.title)).join(', ')}` : ''}${it.courses ? ` · sendt til ${it.courses} ${it.courses === 1 ? 'kursus' : 'kurser'}` : ''}${it.sent ? ' · sendt til dette kursus' : ''}</div></div>
     <div class="mat-side"><span class="vis vis-${it.visibility}">${VIS_LABEL[it.visibility] || ''}</span>${actions}</div>
   </li>`;
 }
@@ -1562,7 +1562,7 @@ function openItemDialog(item = null, fixed = {}, descriptions = []) {
         <div class="seg" role="radiogroup" aria-labelledby="it-vis-label">
           ${Object.entries(VIS_LABEL).map(([k, l]) => `<label><input type="radio" name="visibility" value="${k}" ${(item?.visibility || 'consultants') === k ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>
         <small class="hint">Konsulenter ser materialet på deres egen side, ved deres kurser. Kun Kompas er fx en intern drejebog.</small></div>
-      ${forCourse || !descriptions.length ? '' : `<fieldset class="field desc-pick"><legend>Hører til kursusbeskrivelser <small class="muted">· ingen = fælles materiale</small></legend>
+      ${forCourse || !descriptions.length ? '' : `<fieldset class="field desc-pick"><legend>Send til alle kurser med kursusbeskrivelsen <small class="muted">· enkelte kurser vælger du bagefter med Send til kurser</small></legend>
         <div class="desc-checks">${descriptions.map((d) => `<label class="check-inline"><input type="checkbox" name="desc" value="${d.id}" ${linked.has(d.id) ? 'checked' : ''}> ${esc(d.title)}</label>`).join('')}</div></fieldset>`}
       <p class="form-error" role="alert" hidden></p>
       <div class="form-actions"><button type="submit" class="btn btn-primary">${item ? 'Gem' : 'Tilføj'}</button><button type="button" class="btn" data-close>Annullér</button>
@@ -1606,6 +1606,72 @@ function openItemDialog(item = null, fixed = {}, descriptions = []) {
         btn.disabled = false;
         btn.textContent = item ? 'Gem' : 'Tilføj';
       }
+    };
+    if (!dlg.open) dlg.showModal();
+  });
+}
+
+// Send til kurser: a library material goes to every course of the chosen course descriptions, and to
+// courses picked one by one. Resolves true when saved.
+async function openSendDialog(item, descriptions) {
+  let data;
+  try { data = await api.get(`/api/library/items/${item.id}/courses`); } catch (ex) { toast(ex.message, 'err'); return false; }
+  return new Promise((resolve) => {
+    const dlg = dialogEl('send-dialog', true);
+    const descIds = new Set(data.course_description_ids);
+    const chosen = new Set(data.activity_ids);
+    const f = { q: '', when: 'planned' };
+    let saved = false;
+    const countFor = (id) => data.courses.filter((a) => a.course_description_id === id).length;
+    dlg.innerHTML = `<form class="item-form send-form" novalidate>
+      <div class="dlg-head"><h2>Send ${esc(item.name)} til kurser</h2><button type="button" class="linkbtn" data-close>Luk</button></div>
+      ${descriptions.length ? `<fieldset class="field desc-pick"><legend>Alle kurser med kursusbeskrivelsen <small class="muted">· også dem, der kommer til senere</small></legend>
+        <div class="desc-checks">${descriptions.filter((d) => d.active || descIds.has(d.id)).map((d) => `<label class="check-inline"><input type="checkbox" name="desc" value="${d.id}" ${descIds.has(d.id) ? 'checked' : ''}> ${esc(d.title)} <small class="muted">(${countFor(d.id)})</small></label>`).join('')}</div></fieldset>` : ''}
+      <fieldset class="field"><legend>Udvalgte kurser <small class="muted" id="send-count"></small></legend>
+        <div class="lib-tools send-tools">
+          <input type="search" id="send-q" placeholder="Søg i kursus, skole, kommune eller konsulent" aria-label="Søg i kurser">
+          <div class="seg" role="radiogroup" aria-label="Vis">
+            ${[['planned', 'Kommende'], ['held', 'Afholdte'], ['', 'Alle'], ['chosen', 'Valgte']].map(([k, l]) => `<label><input type="radio" name="send-when" value="${k}" ${f.when === k ? 'checked' : ''}><span>${l}</span></label>`).join('')}
+          </div>
+        </div>
+        <label class="check-inline small send-all"><input type="checkbox" id="send-all"> Vælg alle viste</label>
+        <ul class="send-list" id="send-list"></ul>
+      </fieldset>
+      <p class="form-error" role="alert" hidden></p>
+      <div class="form-actions"><button type="submit" class="btn btn-primary">Gem</button><button type="button" class="btn" data-close>Annullér</button></div>
+    </form>`;
+    const list = $('#send-list', dlg);
+    const visible = () => {
+      const q = f.q.trim().toLowerCase();
+      return data.courses.filter((a) => (f.when === 'chosen' ? chosen.has(a.id) : !f.when || (f.when === 'planned' ? a.status !== 'held' : a.status === 'held'))
+        && (!q || `${a.title} ${a.school || ''} ${a.municipality || ''} ${a.consultant || ''} ${a.reseller}`.toLowerCase().includes(q)));
+    };
+    const draw = () => {
+      const rows = f.when === 'planned' ? visible().reverse() : visible();
+      list.innerHTML = rows.length ? rows.slice(0, 300).map((a) => `<li><label class="send-row"><input type="checkbox" value="${a.id}" ${chosen.has(a.id) ? 'checked' : ''}>
+        <span class="send-date nowrap">${fmtDate(a.date)}</span><span class="send-main"><b>${esc(a.title)}</b><span class="muted small">${[a.school, a.municipality, a.consultant].filter(Boolean).map(esc).join(' · ') || esc(a.reseller)}</span></span>${STATUS_PILL[a.status]}</label></li>`).join('')
+        + (rows.length > 300 ? `<li class="muted small">Viser de første 300. Søg for at finde flere.</li>` : '')
+        : '<li class="muted small">Ingen kurser.</li>';
+      $('#send-all', dlg).checked = rows.length > 0 && rows.every((a) => chosen.has(a.id));
+      $('#send-count', dlg).textContent = `· ${chosen.size} valgt`;
+      $$('input[type=checkbox]', list).forEach((c) => { c.onchange = () => { if (c.checked) chosen.add(Number(c.value)); else chosen.delete(Number(c.value)); $('#send-count', dlg).textContent = `· ${chosen.size} valgt`; }; });
+    };
+    $('#send-q', dlg).oninput = (e) => { f.q = e.target.value; draw(); };
+    $$('input[name="send-when"]', dlg).forEach((r) => { r.onchange = () => { f.when = r.value; draw(); }; });
+    $('#send-all', dlg).onchange = (e) => { for (const a of visible()) { if (e.target.checked) chosen.add(a.id); else chosen.delete(a.id); } draw(); };
+    draw();
+    $$('[data-close]', dlg).forEach((b) => { b.onclick = () => dlg.close(); });
+    dlg.onclose = () => resolve(saved);
+    $('form', dlg).onsubmit = async (e) => {
+      e.preventDefault();
+      const body = { activity_ids: [...chosen] };
+      if (descriptions.length) body.course_description_ids = $$('input[name="desc"]:checked', dlg).map((x) => Number(x.value));
+      try {
+        await api.put(`/api/library/items/${item.id}/courses`, body);
+        toast('Materialet er sendt til kurserne');
+        saved = true;
+        dlg.close();
+      } catch (ex) { const err = $('.form-error', dlg); err.textContent = ex.message; err.hidden = false; }
     };
     if (!dlg.open) dlg.showModal();
   });
@@ -1672,7 +1738,7 @@ async function renderLibrary(root) {
       </div>
     </div>
     <section class="card card-flush">
-      ${lib.items.length ? `<ul class="mat-list card-pad">${lib.items.map((it) => itemRowHtml(it, `<button type="button" class="btn btn-sm" data-edit-item="${it.id}">Redigér</button>`)).join('')}</ul>`
+      ${lib.items.length ? `<ul class="mat-list card-pad">${lib.items.map((it) => itemRowHtml(it, `<button type="button" class="btn btn-sm btn-primary" data-send-item="${it.id}">Send til kurser</button><button type="button" class="btn btn-sm" data-edit-item="${it.id}">Redigér</button>`)).join('')}</ul>`
         : '<p class="card-pad muted">Ingen materialer endnu. Upload fx slides eller en drejebog, læg et link ind, eller skriv en guide.</p>'}
     </section>`}`;
 
@@ -1701,6 +1767,7 @@ async function renderLibrary(root) {
   $$('[data-open-doc]').forEach((b) => { b.onclick = () => openDocument(b.dataset.openDoc); });
   $$('[data-open-item]').forEach((b) => { b.onclick = () => openItem(byId.get(b.dataset.openItem)); });
   $$('[data-edit-item]').forEach((b) => { b.onclick = async () => { if (await openItemDialog(byId.get(b.dataset.editItem), {}, lib.descriptions)) reload(); }; });
+  $$('[data-send-item]').forEach((b) => { b.onclick = async () => { if (await openSendDialog(byId.get(b.dataset.sendItem), lib.descriptions)) reload(); }; });
   $$('[data-link-title]').forEach((b) => {
     b.onclick = async () => {
       const u = rows[Number(b.dataset.linkTitle)];
@@ -1842,8 +1909,10 @@ async function renderDescription(root, id) {
 
 // The box under a course in the form: its course description (the document), and its materials.
 async function renderCourseMaterials(box, activityId) {
-  let m;
-  try { m = await api.get(`/api/activities/${activityId}/materials`); } catch (ex) { box.innerHTML = `<p class="form-error">${esc(ex.message)}</p>`; return; }
+  let m, lib;
+  try { [m, lib] = await Promise.all([api.get(`/api/activities/${activityId}/materials`), api.get('/api/library')]); } catch (ex) { box.innerHTML = `<p class="form-error">${esc(ex.message)}</p>`; return; }
+  const shown = new Set(m.inherited.map((it) => it.id));
+  const addable = lib.items.filter((it) => !shown.has(it.id));
   const all = new Map([...m.inherited, ...m.own].map((it) => [String(it.id), it]));
   const d = m.description;
   box.innerHTML = `<div class="card-head"><h2>Kursusbeskrivelse og materialer</h2><span class="muted small">Konsulenten ser dem markeret Konsulenter på sin side</span></div>
@@ -1851,7 +1920,10 @@ async function renderCourseMaterials(box, activityId) {
     ${d ? `<ul class="mat-list">${descRowHtml({ ...d, active: 1 }, `<a href="#library" class="linkbtn small" data-desc-link="${d.id}">Redigér</a>`)}</ul>`
       : '<p class="small muted">Kurset er ikke koblet til en kursusbeskrivelse. Vælg en i feltet Kursusbeskrivelse ovenfor.</p>'}
     <p class="small mat-own-head"><b>Materialer</b></p>
-    ${m.inherited.length ? `<ul class="mat-list">${m.inherited.map((it) => itemRowHtml(it)).join('')}</ul>` : d ? '<p class="small muted">Kursusbeskrivelsen har ingen materialer endnu.</p>' : ''}
+    ${m.inherited.length ? `<ul class="mat-list">${m.inherited.map((it) => itemRowHtml(it, it.sent ? `<button type="button" class="linkbtn" data-unsend="${it.id}" title="Tager materialet af dette kursus. Det bliver i biblioteket">Fjern</button>` : '')).join('')}</ul>`
+      : `<p class="small muted">${d ? 'Kursusbeskrivelsen har ingen materialer endnu.' : 'Ingen materialer endnu.'}</p>`}
+    ${addable.length ? `<div class="add-existing"><select id="own-existing" aria-label="Materiale fra biblioteket">${selectOptions(addable.map((i) => ({ id: i.id, name: i.name })), '', 'Tilføj fra biblioteket …')}</select>
+      <button type="button" class="btn btn-sm" id="own-existing-add">Tilføj</button></div>` : ''}
     <p class="small mat-own-head"><b>Kun dette kursus</b></p>
     ${m.own.length ? `<ul class="mat-list">${m.own.map((it) => itemRowHtml(it, `<button type="button" class="btn btn-sm" data-edit-own="${it.id}">Redigér</button>`)).join('')}</ul>` : '<p class="small muted">Fx en deltagerliste eller en tilpasset præsentation.</p>'}
     <button type="button" class="btn btn-sm" id="own-add">+ Tilføj fil eller link til dette kursus</button>`;
@@ -1860,6 +1932,14 @@ async function renderCourseMaterials(box, activityId) {
   $$('[data-open-item]', box).forEach((b) => { b.onclick = () => openItem(all.get(b.dataset.openItem)); });
   $$('[data-edit-own]', box).forEach((b) => { b.onclick = async () => { if (await openItemDialog(all.get(b.dataset.editOwn), { activity_id: activityId })) reload(); }; });
   $('#own-add', box).onclick = async () => { if (await openItemDialog(null, { activity_id: activityId })) reload(); };
+  $$('[data-unsend]', box).forEach((b) => {
+    b.onclick = async () => { try { await api.del(`/api/library/items/${b.dataset.unsend}/courses/${activityId}`); toast('Fjernet fra kurset'); reload(); } catch (ex) { toast(ex.message, 'err'); } };
+  });
+  $('#own-existing-add', box)?.addEventListener('click', async () => {
+    const v = $('#own-existing', box).value;
+    if (!v) return;
+    try { await api.put(`/api/library/items/${v}/courses/${activityId}`, {}); toast('Materialet er sendt til kurset'); reload(); } catch (ex) { toast(ex.message, 'err'); }
+  });
   $('[data-desc-link]', box)?.addEventListener('click', (e) => { e.preventDefault(); state.libraryId = Number(e.currentTarget.dataset.descLink); go('library', { libraryId: state.libraryId }); });
 }
 

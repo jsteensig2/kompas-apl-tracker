@@ -193,8 +193,9 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
     for (const r of db.all(`SELECT l.item_id, d.id, d.title FROM library_links l JOIN course_descriptions d ON d.id = l.course_description_id ORDER BY d.title COLLATE NOCASE`)) {
       linkNames.set(r.item_id, [...(linkNames.get(r.item_id) || []), { id: r.id, title: r.title }]);
     }
+    const sent = new Map(db.all('SELECT item_id, COUNT(*) AS n FROM library_course_links GROUP BY item_id').map((r) => [r.item_id, r.n]));
     const items = db.all(`SELECT ${ITEM_COLS} FROM library_items i WHERE i.activity_id IS NULL ORDER BY i.name COLLATE NOCASE`)
-      .map((r) => ({ ...itemOut(r), descriptions: linkNames.get(r.id) || [] }));
+      .map((r) => ({ ...itemOut(r), descriptions: linkNames.get(r.id) || [], courses: sent.get(r.id) || 0 }));
     return { descriptions, items, unlinked: unlinked() };
   }
 
@@ -310,6 +311,7 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
     itemRow(id);
     db.run('DELETE FROM library_files WHERE item_id = ?', [id]);
     db.run('DELETE FROM library_links WHERE item_id = ?', [id]);
+    db.run('DELETE FROM library_course_links WHERE item_id = ?', [id]);
     db.run('DELETE FROM library_items WHERE id = ?', [id]);
     return { ok: true };
   }
@@ -323,6 +325,61 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
     if (on) db.run('INSERT OR IGNORE INTO library_links (item_id, course_description_id) VALUES (?, ?)', [itemId, descriptionId]);
     else db.run('DELETE FROM library_links WHERE item_id = ? AND course_description_id = ?', [itemId, descriptionId]);
     return { items: itemsOf(descriptionId) };
+  }
+
+  // --- Send til kurser -------------------------------------------------------------------------
+  // A library material can go to every course of some course descriptions (library_links) and to
+  // courses picked one by one (library_course_links). Both are set here in one go.
+
+  function libraryItem(id) {
+    const it = itemRow(id);
+    if (it.activity_id) throw new HttpError(400, 'Materialet hører til ét bestemt kursus.');
+    return it;
+  }
+
+  // The material's descriptions and chosen courses, and every course to choose from (newest first).
+  function itemCourses(user, id) {
+    requireAdmin(user);
+    const it = libraryItem(id);
+    const today = todayIso();
+    const courses = db.all(`SELECT a.id, a.date, a.start_time, a.title, a.pending, a.course_description_id, s.name AS school,
+        m.name AS municipality, c.name AS consultant, r.name AS reseller
+      FROM activities a JOIN resellers r ON r.id = a.reseller_id LEFT JOIN schools s ON s.id = a.school_id
+      LEFT JOIN municipalities m ON m.id = a.municipality_id LEFT JOIN consultants c ON c.id = a.consultant_id
+      ORDER BY a.date DESC, a.start_time DESC, a.id DESC`)
+      .map((a) => ({ ...a, status: a.pending ? 'pending' : a.date <= today ? 'held' : 'planned' }));
+    return {
+      item: itemOut(it),
+      course_description_ids: db.all('SELECT course_description_id AS id FROM library_links WHERE item_id = ?', [id]).map((r) => r.id),
+      activity_ids: db.all('SELECT activity_id AS id FROM library_course_links WHERE item_id = ?', [id]).map((r) => r.id),
+      courses,
+    };
+  }
+
+  // body: { activity_ids, course_description_ids? }. Replaces the chosen courses (and descriptions, when given).
+  function sendToCourses(user, id, b = {}) {
+    requireAdmin(user);
+    libraryItem(id);
+    const ids = [...new Set((Array.isArray(b.activity_ids) ? b.activity_ids : []).map(int).filter(Boolean))];
+    inTransaction(() => {
+      db.run('DELETE FROM library_course_links WHERE item_id = ?', [id]);
+      for (const aid of ids) {
+        if (!db.get('SELECT id FROM activities WHERE id = ?', [aid])) throw new HttpError(404, 'Et af kurserne findes ikke.');
+        db.run('INSERT INTO library_course_links (item_id, activity_id) VALUES (?, ?)', [id, aid]);
+      }
+      if (Array.isArray(b.course_description_ids)) linkDescriptions(id, b.course_description_ids);
+    });
+    return itemCourses(user, id);
+  }
+
+  // Sends a material to one more course (Tilføj fra biblioteket under the course), or takes it off again.
+  function sendToCourse(user, id, activityId, on) {
+    requireAdmin(user);
+    libraryItem(id);
+    if (!db.get('SELECT id FROM activities WHERE id = ?', [activityId])) throw new HttpError(404, 'Aktiviteten findes ikke.');
+    if (on) db.run('INSERT OR IGNORE INTO library_course_links (item_id, activity_id) VALUES (?, ?)', [id, activityId]);
+    else db.run('DELETE FROM library_course_links WHERE item_id = ? AND activity_id = ?', [id, activityId]);
+    return materialsFor(activityId);
   }
 
   function fileOf(it) {
@@ -348,7 +405,8 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
     return fileOf(itemRow(id));
   }
 
-  // The materials of one course: those of its description, then its own.
+  // The materials of one course: those of its description and those sent to it (inherited, with
+  // sent: true on the latter), then its own.
   function materialsFor(activityId, { consultantsOnly = false } = {}) {
     const a = db.get('SELECT id, course_description_id FROM activities WHERE id = ?', [activityId]);
     if (!a) return { description: null, inherited: [], own: [] };
@@ -357,10 +415,15 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
     const description = d ? docOut(d) : null;
     return {
       description,
-      inherited: description ? vis(itemsOf(description.id)) : [],
+      inherited: vis(dedupe([...(description ? itemsOf(description.id) : []),
+        ...db.all(`SELECT ${ITEM_COLS} FROM library_items i JOIN library_course_links k ON k.item_id = i.id WHERE k.activity_id = ?
+          ORDER BY i.name COLLATE NOCASE`, [activityId]).map((r) => ({ ...itemOut(r), sent: true }))])),
       own: vis(db.all(`SELECT ${ITEM_COLS} FROM library_items i WHERE i.activity_id = ? ORDER BY i.name COLLATE NOCASE`, [activityId]).map(itemOut)),
     };
   }
+
+  // A material both in the description and sent to the course shows once, as the description's.
+  const dedupe = (rows) => rows.filter((r, i) => rows.findIndex((x) => x.id === r.id) === i);
 
   function activityMaterials(user, activityId) {
     requireAdmin(user);
@@ -399,5 +462,5 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
   }
 
   return { downloadDocument, consultantDocument, overview, createDescription, updateDescription, deleteDescription, getDescription, linkTitle,
-    createItem, updateItem, deleteItem, setItemLink, downloadItem, activityMaterials, materialsFor, consultantLibrary, consultantFile };
+    createItem, updateItem, deleteItem, setItemLink, itemCourses, sendToCourses, sendToCourse, downloadItem, activityMaterials, materialsFor, consultantLibrary, consultantFile };
 }

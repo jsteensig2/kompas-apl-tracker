@@ -153,6 +153,7 @@ Modulkurser hedder **Modul N – Lærere** eller **Modul N – Pædagoger** (`co
 - Gamle stavemåder som "Modul 2 (lærere)", "LÆRERE Modul 2" eller "Modul 1 (pædagoger)" ensrettes i formularen og ved import.
 - I Høje-Taastrup får en titel uden målgruppe den fra tidspunktet: kl. 09:00 er pædagoger og kl. 14:00 er lærere.
 - Ved første opstart omdøbes Høje-Taastrups eksisterende modulkurser én gang, og de kobles til en kursusbeskrivelse pr. modul og målgruppe (oprettes, hvis den mangler). Kurser, der ikke kan placeres, beholder deres navn og står i Bibliotek under titler uden kursusbeskrivelse.
+- **Send til kurser** (ved hvert materiale under Materialer) sender et materiale ud på mange kurser på én gang: alle kurser med bestemte kursusbeskrivelser og/eller kurser, du vælger enkeltvis (søg, filtrér på Kommende/Afholdte, Vælg alle viste). Under et enkelt kursus kan et materiale fra biblioteket også tilføjes eller fjernes.
 - Hvert materiale er synligt for **Konsulenter** eller **Kun Kompas**. Konsulenten ser kursusbeskrivelsen og materialerne ved sine egne kurser, og begge dele af biblioteket nederst på sin side. Resellere og Apple ser ikke biblioteket endnu.
 
 ## Senere udvidelser (ikke bygget)
