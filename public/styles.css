@@ -745,3 +745,5 @@ ul.mat-list:not(.card-pad) { padding-left: 0; }
 #admin-body > .link-card summary { cursor: pointer; padding: 12px 0; }
 /* Materials from Bibliotek on a course, in the lists. */
 .mat-mark { display: inline-flex; align-items: center; gap: 2px; margin-left: 4px; padding: 1px 6px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 0.75rem; font-weight: 600; vertical-align: middle; white-space: nowrap; }
+button.mat-mark { border: 0; cursor: pointer; font: inherit; font-size: 0.75rem; font-weight: 600; }
+.mat-mark svg { width: 13px; height: 13px; }

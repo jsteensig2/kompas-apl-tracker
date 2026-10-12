@@ -127,6 +127,15 @@ function matRow(it, extra = '') {
 }
 const matList = (items) => `<ul class="mat-list">${items.map((it) => matRow(it)).join('')}</ul>`;
 const courseDoc = (a) => (a.description?.document ? `<a class="k-doc" href="${esc(docHref(a.description))}" target="_blank" rel="noopener">Kursusbeskrivelse</a>` : '');
+// A paper clip with the number of materials, next to the course title. Tapping it opens the list under the course.
+const CLIP_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg>';
+const matCount = (a) => (a.materials?.length || 0) + (a.description?.document ? 1 : 0);
+const matBtn = (a) => {
+  const n = matCount(a);
+  if (!n) return '';
+  const label = `${n} ${n === 1 ? 'materiale' : 'materialer'}`;
+  return ` <button type="button" class="mat-mark" data-mats title="${label}" aria-label="Vis ${label}">${CLIP_ICON}${n}</button>`;
+};
 const courseMats = (a) => courseDoc(a) + (a.materials?.length ? `<details class="k-mats"><summary>Materialer (${a.materials.length})</summary>${matList(a.materials)}</details>` : '');
 
 function openGuide(id) {
@@ -153,7 +162,7 @@ function table(rows, planned) {
     <thead><tr><th>Dato</th><th>Kursus</th><th>Skole</th><th>Varighed</th>${planned ? '' : '<th class="num">Deltagere</th><th class="num">Apple-workshops</th><th><span class="sr">Til Apple</span></th>'}</tr></thead>
     <tbody>${rows.map((a) => `<tr class="${rowClass(a, planned)}">
       <td class="nowrap">${esc(fmtDate(a.date))}${timeText(a) ? `<div class="muted small">${timeText(a)}</div>` : ''}</td>
-      <td>${a.reschedule ? STAR : ''}<b>${esc(a.title)}</b>${a.pending ? ` ${PENDING}` : ''}${noteBtn(a)}<div class="muted small">${esc(a.reseller)}</div>${courseMats(a)}</td>
+      <td>${a.reschedule ? STAR : ''}<b>${esc(a.title)}</b>${a.pending ? ` ${PENDING}` : ''}${noteBtn(a)}${matBtn(a)}<div class="muted small">${esc(a.reseller)}</div>${courseMats(a)}</td>
       <td>${esc(a.school || '–')}${a.municipality ? `<div class="muted small">${esc(a.municipality)}</div>` : ''}</td>
       <td>${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}</td>
       ${planned ? '' : `<td class="num">${a.participants}</td><td class="num">${a.sessions}</td><td>${appleBtn(a)}</td>`}
@@ -161,7 +170,7 @@ function table(rows, planned) {
     <ul class="cards-list k-cards">${rows.map((a) => `
       <li class="card act-card ${rowClass(a, planned)}">
         <div class="act-top"><span class="act-date">${esc(fmtDate(a.date))}${timeText(a) ? ` · <span class="nowrap">${timeText(a)}</span>` : ''}</span><span class="tag">${esc(a.reseller)}</span></div>
-        <div class="act-title">${a.reschedule ? STAR : ''}${esc(a.title)}${a.pending ? ` ${PENDING}` : ''}${noteBtn(a)}</div>
+        <div class="act-title">${a.reschedule ? STAR : ''}${esc(a.title)}${a.pending ? ` ${PENDING}` : ''}${noteBtn(a)}${matBtn(a)}</div>
         <div class="muted">${esc(a.school || '–')}${a.municipality ? ` · ${esc(a.municipality)}` : ''}</div>
         <dl class="act-meta">
           <div><dt>Varighed</dt><dd>${a.duration === 'full' ? 'Hel dag' : 'Halv dag'}</dd></div>
@@ -365,6 +374,7 @@ function render() {
         <dl class="guide-list k-guide">
           <div><dt><span class="pill pill-planned">Planlagt</span></dt><dd>Kurset er godkendt. Du skal afholde det på datoen.</dd></div>
           <div><dt><span class="note-btn">${NOTE_ICON}</span></dt><dd>Noter. Tryk for at læse eller skrive en kort note på kurset, fx noget man skal huske til næste gang. Kun du og Kompas kan se noterne.</dd></div>
+          <div><dt><span class="mat-mark">${CLIP_ICON}2</span></dt><dd>Materialer til kurset, fx slides, en kursusbeskrivelse eller en guide. Tryk for at se dem.</dd></div>
           <div><dt><span class="star">★</span></dt><dd>Kurset skal have en ny dato. Det står på den gamle dato, indtil en ny er fundet.</dd></div>
           <div><dt>${PENDING}</dt><dd>Datoen er aftalt, men skolen eller kommunen har endnu ikke godkendt kurset endeligt. Hold datoen fri, men regn ikke med kurset, før det skifter til Planlagt. I din kalender står der "(Foreløbig)" foran titlen.</dd></div>
         </dl>${table(data.planned, true)}</section>
@@ -379,6 +389,13 @@ function render() {
   bindSignup();
   bindNotes();
   document.querySelectorAll('[data-guide]').forEach((b) => { b.onclick = () => openGuide(b.dataset.guide); });
+  document.querySelectorAll('[data-mats]').forEach((b) => {
+    b.onclick = () => {
+      const box = b.closest('tr, li')?.querySelector('details.k-mats');
+      if (box) { box.open = true; box.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+      else b.closest('tr, li')?.querySelector('.k-doc')?.click();
+    };
+  });
   document.querySelectorAll('[data-apple]').forEach((b) => { b.onclick = () => openApple(b.dataset.apple); });
   document.querySelectorAll('[data-apple-go]').forEach((b) => { b.addEventListener('click', () => { awaiting = Number(b.dataset.appleGo); }); });
   document.getElementById('apple-email-form').onsubmit = async (e) => {
