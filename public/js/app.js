@@ -59,7 +59,7 @@ const state = {
   calShowAll: false,
   signupMunicipality: '',
   dashFilters: { year: String(new Date().getFullYear()), reseller: '' },
-  listFilters: { q: '', status: '', year: String(new Date().getFullYear()), from: '', to: '', reseller: '', municipality: '', consultant: '', type: '', reschedule: '' },
+  listFilters: { q: '', status: '', year: String(new Date().getFullYear()), from: '', to: '', reseller: '', municipality: '', consultant: '', type: '', course: '', reschedule: '' },
   importResult: null,
   adminTab: 'consultants',
   appleFilters: { year: String(new Date().getFullYear()), consultant: '', reseller: '', sent: 'no' },
@@ -537,7 +537,7 @@ async function renderDashboard(root) {
   $$('.cbar [data-w]', root).forEach((el) => { el.style.width = el.dataset.w; });
   $$('[data-consultant]', root).forEach((b) => {
     b.onclick = () => {
-      Object.assign(state.listFilters, { q: '', status: '', year: '', from: '', to: '', municipality: '', type: '', reschedule: '', consultant: b.dataset.consultant });
+      Object.assign(state.listFilters, { q: '', status: '', year: '', from: '', to: '', municipality: '', type: '', course: '', reschedule: '', consultant: b.dataset.consultant });
       go('activities');
     };
   });
@@ -564,6 +564,7 @@ function activityFilters() {
       <label class="field"><span>Kommune</span><select id="f-municipality">${selectOptions(o.municipalities, f.municipality, 'Alle')}</select></label>
       <label class="field"><span>Konsulent</span><select id="f-consultant">${selectOptions(o.consultants, f.consultant, 'Alle')}</select></label>
       <label class="field"><span>APL-type</span><select id="f-type">${selectOptions(o.aplTypes, f.type, 'Alle')}</select></label>
+      ${o.courses?.length ? `<label class="field"><span>Kursus</span><select id="f-course">${selectOptions(o.courses, f.course, 'Alle')}</select></label>` : ''}
       <label class="field filter-check"><input type="checkbox" id="f-reschedule" ${f.reschedule ? 'checked' : ''}><span><span class="star">★</span> Skal have ny dato</span></label>
     </div>`;
 }
@@ -595,6 +596,7 @@ async function renderActivities(root) {
   };
   bind('#f-q', 'q', 'input');
   ['year', 'from', 'to', 'municipality', 'consultant', 'type'].forEach((k) => bind(`#f-${k}`, k));
+  if ($('#f-course')) bind('#f-course', 'course');
   $$('input[name="f-status"]').forEach((r) => {
     r.onchange = () => {
       f.status = r.value;
@@ -610,7 +612,7 @@ async function renderActivities(root) {
     loadList();
   };
   $('#f-clear').onclick = () => {
-    Object.assign(f, { q: '', status: '', year: '', from: '', to: '', reseller: '', municipality: '', consultant: '', type: '', reschedule: '' });
+    Object.assign(f, { q: '', status: '', year: '', from: '', to: '', reseller: '', municipality: '', consultant: '', type: '', course: '', reschedule: '' });
     renderActivities(root);
   };
   const exportAs = async (format, btn) => {
@@ -735,14 +737,15 @@ function renderRegister(root) {
           </div>
         </div>
         <label class="field"><span>Type af APL-aktivitet</span><select id="a-type" name="apl_type_id" required>${selectOptions(o.aplTypes, v.apl_type_id)}</select></label>
-        <div class="field">
+        ${descOptions.length ? `<label class="field"><span>Kursus <small class="muted" id="desc-hint"></small></span>
+          <select id="a-desc" name="course_description_id">${selectOptions(descOptions, descValue, 'Andet (skriv titel)')}</select>
+          <small class="hint">Kurset får navnet fra kursusbeskrivelsen, fx Modul 1 – Lærere.</small></label>` : ''}
+        <div class="field" id="title-field">
           <label for="a-title">Titel / emne</label>
-          <input id="a-title" name="title" required list="titles" value="${esc(v.title)}" placeholder="fx Mac – module 1">
+          <input id="a-title" name="title" required list="titles" value="${esc(v.title)}" placeholder="fx Modul 1 – Lærere">
           <datalist id="titles">${o.titles.map((t) => `<option value="${esc(t)}">`).join('')}</datalist>
           <div class="chips" aria-label="Mest brugte emner">${quickTitles.map((t) => `<button type="button" class="chip" data-title="${esc(t)}">${esc(t)}</button>`).join('')}</div>
         </div>
-        ${descOptions.length ? `<label class="field"><span>Kursusbeskrivelse <small class="muted" id="desc-hint"></small></span>
-          <select id="a-desc" name="course_description_id">${selectOptions(descOptions, descValue, 'Ingen')}</select></label>` : ''}
         <div class="field combo">
           <label for="a-school">Skole</label>
           <input id="a-school" type="text" role="combobox" aria-expanded="false" aria-controls="school-list" aria-autocomplete="list"
@@ -842,18 +845,32 @@ function renderRegister(root) {
   };
   $('#a-pending').addEventListener('change', showNeeded);
   planHint();
-  // The description follows the title until the user picks one themselves.
+  // Kursus (Jakob, 2026-10-12): a chosen course description gives the title, so the names stay uniform.
+  // A typed title that is one of a description's titles picks that description, until the user picks one themselves.
   let descTouched = Boolean(a || copy);
+  const showTitle = () => {
+    const sel = $('#a-desc');
+    const d = sel?.value ? descs.find((x) => String(x.id) === sel.value) : null;
+    if (d) $('#a-title').value = d.title;
+    $('#title-field').hidden = Boolean(d);
+  };
   const suggestDesc = () => {
     const sel = $('#a-desc');
     if (!sel || descTouched) return;
     const d = descFor($('#a-title').value);
     sel.value = d ? d.id : '';
-    $('#desc-hint').textContent = d ? '· foreslået ud fra titlen' : '';
+    $('#desc-hint').textContent = d ? '· valgt ud fra titlen' : '';
+    showTitle();
   };
-  $('#a-desc')?.addEventListener('change', () => { descTouched = true; $('#desc-hint').textContent = ''; });
-  $('#a-title').addEventListener('input', suggestDesc);
+  $('#a-desc')?.addEventListener('change', () => {
+    descTouched = true;
+    $('#desc-hint').textContent = '';
+    if (!$('#a-desc').value && descs.some((x) => x.title === $('#a-title').value)) $('#a-title').value = '';
+    showTitle();
+  });
+  $('#a-title').addEventListener('change', suggestDesc);
   suggestDesc();
+  showTitle();
   $$('[data-title]').forEach((b) => { b.onclick = () => { $('#a-title').value = b.dataset.title; suggestDesc(); $('#a-school').focus(); }; });
 
   // Paid by follows the reseller until the user picks something else.
@@ -1608,7 +1625,7 @@ function descRowHtml(d, actions = '') {
   return `<li class="mat-row desc-row ${d.active ? '' : 'is-inactive'}" data-desc-row="${d.id}">
     <span class="mat-kind mat-${cls}" aria-hidden="true">${badge}</span>
     <div class="mat-main">${d.document ? `<button type="button" class="mat-name linkbtn" data-open-doc="${d.id}">${esc(d.title)}</button>` : `<span class="mat-name">${esc(d.title)}</span>`}
-      <div class="muted small">${[d.document ? `${d.document.filename} · ${fmtSize(d.document.size)}` : 'Intet dokument endnu', d.apl_type, d.audience, d.length_text].filter(Boolean).map(esc).join(' · ')}</div>
+      <div class="muted small">${[d.document ? `${d.document.filename} · ${fmtSize(d.document.size)}` : 'Intet dokument endnu', d.apl_type, d.audience, d.module ? `Modul ${d.module}` : '', d.length_text].filter(Boolean).map(esc).join(' · ')}</div>
       ${d.counts ? `<div class="desc-counts small">${countsHtml(d.counts)}${d.items !== undefined ? `<span><b>${d.items}</b> ${d.items === 1 ? 'materiale' : 'materialer'}</span>` : ''}${d.active ? '' : '<span class="tag">Udgået</span>'}</div>` : ''}</div>
     <div class="mat-side">${actions}</div>
   </li>`;
@@ -1704,7 +1721,7 @@ const STATUS_PILL = { held: '<span class="pill pill-held">Afholdt</span>', plann
 
 async function renderDescription(root, id) {
   const isNew = id === 'new';
-  const d = isNew ? { title: '', audience: '', apl_type_id: '', length_text: '', match_titles: '', active: 1, document: null, items: [], courses: [], counts: { held: 0, planned: 0, pending: 0 } }
+  const d = isNew ? { title: '', audience: '', module: '', apl_type_id: '', length_text: '', match_titles: '', active: 1, document: null, items: [], courses: [], counts: { held: 0, planned: 0, pending: 0 } }
     : await api.get(`/api/library/descriptions/${id}`);
   const lib = isNew ? null : await api.get('/api/library');
   const back = () => { state.libraryId = null; render(); window.scrollTo(0, 0); };
@@ -1719,7 +1736,7 @@ async function renderDescription(root, id) {
     <div class="desc-layout">
       <form class="card form" id="desc-form" novalidate autocomplete="off">
         <div class="form-grid">
-          <label class="field field-wide"><span>Titel</span><input name="title" required maxlength="200" value="${esc(d.title)}" placeholder="fx Modul 1 (pædagoger)"></label>
+          <label class="field field-wide"><span>Titel <small class="muted">· kurserne får dette navn</small></span><input name="title" required maxlength="200" value="${esc(d.title)}" placeholder="fx Modul 1 – Pædagoger"></label>
           <div class="field field-wide"><span id="doc-label">Kursusbeskrivelse <small class="muted">· PDF, Word eller lignende, højst 20 MB</small></span>
             ${d.document ? `<ul class="mat-list doc-current" aria-labelledby="doc-label"><li class="mat-row">
               <span class="mat-kind mat-${cls}" aria-hidden="true">${badge}</span>
@@ -1727,7 +1744,9 @@ async function renderDescription(root, id) {
               <div class="mat-side"><label class="check-inline small"><input type="checkbox" id="doc-remove"> Fjern</label></div></li></ul>` : ''}
             <input type="file" id="doc-file" aria-labelledby="doc-label" accept=".pdf,.doc,.docx,.pages,.key,.ppt,.pptx,.odt,.rtf,.txt,application/pdf">
             ${d.document ? '<small class="hint">Vælg en ny fil for at erstatte dokumentet.</small>' : ''}</div>
-          <label class="field"><span>Målgruppe</span><input name="audience" maxlength="200" value="${esc(d.audience)}" placeholder="fx Pædagoger"></label>
+          <label class="field"><span>Målgruppe</span><input name="audience" maxlength="200" list="audiences" value="${esc(d.audience)}" placeholder="fx Pædagoger">
+            <datalist id="audiences"><option value="Lærere"><option value="Pædagoger"></datalist></label>
+          <label class="field"><span>Modul <small class="muted">· fx 1</small></span><input name="module" maxlength="20" inputmode="numeric" value="${esc(d.module || '')}"></label>
           <label class="field"><span>Varighed</span><input name="length_text" maxlength="200" value="${esc(d.length_text)}" placeholder="fx 2½ time"></label>
           <label class="field"><span>Type af APL-aktivitet</span><select name="apl_type_id">${selectOptions(state.options.aplTypes, d.apl_type_id || '', 'Ikke valgt')}</select></label>
           <label class="field active-field"><span>Status</span><span class="check-inline"><input type="checkbox" name="active" value="1" ${d.active ? 'checked' : ''}> Aktiv <small class="muted">· udgåede kan ikke vælges til nye kurser</small></span></label>
@@ -1759,6 +1778,18 @@ async function renderDescription(root, id) {
   $('#desc-cancel').onclick = back;
   $('#doc-open')?.addEventListener('click', () => openDocument(id));
   const form = $('#desc-form');
+  // Målgruppe and modul fill in the uniform title ("Modul 1 – Lærere") while the title is empty or still the made-up one.
+  let autoTitle = isNew ? '' : null;
+  const fillTitle = () => {
+    const el = form.elements;
+    if (autoTitle === null || el.title.value.trim() !== autoTitle) return;
+    const mod = el.module.value.trim();
+    const aud = el.audience.value.trim();
+    autoTitle = mod && aud ? `Modul ${mod} – ${aud}` : '';
+    el.title.value = autoTitle;
+  };
+  form.elements.module.addEventListener('input', fillTitle);
+  form.elements.audience.addEventListener('input', fillTitle);
   form.onsubmit = async (e) => {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(form));

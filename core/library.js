@@ -6,6 +6,8 @@
 // (library_items.activity_id), e.g. a participant list. Only Kompas changes the library; consultants
 // see the materials marked "Konsulenter" on their own page. Resellers and viewers do not see it yet.
 
+import { AUDIENCES, audienceIn, moduleCourse, moduleIn } from './course-names.js';
+
 export const KINDS = ['file', 'link', 'guide'];
 export const VISIBILITY = ['consultants', 'kompas'];
 export const MAX_FILE_BYTES = 20 * 1024 * 1024;
@@ -25,6 +27,17 @@ export function descriptionForTitle(db, title) {
   if (!t) return null;
   const all = db.all('SELECT id, title, match_titles FROM course_descriptions WHERE active = 1 ORDER BY id');
   return all.find((d) => norm(d.title) === t)?.id ?? all.find((d) => aliases(d).some((a) => norm(a) === t))?.id ?? null;
+}
+
+// The uniform name of a course and its description: "Modul 2 (lærere)" becomes "Modul 2 – Lærere",
+// and a title that is one of a description's other titles becomes the description's own title.
+// ctx: { startTime, municipality }, used for Høje-Taastrup titles without the target group.
+export function uniformTitle(db, title, ctx = {}) {
+  const t = String(title ?? '').trim();
+  const standard = moduleCourse(t, ctx)?.title || t;
+  const id = descriptionForTitle(db, standard) ?? (standard !== t ? descriptionForTitle(db, t) : null);
+  const own = id ? db.get('SELECT title FROM course_descriptions WHERE id = ?', [id]).title : null;
+  return { title: own || standard, course_description_id: id };
 }
 
 function decodeBase64(s) {
@@ -49,10 +62,14 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
     if (!apl_type_id) apl_type_id = null;
     const match_titles = [...new Set(String(b.match_titles ?? '').split('\n').map((t) => t.trim()).filter((t) => t && norm(t) !== norm(title)))].join('\n');
     const active = b.active === undefined ? 1 : (b.active === true || b.active === 1 || /^(1|true|on)$/i.test(String(b.active)) ? 1 : 0);
-    return { title, audience: text(b.audience, 200), apl_type_id, length_text: text(b.length_text, 200), match_titles, active };
+    // Målgruppe and modul: what the form says, otherwise what the title says ("Modul 1 – Lærere").
+    let audience = text(b.audience, 200) || audienceIn(title);
+    audience = AUDIENCES.find((x) => x.toLowerCase() === audience.toLowerCase()) || audience;
+    const module = text(b.module, 20).replace(/^modul(e)?\s*/i, '') || moduleIn(title);
+    return { title, audience, module, apl_type_id, length_text: text(b.length_text, 200), match_titles, active };
   }
   // Summary, goals and program are no longer edited (the document holds them); they keep what earlier versions saved.
-  const DESC_FIELDS = ['title', 'audience', 'apl_type_id', 'length_text', 'match_titles', 'active'];
+  const DESC_FIELDS = ['title', 'audience', 'module', 'apl_type_id', 'length_text', 'match_titles', 'active'];
 
   // body.document: { name, type, data } replaces the document; body.remove_document takes it off.
   function saveDocument(id, b) {
@@ -93,11 +110,13 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
 
   function updateDescription(user, id, body) {
     requireAdmin(user);
-    descriptionRow(id);
+    const before = descriptionRow(id);
     const d = descriptionInput(body, id);
     inTransaction(() => {
       db.run(`UPDATE course_descriptions SET ${DESC_FIELDS.map((k) => `${k} = ?`).join(', ')}, updated_at = datetime('now') WHERE id = ?`,
         [...DESC_FIELDS.map((k) => d[k]), id]);
+      // The courses are named after their description, so a new title renames them too.
+      if (d.title !== before.title) db.run(`UPDATE activities SET title = ?, updated_at = datetime('now') WHERE course_description_id = ?`, [d.title, id]);
       saveDocument(id, body);
     });
     return getDescription(user, id);
@@ -116,7 +135,7 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
   }
 
   function descriptionRow(id) {
-    const d = db.get(`SELECT d.id, d.title, d.audience, d.apl_type_id, d.length_text, d.match_titles, d.active, d.created_at, d.updated_at,
+    const d = db.get(`SELECT d.id, d.title, d.audience, d.module, d.apl_type_id, d.length_text, d.match_titles, d.active, d.created_at, d.updated_at,
         ${DOC_COLS}, t.name AS apl_type FROM course_descriptions d LEFT JOIN apl_types t ON t.id = d.apl_type_id WHERE d.id = ?`, [id]);
     if (!d) throw new HttpError(404, 'Kursusbeskrivelsen findes ikke.');
     return d;
@@ -164,7 +183,7 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
     requireAdmin(user);
     const counts = courseCounts();
     const itemCounts = new Map(db.all('SELECT course_description_id AS id, COUNT(*) AS n FROM library_links GROUP BY course_description_id').map((r) => [r.id, r.n]));
-    const descriptions = db.all(`SELECT d.id, d.title, d.audience, d.length_text, d.active, ${DOC_COLS}, t.name AS apl_type
+    const descriptions = db.all(`SELECT d.id, d.title, d.audience, d.module, d.length_text, d.active, ${DOC_COLS}, t.name AS apl_type
         FROM course_descriptions d LEFT JOIN apl_types t ON t.id = d.apl_type_id ORDER BY d.active DESC, d.title COLLATE NOCASE`)
       .map((d) => {
         const c = counts.get(d.id) || {};
@@ -179,16 +198,16 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
     return { descriptions, items, unlinked: unlinked() };
   }
 
-  // Kobl eksisterende: every course with this title gets the description. A title that differs from
-  // the description's own is remembered, so later courses with that title are linked by themselves.
+  // Kobl eksisterende: every course with this title gets the description and its name. A title that differs
+  // from the description's own is remembered, so later courses with that title are linked (and renamed) by themselves.
   function linkTitle(user, body = {}) {
     requireAdmin(user);
     const title = text(body.title, 300);
     const id = int(body.course_description_id);
     if (!title) throw new HttpError(400, 'Titlen mangler.');
     const d = descriptionRow(id);
-    const { changes } = db.run(`UPDATE activities SET course_description_id = ?, updated_at = datetime('now')
-      WHERE course_description_id IS NULL AND lower(trim(title)) = lower(trim(?))`, [id, title]);
+    const { changes } = db.run(`UPDATE activities SET course_description_id = ?, title = ?, updated_at = datetime('now')
+      WHERE course_description_id IS NULL AND lower(trim(title)) = lower(trim(?))`, [id, d.title, title]);
     if (norm(title) !== norm(d.title) && !aliases(d).some((a) => norm(a) === norm(title))) {
       db.run('UPDATE course_descriptions SET match_titles = ? WHERE id = ?', [[...aliases(d), title].join('\n'), id]);
     }
@@ -353,7 +372,7 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
 
   // What a consultant may see: active descriptions, and library materials marked Konsulenter.
   function consultantLibrary() {
-    const descriptions = db.all(`SELECT d.id, d.title, d.audience, d.length_text, ${DOC_COLS}, t.name AS apl_type
+    const descriptions = db.all(`SELECT d.id, d.title, d.audience, d.module, d.length_text, ${DOC_COLS}, t.name AS apl_type
         FROM course_descriptions d LEFT JOIN apl_types t ON t.id = d.apl_type_id WHERE d.active = 1 ORDER BY d.title COLLATE NOCASE`).map(docOut);
     // Every library material marked Konsulenter, with the descriptions it belongs to.
     const names = new Map();

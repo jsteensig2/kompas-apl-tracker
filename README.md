@@ -143,8 +143,16 @@ Fanen **Bibliotek** (kun Kompas) har to dele:
 
 Filer må højst fylde 20 MB og gemmes i databasen, så de er med i backuppen.
 
-- Et kursus får sin kursusbeskrivelse i feltet **Kursusbeskrivelse** i formularen. Nye kurser (også fra import, kalender og Tilmelding) kobles automatisk, når titlen er den samme som beskrivelsens titel eller en af dens "andre titler".
-- Eksisterende kurser kobles fra Bibliotek › **Kobl kurser til en kursusbeskrivelse**, én titel ad gangen. En titel, der kobles på den måde, huskes som en anden titel for beskrivelsen.
+- Et kursus vælges i feltet **Kursus** i formularen og får så kursusbeskrivelsens titel som navn. Nye kurser (også fra import, kalender og Tilmelding) kobles automatisk og får beskrivelsens navn, når titlen er den samme som beskrivelsens titel eller en af dens "andre titler". Skifter en beskrivelse titel, skifter dens kurser navn med.
+- Eksisterende kurser kobles fra Bibliotek › **Kobl kurser til en kursusbeskrivelse**, én titel ad gangen, og får beskrivelsens navn. En titel, der kobles på den måde, huskes som en anden titel for beskrivelsen.
+
+### Ensartede kursusnavne (moduler for lærere og pædagoger)
+
+Modulkurser hedder **Modul N – Lærere** eller **Modul N – Pædagoger** (`core/course-names.js`). En kursusbeskrivelse har felterne Målgruppe og Modul, og listen Aktiviteter kan filtreres på **Kursus**.
+
+- Gamle stavemåder som "Modul 2 (lærere)", "LÆRERE Modul 2" eller "Modul 1 (pædagoger)" ensrettes i formularen og ved import.
+- I Høje-Taastrup får en titel uden målgruppe den fra tidspunktet: kl. 09:00 er pædagoger og kl. 14:00 er lærere.
+- Ved første opstart omdøbes Høje-Taastrups eksisterende modulkurser én gang, og de kobles til en kursusbeskrivelse pr. modul og målgruppe (oprettes, hvis den mangler). Kurser, der ikke kan placeres, beholder deres navn og står i Bibliotek under titler uden kursusbeskrivelse.
 - Hvert materiale er synligt for **Konsulenter** eller **Kun Kompas**. Konsulenten ser kursusbeskrivelsen og materialerne ved sine egne kurser, og begge dele af biblioteket nederst på sin side. Resellere og Apple ser ikke biblioteket endnu.
 
 ## Senere udvidelser (ikke bygget)

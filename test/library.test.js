@@ -176,6 +176,7 @@ test('import and Sæt på give courses their description', async () => {
   const r = await json('admin', '/api/import', send('POST', { commit: true, defaults: {}, rows: [{ Dato: '05.05.2031', Varighed: 'Halv dag', 'Titel/emne': 'webinar: didaktik',
     Skole: 'Ny skole', Kommune: o.municipalities[0].name, Deltagere: '', Konsulent: 'Kim Byrding', Reseller: o.resellers[0].name }] }));
   assert.equal(r.summary.imported, 1);
-  const imported = (await json('admin', '/api/activities?year=2031')).find((a) => a.title === 'webinar: didaktik');
+  // The course gets the description and its name.
+  const imported = (await json('admin', '/api/activities?year=2031')).find((a) => a.title === 'Webinar: Didaktik');
   assert.equal(imported.course_description_id, d.id);
 });

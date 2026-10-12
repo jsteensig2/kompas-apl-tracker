@@ -9,7 +9,8 @@
 
 import { parseIcs, suggestFromEvent } from './ical.js';
 import { runImport, TEMPLATE_HEADERS, parseClock } from './import.js';
-import { createLibrary, descriptionForTitle } from './library.js';
+import { createLibrary, descriptionForTitle, uniformTitle } from './library.js';
+import { moduleCourse } from './course-names.js';
 
 export class HttpError extends Error {
   constructor(status, message) {
@@ -94,6 +95,7 @@ function buildWhere(user, f = {}) {
   if (int(f.municipality)) { where.push('a.municipality_id = ?'); params.push(int(f.municipality)); }
   if (int(f.consultant)) { where.push('a.consultant_id = ?'); params.push(int(f.consultant)); }
   if (int(f.type)) { where.push('a.apl_type_id = ?'); params.push(int(f.type)); }
+  if (int(f.course)) { where.push('a.course_description_id = ?'); params.push(int(f.course)); } // Kursus, fx Modul 2 – Pædagoger
   const q = String(f.q || '').trim();
   if (q) {
     where.push(`(a.title LIKE ? OR s.name LIKE ? OR m.name LIKE ? OR c.name LIKE ? OR c.initials LIKE ? OR p.name LIKE ? OR r.name LIKE ? OR t.name LIKE ?)`);
@@ -375,7 +377,8 @@ export function createApi(db, { XLSX } = {}) {
         schools: db.all(`SELECT s.id, s.name, s.municipality_id, m.name AS municipality
                          FROM schools s LEFT JOIN municipalities m ON m.id = s.municipality_id ORDER BY s.name`),
         titles: db.all(`SELECT title AS name, COUNT(*) AS n FROM activities GROUP BY title ORDER BY n DESC, title`).map((r) => r.name),
-        descriptions: db.all('SELECT id, title, match_titles, active FROM course_descriptions ORDER BY title COLLATE NOCASE'),
+        descriptions: db.all('SELECT id, title, audience, module, match_titles, active FROM course_descriptions ORDER BY title COLLATE NOCASE'),
+        courses: courseOptions(scope),
       };
     }
     const distinct = (idCol, table) => db.all(
@@ -386,7 +389,14 @@ export function createApi(db, { XLSX } = {}) {
       municipalities: distinct('municipality_id', 'municipalities'),
       consultants: distinct('consultant_id', 'consultants'),
       aplTypes: distinct('apl_type_id', 'apl_types'),
+      courses: courseOptions(scope),
     };
+  }
+
+  // Kursus filter: the course descriptions that courses in view are linked to.
+  function courseOptions(scope) {
+    return db.all(`SELECT DISTINCT cd.id, cd.title AS name FROM activities a JOIN course_descriptions cd ON cd.id = a.course_description_id${scope.sql}
+      ORDER BY cd.title COLLATE NOCASE`, scope.params);
   }
 
   // Validates and normalises an activity form. Creates a new school on the fly when the
@@ -396,8 +406,7 @@ export function createApi(db, { XLSX } = {}) {
     const errors = [];
     if (!/^\d{4}-\d{2}-\d{2}$/.test(b.date || '')) errors.push('Dato skal udfyldes.');
     if (!['half', 'full'].includes(b.duration)) errors.push('Vælg halv dag eller hel dag.');
-    const title = String(b.title || '').trim();
-    if (!title) errors.push('Titel / emne skal udfyldes.');
+    let title = String(b.title || '').trim();
     // Participants may be left empty for planned courses (order book); stored as 0 until known.
     let participants = int(b.participants);
     if (participants === null && String(b.participants ?? '').trim() === '' && (b.date > todayIso() || truthy(b.pending))) participants = 0;
@@ -441,6 +450,14 @@ export function createApi(db, { XLSX } = {}) {
       if (course_description_id && !db.get('SELECT id FROM course_descriptions WHERE id = ?', [course_description_id])) errors.push('Kursusbeskrivelsen findes ikke.');
       if (!course_description_id) course_description_id = null;
     }
+    // Uniform names (Jakob, 2026-10-12): a course is named after its description; otherwise
+    // "Modul 2 (lærere)" becomes "Modul 2 – Lærere" and another title of a description becomes its own.
+    const muniId = municipality_id ?? (int(school_id) ? db.get('SELECT municipality_id FROM schools WHERE id = ?', [int(school_id)])?.municipality_id : null);
+    const ctx = { startTime: start_time, municipality: muniId ? db.get('SELECT name FROM municipalities WHERE id = ?', [muniId])?.name : '' };
+    if (course_description_id) title = db.get('SELECT title FROM course_descriptions WHERE id = ?', [course_description_id])?.title || title;
+    else if (course_description_id === null) title = moduleCourse(title, ctx)?.title || title;
+    else if (title) title = uniformTitle(db, title, ctx).title;
+    if (!title) errors.push('Titel / emne skal udfyldes.');
     if (errors.length) throw new HttpError(400, errors.join(' '));
     if (school_id === 'new') {
       const existing = db.get('SELECT id FROM schools WHERE name = ? COLLATE NOCASE AND municipality_id IS ?', [schoolName, municipality_id]);
