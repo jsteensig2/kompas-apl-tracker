@@ -64,8 +64,9 @@ const state = {
   adminTab: 'consultants',
   appleFilters: { year: String(new Date().getFullYear()), consultant: '', reseller: '', sent: 'no' },
   demoUsers: [],
-  libraryId: null, // the course description open in Bibliotek ('new' while creating one)
-  libraryFilter: { q: '', kind: '', tab: 'descriptions' },
+  libraryId: null, // the course open in Administration › Kurser ('new' while creating one)
+  libraryFilter: { q: '', kind: '' },
+  courseFilter: { q: '' },
 };
 const isAdmin = () => state.me?.role === 'admin';
 // Admins and read-only viewers (e.g. Apple) see all resellers; only admins can change anything.
@@ -739,7 +740,7 @@ function renderRegister(root) {
         <label class="field"><span>Type af APL-aktivitet</span><select id="a-type" name="apl_type_id" required>${selectOptions(o.aplTypes, v.apl_type_id)}</select></label>
         ${descOptions.length ? `<label class="field"><span>Kursus <small class="muted" id="desc-hint"></small></span>
           <select id="a-desc" name="course_description_id">${selectOptions(descOptions, descValue, 'Andet (skriv titel)')}</select>
-          <small class="hint">Kurset får navnet fra kursusbeskrivelsen, fx Modul 1 – Lærere.</small></label>` : ''}
+          <small class="hint">Kurset får kursets navn, fx Modul 1 – Lærere. Kurserne vedligeholdes under Administration › Kurser.</small></label>` : ''}
         <div class="field" id="title-field">
           <label for="a-title">Titel / emne</label>
           <input id="a-title" name="title" required list="titles" value="${esc(v.title)}" placeholder="fx Modul 1 – Lærere">
@@ -1562,7 +1563,7 @@ function openItemDialog(item = null, fixed = {}, descriptions = []) {
         <div class="seg" role="radiogroup" aria-labelledby="it-vis-label">
           ${Object.entries(VIS_LABEL).map(([k, l]) => `<label><input type="radio" name="visibility" value="${k}" ${(item?.visibility || 'consultants') === k ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>
         <small class="hint">Konsulenter ser materialet på deres egen side, ved deres kurser. Kun Kompas er fx en intern drejebog.</small></div>
-      ${forCourse || !descriptions.length ? '' : `<fieldset class="field desc-pick"><legend>Send til alle kurser med kursusbeskrivelsen <small class="muted">· enkelte kurser vælger du bagefter med Send til kurser</small></legend>
+      ${forCourse || !descriptions.length ? '' : `<fieldset class="field desc-pick"><legend>Send til alle datoer af disse kurser <small class="muted">· enkelte datoer vælger du bagefter med Send til kurser</small></legend>
         <div class="desc-checks">${descriptions.map((d) => `<label class="check-inline"><input type="checkbox" name="desc" value="${d.id}" ${linked.has(d.id) ? 'checked' : ''}> ${esc(d.title)}</label>`).join('')}</div></fieldset>`}
       <p class="form-error" role="alert" hidden></p>
       <div class="form-actions"><button type="submit" class="btn btn-primary">${item ? 'Gem' : 'Tilføj'}</button><button type="button" class="btn" data-close>Annullér</button>
@@ -1625,7 +1626,7 @@ async function openSendDialog(item, descriptions) {
     const countFor = (id) => data.courses.filter((a) => a.course_description_id === id).length;
     dlg.innerHTML = `<form class="item-form send-form" novalidate>
       <div class="dlg-head"><h2>Send ${esc(item.name)} til kurser</h2><button type="button" class="linkbtn" data-close>Luk</button></div>
-      ${descriptions.length ? `<fieldset class="field desc-pick"><legend>Alle kurser med kursusbeskrivelsen <small class="muted">· også dem, der kommer til senere</small></legend>
+      ${descriptions.length ? `<fieldset class="field desc-pick"><legend>Alle datoer af disse kurser <small class="muted">· også dem, der kommer til senere</small></legend>
         <div class="desc-checks">${descriptions.filter((d) => d.active || descIds.has(d.id)).map((d) => `<label class="check-inline"><input type="checkbox" name="desc" value="${d.id}" ${descIds.has(d.id) ? 'checked' : ''}> ${esc(d.title)} <small class="muted">(${countFor(d.id)})</small></label>`).join('')}</div></fieldset>` : ''}
       <fieldset class="field"><legend>Udvalgte kurser <small class="muted" id="send-count"></small></legend>
         <div class="lib-tools send-tools">
@@ -1697,40 +1698,16 @@ function descRowHtml(d, actions = '') {
   </li>`;
 }
 
+// Bibliotek: the materials. The courses they can be sent to are kept under Administration › Kurser.
 async function renderLibrary(root) {
-  if (state.libraryId) return renderDescription(root, state.libraryId);
   const lib = await api.get('/api/library');
   const f = state.libraryFilter;
-  const tab = f.tab === 'materials' ? 'materials' : 'descriptions';
-  const suggested = lib.unlinked.filter((u) => u.suggestion);
-  const unlinkedTotal = lib.unlinked.reduce((n, u) => n + u.n, 0);
-  const activeDescs = lib.descriptions.filter((d) => d.active).map((d) => ({ id: d.id, name: d.title }));
-  const rows = [...suggested, ...lib.unlinked.filter((u) => !u.suggestion)];
   root.innerHTML = `
     <div class="pagehead">
-      <div><p class="eyebrow">Kursusbeskrivelser og materialer</p><h1>Bibliotek</h1>
-        <p class="muted">Kobl et kursus til en kursusbeskrivelse, så følger dokumentet og materialerne med. Konsulenterne ser dem på deres egen side.</p></div>
-      <div class="pagehead-actions">${tab === 'descriptions' ? '<button type="button" class="btn btn-primary" id="lib-new-desc">+ Ny kursusbeskrivelse</button>' : '<button type="button" class="btn btn-primary" id="lib-new-item">+ Materiale</button>'}</div>
+      <div><p class="eyebrow">Materialer til kurserne</p><h1>Bibliotek</h1>
+        <p class="muted">Upload filer, læg links ind eller skriv guides, og send dem til kurserne. Konsulenterne ser dem ved deres kurser.</p></div>
+      <div class="pagehead-actions"><button type="button" class="btn btn-primary" id="lib-new-item">+ Materiale</button></div>
     </div>
-    <div class="seg seg-lg lib-tabs" role="radiogroup" aria-label="Del af biblioteket">
-      <label><input type="radio" name="lib-tab" value="descriptions" ${tab === 'descriptions' ? 'checked' : ''}><span>Kursusbeskrivelser <small class="muted">${lib.descriptions.length}</small></span></label>
-      <label><input type="radio" name="lib-tab" value="materials" ${tab === 'materials' ? 'checked' : ''}><span>Materialer <small class="muted">${lib.items.length}</small></span></label>
-    </div>
-    ${tab === 'descriptions' ? `
-    ${lib.descriptions.length && unlinkedTotal ? `<section class="card card-flush link-card">
-      <details ${suggested.length ? 'open' : ''}><summary class="card-head card-head-pad"><h2>Kobl kurser til en kursusbeskrivelse</h2>
-        <span class="muted small">${num(unlinkedTotal)} ${unlinkedTotal === 1 ? 'kursus er' : 'kurser er'} ikke koblet${suggested.length ? ` · ${suggested.length} med forslag` : ''}</span></summary>
-        <div class="table-wrap lib-link-wrap"><table class="table"><thead><tr><th>Titel i registreringen</th><th class="num">Kurser</th><th>Kursusbeskrivelse</th><th><span class="sr">Kobl</span></th></tr></thead>
-          <tbody>${rows.map((u, i) => `<tr data-title-row="${i}">
-            <td>${esc(u.title)}</td><td class="num">${u.n}</td>
-            <td><select aria-label="Kursusbeskrivelse til ${esc(u.title)}">${selectOptions(activeDescs, u.suggestion || '', 'Vælg …')}</select></td>
-            <td><button type="button" class="btn btn-sm ${u.suggestion ? 'btn-primary' : ''}" data-link-title="${i}">Kobl ${u.n === 1 ? 'kurset' : `${u.n} kurser`}</button></td></tr>`).join('')}</tbody></table></div>
-      </details></section>` : ''}
-    <div class="lib-tools"><input type="search" id="lib-q" placeholder="Søg i kursusbeskrivelser" aria-label="Søg i kursusbeskrivelser" value="${esc(f.q)}"></div>
-    <section class="card card-flush">
-      ${lib.descriptions.length ? `<ul class="mat-list card-pad">${lib.descriptions.map((d) => descRowHtml(d, `<button type="button" class="btn btn-sm" data-desc="${d.id}">Redigér</button>`)).join('')}</ul>`
-        : '<p class="card-pad muted">Der er ingen kursusbeskrivelser endnu. Opret fx <b>Modul 1 (pædagoger)</b> og vedhæft beskrivelsen som PDF eller Word, så kan kurserne med den titel kobles til den.</p>'}
-    </section>` : `
     <div class="lib-tools">
       <input type="search" id="lib-q" placeholder="Søg i materialer" aria-label="Søg i materialer" value="${esc(f.q)}">
       <div class="seg" role="radiogroup" aria-label="Vis">
@@ -1739,17 +1716,12 @@ async function renderLibrary(root) {
     </div>
     <section class="card card-flush">
       ${lib.items.length ? `<ul class="mat-list card-pad">${lib.items.map((it) => itemRowHtml(it, `<button type="button" class="btn btn-sm btn-primary" data-send-item="${it.id}">Send til kurser</button><button type="button" class="btn btn-sm" data-edit-item="${it.id}">Redigér</button>`)).join('')}</ul>`
-        : '<p class="card-pad muted">Ingen materialer endnu. Upload fx slides eller en drejebog, læg et link ind, eller skriv en guide.</p>'}
-    </section>`}`;
+        : '<p class="card-pad muted">Ingen materialer endnu. Upload fx slides, en kursusbeskrivelse eller en drejebog, læg et link ind, eller skriv en guide.</p>'}
+    </section>`;
 
   const byId = new Map(lib.items.map((it) => [String(it.id), it]));
-  const descById = new Map(lib.descriptions.map((d) => [String(d.id), d]));
   const filter = () => {
     const q = f.q.trim().toLowerCase();
-    $$('[data-desc-row]').forEach((el) => {
-      const d = descById.get(el.dataset.descRow);
-      el.hidden = Boolean(q) && !`${d.title} ${d.document?.filename || ''} ${d.audience} ${d.apl_type || ''}`.toLowerCase().includes(q);
-    });
     $$('.mat-row[data-item]').forEach((el) => {
       const it = byId.get(el.dataset.item);
       const hay = `${it.name} ${it.filename} ${it.url} ${it.body} ${it.descriptions.map((d) => d.title).join(' ')}`.toLowerCase();
@@ -1758,30 +1730,77 @@ async function renderLibrary(root) {
   };
   $('#lib-q').oninput = (e) => { f.q = e.target.value; filter(); };
   $$('input[name="lib-kind"]').forEach((r) => { r.onchange = () => { f.kind = r.value; filter(); }; });
-  $$('input[name="lib-tab"]').forEach((r) => { r.onchange = () => { f.tab = r.value; f.q = ''; renderLibrary(root); }; });
   filter();
   const reload = () => renderLibrary(root);
-  $('#lib-new-desc')?.addEventListener('click', () => { state.libraryId = 'new'; render(); });
-  $('#lib-new-item')?.addEventListener('click', async () => { if (await openItemDialog(null, {}, lib.descriptions)) reload(); });
-  $$('[data-desc]').forEach((b) => { b.onclick = () => { state.libraryId = Number(b.dataset.desc); render(); window.scrollTo(0, 0); }; });
-  $$('[data-open-doc]').forEach((b) => { b.onclick = () => openDocument(b.dataset.openDoc); });
+  $('#lib-new-item').onclick = async () => { if (await openItemDialog(null, {}, lib.descriptions)) reload(); };
   $$('[data-open-item]').forEach((b) => { b.onclick = () => openItem(byId.get(b.dataset.openItem)); });
   $$('[data-edit-item]').forEach((b) => { b.onclick = async () => { if (await openItemDialog(byId.get(b.dataset.editItem), {}, lib.descriptions)) reload(); }; });
   $$('[data-send-item]').forEach((b) => { b.onclick = async () => { if (await openSendDialog(byId.get(b.dataset.sendItem), lib.descriptions)) reload(); }; });
-  $$('[data-link-title]').forEach((b) => {
+}
+
+// Administration › Kurser: the list of courses (course descriptions) that Kursus in the form picks
+// from, and linking old course titles to them.
+async function renderCourseList(body) {
+  const lib = await api.get('/api/library');
+  const f = state.courseFilter;
+  const suggested = lib.unlinked.filter((u) => u.suggestion);
+  const unlinkedTotal = lib.unlinked.reduce((n, u) => n + u.n, 0);
+  const activeDescs = lib.descriptions.filter((d) => d.active).map((d) => ({ id: d.id, name: d.title }));
+  const rows = [...suggested, ...lib.unlinked.filter((u) => !u.suggestion)];
+  body.innerHTML = `
+    <div class="course-list-head"><p class="muted small">Kurserne, du vælger under Kursus i registreringsformularen. Kurserne får kursets navn, og materialer kan sendes til alle datoer af et kursus.</p>
+      <button type="button" class="btn btn-primary" id="lib-new-desc">+ Nyt kursus</button></div>
+    ${lib.descriptions.length && unlinkedTotal ? `<details class="link-card" ${suggested.length ? 'open' : ''}><summary class="card-head"><h2>Kobl registrerede kurser til et kursus</h2>
+        <span class="muted small">${num(unlinkedTotal)} ${unlinkedTotal === 1 ? 'kursus er' : 'kurser er'} ikke koblet${suggested.length ? ` · ${suggested.length} med forslag` : ''}</span></summary>
+        <div class="table-wrap lib-link-wrap"><table class="table"><thead><tr><th>Titel i registreringen</th><th class="num">Kurser</th><th>Kursus</th><th><span class="sr">Kobl</span></th></tr></thead>
+          <tbody>${rows.map((u, i) => `<tr data-title-row="${i}">
+            <td>${esc(u.title)}</td><td class="num">${u.n}</td>
+            <td><select aria-label="Kursus til ${esc(u.title)}">${selectOptions(activeDescs, u.suggestion || '', 'Vælg …')}</select></td>
+            <td><button type="button" class="btn btn-sm ${u.suggestion ? 'btn-primary' : ''}" data-link-title="${i}">Kobl ${u.n === 1 ? 'kurset' : `${u.n} kurser`}</button></td></tr>`).join('')}</tbody></table></div>
+      </details>` : ''}
+    <div class="lib-tools"><input type="search" id="lib-q" placeholder="Søg i kurser" aria-label="Søg i kurser" value="${esc(f.q)}"></div>
+    ${lib.descriptions.length ? `<ul class="mat-list">${lib.descriptions.map((d) => courseRowHtml(d)).join('')}</ul>`
+      : '<p class="muted">Der er ingen kurser endnu. Opret fx <b>Modul 1 – Pædagoger</b>, så kan registreringerne med den titel kobles til det.</p>'}`;
+
+  const descById = new Map(lib.descriptions.map((d) => [String(d.id), d]));
+  const filter = () => {
+    const q = f.q.trim().toLowerCase();
+    $$('[data-desc-row]', body).forEach((el) => {
+      const d = descById.get(el.dataset.descRow);
+      el.hidden = Boolean(q) && !`${d.title} ${d.audience} ${d.apl_type || ''}`.toLowerCase().includes(q);
+    });
+  };
+  $('#lib-q', body).oninput = (e) => { f.q = e.target.value; filter(); };
+  filter();
+  const open = (id) => { state.libraryId = id; render(); window.scrollTo(0, 0); };
+  $('#lib-new-desc', body).onclick = () => open('new');
+  $$('[data-desc]', body).forEach((b) => { b.onclick = () => open(Number(b.dataset.desc)); });
+  $$('[data-open-doc]', body).forEach((b) => { b.onclick = () => openDocument(b.dataset.openDoc); });
+  $$('[data-link-title]', body).forEach((b) => {
     b.onclick = async () => {
       const u = rows[Number(b.dataset.linkTitle)];
       const id = b.closest('tr').querySelector('select').value;
-      if (!id) { toast('Vælg først en kursusbeskrivelse', 'err'); return; }
+      if (!id) { toast('Vælg først et kursus', 'err'); return; }
       b.disabled = true;
       try {
         const r = await api.post('/api/library/link-title', { title: u.title, course_description_id: Number(id) });
         toast(`${r.linked} ${r.linked === 1 ? 'kursus er' : 'kurser er'} koblet`);
         state.options = await api.get('/api/options');
-        reload();
+        renderCourseList(body);
       } catch (ex) { toast(ex.message, 'err'); b.disabled = false; }
     };
   });
+}
+
+// One course in Administration › Kurser: name, facts and how many dates it has.
+function courseRowHtml(d) {
+  const facts = [d.apl_type, d.audience, d.length_text].filter(Boolean).map(esc);
+  return `<li class="mat-row desc-row ${d.active ? '' : 'is-inactive'}" data-desc-row="${d.id}">
+    <div class="mat-main"><button type="button" class="mat-name linkbtn" data-desc="${d.id}">${esc(d.title)}</button>
+      ${facts.length ? `<div class="muted small">${facts.join(' · ')}</div>` : ''}
+      <div class="desc-counts small">${countsHtml(d.counts)}<span><b>${d.items}</b> ${d.items === 1 ? 'materiale' : 'materialer'}</span>${d.active ? '' : '<span class="tag">Udgået</span>'}</div></div>
+    <div class="mat-side"><button type="button" class="btn btn-sm" data-desc="${d.id}">Redigér</button></div>
+  </li>`;
 }
 
 const STATUS_PILL = { held: '<span class="pill pill-held">Afholdt</span>', planned: '<span class="pill pill-planned">Planlagt</span>', pending: '<span class="pill pill-pending">Foreløbig</span>' };
@@ -1791,26 +1810,24 @@ async function renderDescription(root, id) {
   const d = isNew ? { title: '', audience: '', module: '', apl_type_id: '', length_text: '', match_titles: '', active: 1, document: null, items: [], courses: [], counts: { held: 0, planned: 0, pending: 0 } }
     : await api.get(`/api/library/descriptions/${id}`);
   const lib = isNew ? null : await api.get('/api/library');
-  const back = () => { state.libraryId = null; render(); window.scrollTo(0, 0); };
+  const back = () => { state.adminTab = 'courses'; go('admin'); };
   const linkedIds = new Set(d.items.map((i) => i.id));
   const addable = lib ? lib.items.filter((i) => !linkedIds.has(i.id)) : [];
   const [badge, cls] = docBadge(d.document);
   root.innerHTML = `
     <div class="pagehead">
-      <div><p class="eyebrow"><a href="#library" id="desc-back">Bibliotek</a> › Kursusbeskrivelse</p><h1>${isNew ? 'Ny kursusbeskrivelse' : esc(d.title)}</h1></div>
-      ${isNew ? '' : `<div class="pagehead-actions"><button type="button" class="btn btn-danger-ghost" id="desc-del">Slet kursusbeskrivelse</button></div>`}
+      <div><p class="eyebrow"><a href="#admin" id="desc-back">Administration › Kurser</a></p><h1>${isNew ? 'Nyt kursus' : esc(d.title)}</h1></div>
+      ${isNew ? '' : `<div class="pagehead-actions"><button type="button" class="btn btn-danger-ghost" id="desc-del">Slet kursus</button></div>`}
     </div>
     <div class="desc-layout">
       <form class="card form" id="desc-form" novalidate autocomplete="off">
         <div class="form-grid">
           <label class="field field-wide"><span>Titel <small class="muted">· kurserne får dette navn</small></span><input name="title" required maxlength="200" value="${esc(d.title)}" placeholder="fx Modul 1 – Pædagoger"></label>
-          <div class="field field-wide"><span id="doc-label">Kursusbeskrivelse <small class="muted">· PDF, Word eller lignende, højst 20 MB</small></span>
-            ${d.document ? `<ul class="mat-list doc-current" aria-labelledby="doc-label"><li class="mat-row">
+          ${d.document ? `<div class="field field-wide"><span id="doc-label">Kursusbeskrivelse <small class="muted">· fra en tidligere version. Læg nye beskrivelser i Bibliotek som materialer</small></span>
+            <ul class="mat-list doc-current" aria-labelledby="doc-label"><li class="mat-row">
               <span class="mat-kind mat-${cls}" aria-hidden="true">${badge}</span>
               <div class="mat-main"><button type="button" class="mat-name linkbtn" id="doc-open">${esc(d.document.filename)}</button><div class="muted small">${fmtSize(d.document.size)}</div></div>
-              <div class="mat-side"><label class="check-inline small"><input type="checkbox" id="doc-remove"> Fjern</label></div></li></ul>` : ''}
-            <input type="file" id="doc-file" aria-labelledby="doc-label" accept=".pdf,.doc,.docx,.pages,.key,.ppt,.pptx,.odt,.rtf,.txt,application/pdf">
-            ${d.document ? '<small class="hint">Vælg en ny fil for at erstatte dokumentet.</small>' : ''}</div>
+              <div class="mat-side"><label class="check-inline small"><input type="checkbox" id="doc-remove"> Fjern</label></div></li></ul></div>` : ''}
           <label class="field"><span>Målgruppe</span><input name="audience" maxlength="200" list="audiences" value="${esc(d.audience)}" placeholder="fx Pædagoger">
             <datalist id="audiences"><option value="Lærere"><option value="Pædagoger"></datalist></label>
           <label class="field"><span>Modul <small class="muted">· fx 1</small></span><input name="module" maxlength="20" inputmode="numeric" value="${esc(d.module || '')}"></label>
@@ -1820,13 +1837,13 @@ async function renderDescription(root, id) {
           <label class="field field-wide"><span>Andre titler for kurset <small class="muted">· ét pr. linje. Kurser med en af disse titler kobles automatisk</small></span><textarea name="match_titles" rows="2">${esc(d.match_titles)}</textarea></label>
         </div>
         <p class="form-error" role="alert" hidden></p>
-        <div class="form-actions"><button type="submit" class="btn btn-primary">${isNew ? 'Opret kursusbeskrivelse' : 'Gem ændringer'}</button>
-          <button type="button" class="btn" id="desc-cancel">${isNew ? 'Annullér' : 'Tilbage til Bibliotek'}</button></div>
+        <div class="form-actions"><button type="submit" class="btn btn-primary">${isNew ? 'Opret kursus' : 'Gem ændringer'}</button>
+          <button type="button" class="btn" id="desc-cancel">${isNew ? 'Annullér' : 'Tilbage til Kurser'}</button></div>
       </form>
-      ${isNew ? '<p class="muted desc-aside">Når kursusbeskrivelsen er oprettet, kan du tilføje materialer til den, fx slides, drejebog og guides.</p>' : `
+      ${isNew ? '<p class="muted desc-aside">Når kurset er oprettet, kan du sende materialer fra Bibliotek til alle dets datoer.</p>' : `
       <section class="card card-flush">
         <div class="card-head card-head-pad"><h2>Materialer</h2><button type="button" class="btn btn-sm" id="desc-add">+ Nyt materiale</button></div>
-        ${d.items.length ? `<ul class="mat-list card-pad">${d.items.map((it) => itemRowHtml(it, `<button type="button" class="linkbtn" data-unlink="${it.id}" title="Tager materialet af beskrivelsen. Det bliver i biblioteket">Fjern</button>`)).join('')}</ul>`
+        ${d.items.length ? `<ul class="mat-list card-pad">${d.items.map((it) => itemRowHtml(it, `<button type="button" class="linkbtn" data-unlink="${it.id}" title="Tager materialet af kurset. Det bliver i biblioteket">Fjern</button>`)).join('')}</ul>`
           : '<p class="card-pad muted">Ingen materialer endnu.</p>'}
         ${addable.length ? `<div class="card-pad add-existing"><select id="desc-existing" aria-label="Materiale fra biblioteket">${selectOptions(addable.map((i) => ({ id: i.id, name: i.name })), '', 'Tilføj fra biblioteket …')}</select>
           <button type="button" class="btn btn-sm" id="desc-existing-add">Tilføj</button></div>` : ''}
@@ -1838,7 +1855,7 @@ async function renderDescription(root, id) {
       ${d.courses.length ? `<div class="table-wrap desc-courses"><table class="table"><thead><tr><th>Dato</th><th>Kursus</th><th>Skole</th><th>Konsulent</th><th>Status</th></tr></thead>
         <tbody>${d.courses.map((a) => `<tr class="clickable" data-course="${a.id}" tabindex="0"><td class="nowrap">${fmtDate(a.date)}${timeSub(a)}</td><td>${esc(a.title)}<div class="muted small">${esc(a.reseller)}</div></td>
           <td>${esc(a.school || '–')}${a.municipality ? `<div class="muted small">${esc(a.municipality)}</div>` : ''}</td><td>${esc(a.consultant || '–')}</td><td>${STATUS_PILL[a.status]}</td></tr>`).join('')}</tbody></table></div>`
-        : '<p class="card-pad muted">Ingen kurser er koblet endnu. Kurser med titlen kobles, når de oprettes, og eksisterende kan kobles fra Bibliotek.</p>'}
+        : '<p class="card-pad muted">Ingen kurser er koblet endnu. Kurser med titlen kobles, når de oprettes, og eksisterende kan kobles under Administration › Kurser.</p>'}
     </section>`}`;
 
   $('#desc-back').onclick = (e) => { e.preventDefault(); back(); };
@@ -1863,16 +1880,12 @@ async function renderDescription(root, id) {
     data.active = form.active.checked;
     const err = $('.form-error', form);
     const btn = $('[type=submit]', form);
-    const f = $('#doc-file').files[0];
-    if (f) {
-      if (f.size > 20 * 1024 * 1024) { err.textContent = 'Filen er for stor. Den må højst fylde 20 MB.'; err.hidden = false; return; }
-      data.document = { name: f.name, type: f.type, data: await readBase64(f) };
-    } else if ($('#doc-remove')?.checked) data.remove_document = true;
+    if ($('#doc-remove')?.checked) data.remove_document = true;
     btn.disabled = true;
     try {
       const saved = isNew ? await api.post('/api/library/descriptions', data) : await api.put(`/api/library/descriptions/${id}`, data);
       state.options = await api.get('/api/options');
-      toast(isNew ? 'Kursusbeskrivelsen er oprettet' : 'Ændringer gemt');
+      toast(isNew ? 'Kurset er oprettet' : 'Ændringer gemt');
       state.libraryId = saved.id;
       render();
     } catch (ex) { err.textContent = ex.message; err.hidden = false; btn.disabled = false; }
@@ -1882,7 +1895,7 @@ async function renderDescription(root, id) {
   const byId = new Map(d.items.map((it) => [String(it.id), it]));
   $$('[data-open-item]').forEach((b) => { b.onclick = () => openItem(byId.get(b.dataset.openItem)); });
   $$('[data-unlink]').forEach((b) => {
-    b.onclick = async () => { try { await api.del(`/api/library/descriptions/${id}/items/${b.dataset.unlink}`); toast('Fjernet fra kursusbeskrivelsen'); reload(); } catch (ex) { toast(ex.message, 'err'); } };
+    b.onclick = async () => { try { await api.del(`/api/library/descriptions/${id}/items/${b.dataset.unlink}`); toast('Fjernet fra kurset'); reload(); } catch (ex) { toast(ex.message, 'err'); } };
   });
   $('#desc-add').onclick = async () => { if (await openItemDialog(null, { course_description_ids: [id] }, lib.descriptions)) reload(); };
   $('#desc-existing-add')?.addEventListener('click', async () => {
@@ -1901,7 +1914,7 @@ async function renderDescription(root, id) {
     try {
       await api.del(`/api/library/descriptions/${id}`);
       state.options = await api.get('/api/options');
-      toast('Kursusbeskrivelsen er slettet. Materialerne er stadig i biblioteket');
+      toast('Kurset er slettet. Materialerne er stadig i biblioteket');
       back();
     } catch (ex) { toast(ex.message, 'err'); }
   };
@@ -1915,13 +1928,10 @@ async function renderCourseMaterials(box, activityId) {
   const addable = lib.items.filter((it) => !shown.has(it.id));
   const all = new Map([...m.inherited, ...m.own].map((it) => [String(it.id), it]));
   const d = m.description;
-  box.innerHTML = `<div class="card-head"><h2>Kursusbeskrivelse og materialer</h2><span class="muted small">Konsulenten ser dem markeret Konsulenter på sin side</span></div>
-    <p class="small mat-own-head"><b>Kursusbeskrivelse</b></p>
-    ${d ? `<ul class="mat-list">${descRowHtml({ ...d, active: 1 }, `<a href="#library" class="linkbtn small" data-desc-link="${d.id}">Redigér</a>`)}</ul>`
-      : '<p class="small muted">Kurset er ikke koblet til en kursusbeskrivelse. Vælg en i feltet Kursusbeskrivelse ovenfor.</p>'}
-    <p class="small mat-own-head"><b>Materialer</b></p>
+  box.innerHTML = `<div class="card-head"><h2>Materialer</h2><span class="muted small">Konsulenten ser dem markeret Konsulenter på sin side</span></div>
+    ${d?.document ? `<ul class="mat-list">${descRowHtml({ ...d, active: 1 })}</ul>` : ''}
     ${m.inherited.length ? `<ul class="mat-list">${m.inherited.map((it) => itemRowHtml(it, it.sent ? `<button type="button" class="linkbtn" data-unsend="${it.id}" title="Tager materialet af dette kursus. Det bliver i biblioteket">Fjern</button>` : '')).join('')}</ul>`
-      : `<p class="small muted">${d ? 'Kursusbeskrivelsen har ingen materialer endnu.' : 'Ingen materialer endnu.'}</p>`}
+      : '<p class="small muted">Ingen materialer fra biblioteket endnu.</p>'}
     ${addable.length ? `<div class="add-existing"><select id="own-existing" aria-label="Materiale fra biblioteket">${selectOptions(addable.map((i) => ({ id: i.id, name: i.name })), '', 'Tilføj fra biblioteket …')}</select>
       <button type="button" class="btn btn-sm" id="own-existing-add">Tilføj</button></div>` : ''}
     <p class="small mat-own-head"><b>Kun dette kursus</b></p>
@@ -1940,23 +1950,24 @@ async function renderCourseMaterials(box, activityId) {
     if (!v) return;
     try { await api.put(`/api/library/items/${v}/courses/${activityId}`, {}); toast('Materialet er sendt til kurset'); reload(); } catch (ex) { toast(ex.message, 'err'); }
   });
-  $('[data-desc-link]', box)?.addEventListener('click', (e) => { e.preventDefault(); state.libraryId = Number(e.currentTarget.dataset.descLink); go('library', { libraryId: state.libraryId }); });
 }
 
 // --- Administration ------------------------------------------------------------------------
 const ADMIN_TABS = [
-  ['consultants', 'Konsulenter'], ['schools', 'Skoler'], ['municipalities', 'Kommuner'],
+  ['courses', 'Kurser'], ['consultants', 'Konsulenter'], ['schools', 'Skoler'], ['municipalities', 'Kommuner'],
   ['apl-types', 'APL-typer'], ['resellers', 'Resellere'], ['paid-by', 'Betalt af'], ['users', 'Brugere og adgang'],
 ];
 
 async function renderAdmin(root) {
   const tab = state.adminTab;
+  if (tab === 'courses' && state.libraryId) return renderDescription(root, state.libraryId);
   root.innerHTML = `
     <div class="pagehead"><div><p class="eyebrow">Kun for Kompas</p><h1>Administration</h1>
       <p class="muted">Valglister til registreringsformularen og filtrene, og hvem der har adgang.</p></div></div>
     <div class="tabs" role="tablist">${ADMIN_TABS.map(([k, l]) => `<button type="button" role="tab" aria-selected="${k === tab}" data-tab="${k}">${l}</button>`).join('')}</div>
     <section class="card" id="admin-body"><div class="loading">Indlæser…</div></section>`;
   $$('[data-tab]').forEach((b) => { b.onclick = () => { state.adminTab = b.dataset.tab; renderAdmin(root); }; });
+  if (tab === 'courses') return renderCourseList($('#admin-body'));
   const rows = await api.get(`/api/admin/${tab}`);
   const body = $('#admin-body');
   const o = state.options;
