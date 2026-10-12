@@ -33,6 +33,8 @@ test('Høje-Taastrup courses are renamed once and linked to a description per mo
   db.run("INSERT INTO resellers (name) VALUES ('Atea')");
   // A description Kompas already made for Modul 1 – Lærere is used, not made again.
   const own = Number(db.run("INSERT INTO course_descriptions (title, match_titles) VALUES ('Modul 1 – Lærere', 'Lærer M1')").lastInsertRowid);
+  // One made under an old spelling is renamed, with its courses.
+  const oldSpelling = Number(db.run("INSERT INTO course_descriptions (title) VALUES ('Modul 2 (lærere)')").lastInsertRowid);
   const add = (title, { muni = htk, schoolId = null, start = null } = {}) => Number(db.run(`INSERT INTO activities
       (date, duration, apl_type_id, title, school_id, municipality_id, participants, reseller_id, start_time)
       VALUES ('2026-11-01', 'half', 1, ?, ?, ?, 0, 1, ?)`, [title, schoolId, muni, start]).lastInsertRowid);
@@ -45,7 +47,9 @@ test('Høje-Taastrup courses are renamed once and linked to a description per mo
     f: add('Modul 1'),
     g: add('Modul 2 (lærere)', { muni: other }),
     h: add('LÆRERE Modul 1'),
+    i: add('Lærer modul 2 HTK', { muni: other }),
   };
+  db.run('UPDATE activities SET course_description_id = ? WHERE id = ?', [oldSpelling, ids.i]);
   migrate(db);
   const row = (id) => ({ ...db.get('SELECT a.title, d.title AS description FROM activities a LEFT JOIN course_descriptions d ON d.id = a.course_description_id WHERE a.id = ?', [id]) });
   assert.deepEqual(row(ids.a), { title: 'Modul 2 – Lærere', description: 'Modul 2 – Lærere' });
@@ -56,6 +60,7 @@ test('Høje-Taastrup courses are renamed once and linked to a description per mo
   assert.deepEqual(row(ids.f), { title: 'Modul 1', description: null }); // cannot be placed
   assert.deepEqual(row(ids.g), { title: 'Modul 2 (lærere)', description: null }); // not Høje-Taastrup
   assert.deepEqual(row(ids.h), { title: 'Modul 1 – Lærere', description: 'Modul 1 – Lærere' });
+  assert.deepEqual(row(ids.i), { title: 'Modul 2 – Lærere', description: 'Modul 2 – Lærere' });
 
   const descs = db.all('SELECT id, title, audience, module, match_titles FROM course_descriptions ORDER BY title');
   assert.deepEqual(descs.map((d) => [d.title, d.audience, d.module]),
@@ -64,6 +69,7 @@ test('Høje-Taastrup courses are renamed once and linked to a description per mo
   // Old titles that named the target group are remembered; "Mac – module 1" (placed by time) is not.
   assert.deepEqual(descs[0].match_titles.split('\n'), ['Lærer M1', 'LÆRERE Modul 1']);
   assert.equal(descs[1].match_titles, 'Modul 1 (pædagoger)');
+  assert.equal(descs[2].id, oldSpelling);
   assert.equal(descs[2].match_titles, 'Modul 2 (lærere)');
 
   // Runs only once.

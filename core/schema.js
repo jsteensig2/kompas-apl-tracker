@@ -263,7 +263,15 @@ function uniformHtkNames(db) {
   const descriptions = new Map();
   const descriptionFor = (c) => {
     if (descriptions.has(c.title)) return descriptions.get(c.title);
-    let d = db.get('SELECT id, title, audience, module, match_titles FROM course_descriptions WHERE title = ? COLLATE NOCASE', [c.title]);
+    // A description Kompas already made under an old spelling ("Modul 1 (pædagoger)") gets the new name.
+    let d = db.get('SELECT id, title, audience, module, match_titles FROM course_descriptions WHERE title = ? COLLATE NOCASE', [c.title])
+      || db.all('SELECT id, title, audience, module, match_titles FROM course_descriptions ORDER BY id').find((x) => moduleCourse(x.title)?.title === c.title);
+    if (d && d.title.toLowerCase() !== c.title.toLowerCase()) {
+      d.match_titles = [d.match_titles, d.title].filter(Boolean).join('\n');
+      db.run(`UPDATE course_descriptions SET title = ?, updated_at = datetime('now') WHERE id = ?`, [c.title, d.id]);
+      db.run(`UPDATE activities SET title = ?, updated_at = datetime('now') WHERE course_description_id = ?`, [c.title, d.id]);
+      d.title = c.title;
+    }
     if (!d) {
       const id = Number(db.run('INSERT INTO course_descriptions (title, audience, module, apl_type_id) VALUES (?, ?, ?, ?)',
         [c.title, c.audience, c.module, fysisk]).lastInsertRowid);
