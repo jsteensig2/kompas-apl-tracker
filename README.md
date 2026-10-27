@@ -70,7 +70,7 @@ Uden for Render kan `Dockerfile` bruges; databasen ligger i volumen `/data`.
 
 ## Afholdte og kommende kurser
 
-Status følger datoen: kurser til og med i dag er **afholdt**, senere kurser er **planlagt** og vises under **Kommende kurser** (tidligere kaldt ordrebogen).
+Status følger sluttidspunktet i dansk tid: et kursus er **afholdt**, når dets sluttid er passeret (uden sluttid: når dagen er omme). Indtil da er det **planlagt** og vises under **Kommende kurser** (tidligere kaldt ordrebogen).
 Dashboardets nøgletal tæller kun afholdte kurser; kommende kurser vises for sig. Deltagere kan stå tomt på planlagte kurser.
 
 **Foreløbig:** et kursus med dato, som skolen eller kommunen endnu ikke har godkendt endeligt.
