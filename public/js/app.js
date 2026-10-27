@@ -370,8 +370,8 @@ const star = (a) => (a.reschedule ? '<span class="star" title="Skal have ny dato
 // Short explanation of the three statuses, shown on Overblik and Aktiviteter.
 function statusGuide() {
   const rows = [
-    ['<span class="pill pill-held">Afholdt</span>', 'Kurset er gennemført: datoen er i dag eller passeret. Afholdte kurser tæller med i nøgletallene.'],
-    ['<span class="pill pill-planned">Planlagt</span>', 'Kurset er godkendt og har en dato efter i dag. Det vises under Kommende kurser.'],
+    ['<span class="pill pill-held">Afholdt</span>', 'Kurset er gennemført: sluttidspunktet er passeret (uden sluttid: når dagen er omme). Afholdte kurser tæller med i nøgletallene.'],
+    ['<span class="pill pill-planned">Planlagt</span>', 'Kurset er godkendt og er ikke slut endnu. Det vises under Kommende kurser.'],
     ['<span class="star">★</span>', 'Kurset skal have en ny dato. Det står på den gamle dato, indtil en ny er fundet.'],
     ['<span class="pill pill-pending">Foreløbig</span>', 'Datoen er aftalt, men kurset er endnu ikke endeligt godkendt af skolen eller kommunen. Det vises under Kommende kurser og tæller ikke med som afholdt, før det er godkendt.'],
   ];

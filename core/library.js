@@ -45,7 +45,7 @@ function decodeBase64(s) {
   return Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 }
 
-export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
+export function createLibrary(db, { HttpError, requireAdmin, nowStamp, isHeld }) {
   const int = (v) => { const n = Number.parseInt(v, 10); return Number.isFinite(n) ? n : null; };
   const text = (v, max = 20000) => String(v ?? '').trim().slice(0, max);
 
@@ -143,10 +143,11 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
 
   // Afholdt / Planlagt / Foreløbig per description, counted the same way as everywhere else.
   function courseCounts() {
-    const today = todayIso();
+    const now = nowStamp();
+    const end = "(date || ' ' || COALESCE(end_time, '24:00'))";
     return new Map(db.all(`SELECT course_description_id AS id,
-        SUM(date <= ? AND pending = 0) AS held, SUM(date > ? AND pending = 0) AS planned, SUM(pending) AS pending
-      FROM activities WHERE course_description_id IS NOT NULL GROUP BY course_description_id`, [today, today]).map((r) => [r.id, r]));
+        SUM(${end} <= ? AND pending = 0) AS held, SUM(${end} > ? AND pending = 0) AS planned, SUM(pending) AS pending
+      FROM activities WHERE course_description_id IS NOT NULL GROUP BY course_description_id`, [now, now]).map((r) => [r.id, r]));
   }
 
   const itemOut = (r) => ({ id: r.id, name: r.name, kind: r.kind, url: r.url || '', body: r.body || '', filename: r.filename || '',
@@ -166,7 +167,7 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
       FROM activities a JOIN resellers r ON r.id = a.reseller_id LEFT JOIN schools s ON s.id = a.school_id
       LEFT JOIN municipalities m ON m.id = a.municipality_id LEFT JOIN consultants c ON c.id = a.consultant_id
       WHERE a.course_description_id = ? ORDER BY a.date DESC, a.start_time DESC, a.id DESC`, [id])
-      .map((a) => ({ ...a, status: a.pending ? 'pending' : a.date <= todayIso() ? 'held' : 'planned' }));
+      .map((a) => ({ ...a, status: a.pending ? 'pending' : isHeld(a) ? 'held' : 'planned' }));
     return { ...docOut(d), counts: { held: c.held || 0, planned: c.planned || 0, pending: c.pending || 0 }, items: itemsOf(id), courses };
   }
 
@@ -341,13 +342,13 @@ export function createLibrary(db, { HttpError, requireAdmin, todayIso }) {
   function itemCourses(user, id) {
     requireAdmin(user);
     const it = libraryItem(id);
-    const today = todayIso();
-    const courses = db.all(`SELECT a.id, a.date, a.start_time, a.title, a.pending, a.course_description_id, s.name AS school,
+    const now = nowStamp();
+    const courses = db.all(`SELECT a.id, a.date, a.start_time, a.end_time, a.title, a.pending, a.course_description_id, s.name AS school,
         m.name AS municipality, c.name AS consultant, r.name AS reseller
       FROM activities a JOIN resellers r ON r.id = a.reseller_id LEFT JOIN schools s ON s.id = a.school_id
       LEFT JOIN municipalities m ON m.id = a.municipality_id LEFT JOIN consultants c ON c.id = a.consultant_id
       ORDER BY a.date DESC, a.start_time DESC, a.id DESC`)
-      .map((a) => ({ ...a, status: a.pending ? 'pending' : a.date <= today ? 'held' : 'planned' }));
+      .map((a) => ({ ...a, status: a.pending ? 'pending' : isHeld(a, now) ? 'held' : 'planned' }));
     return {
       item: itemOut(it),
       course_description_ids: db.all('SELECT course_description_id AS id FROM library_links WHERE item_id = ?', [id]).map((r) => r.id),

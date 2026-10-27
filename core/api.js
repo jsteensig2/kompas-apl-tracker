@@ -23,18 +23,26 @@ const isAdmin = (user) => user?.role === 'admin';
 // Kompas admins and read-only viewers (Apple) see every reseller's courses.
 const seesAll = (user) => user?.role === 'admin' || user?.role === 'viewer';
 
-// Today's date in Denmark. Activities on or before this date are held ("Afholdt");
-// later ones are planned and form the order book ("Ordrebog").
+// Today's date in Denmark ("YYYY-MM-DD").
 export function todayIso() {
   return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Copenhagen', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 }
+// Danish time now as "YYYY-MM-DD HH:MM", comparable with a course's end (see courseEnd).
+export function nowStamp(at = new Date()) {
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Copenhagen', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(at).replace('T', ' ');
+}
+// Jakob (2026-10-27): a course is held ("Afholdt") only once its end time has passed; until then
+// it is planned and in Kommende kurser. A course without an end time is held when its day is over.
+const courseEnd = (row) => `${row.date} ${row.end_time || '24:00'}`;
+const END_SQL = "(a.date || ' ' || COALESCE(a.end_time, '24:00'))";
 // A course awaiting final approval from the school or municipality ("Foreløbig") is never
-// counted as held; it stays in the order book, marked as pending, until Kompas confirms it.
-const withStatus = (row) => row && ({ ...row, pending: row.pending ? 1 : 0,
-  status: row.date <= todayIso() && !row.pending ? 'held' : 'planned' });
-// SQL counterparts of withStatus (the date is bound as a parameter).
-const HELD_SQL = '(a.date <= ? AND a.pending = 0)';
-const PLANNED_SQL = '(a.date > ? OR a.pending = 1)';
+// counted as held; it stays in Kommende kurser, marked as pending, until Kompas confirms it.
+export const isHeld = (row, now = nowStamp()) => !row.pending && courseEnd(row) <= now;
+const withStatus = (row) => row && ({ ...row, pending: row.pending ? 1 : 0, status: isHeld(row) ? 'held' : 'planned' });
+// SQL counterparts of withStatus (nowStamp() is bound as a parameter).
+const HELD_SQL = `(${END_SQL} <= ? AND a.pending = 0)`;
+const PLANNED_SQL = `(${END_SQL} > ? OR a.pending = 1)`;
 
 function requireAdmin(user) {
   if (!isAdmin(user)) throw new HttpError(403, 'Kun Kompas-administratorer kan gøre dette.');
@@ -84,9 +92,9 @@ function buildWhere(user, f = {}) {
   } else {
     throw new HttpError(403, 'Din bruger har ikke adgang til nogen aktiviteter.');
   }
-  if (f.status === 'held') { where.push(HELD_SQL); params.push(todayIso()); }
-  if (f.status === 'planned') { where.push(PLANNED_SQL); params.push(todayIso()); } // every coming course, Foreløbig included
-  if (f.status === 'approved') { where.push('(a.date > ? AND a.pending = 0)'); params.push(todayIso()); } // Planlagt: coming and approved
+  if (f.status === 'held') { where.push(HELD_SQL); params.push(nowStamp()); }
+  if (f.status === 'planned') { where.push(PLANNED_SQL); params.push(nowStamp()); } // every coming course, Foreløbig included
+  if (f.status === 'approved') { where.push(`(${END_SQL} > ? AND a.pending = 0)`); params.push(nowStamp()); } // Planlagt: coming and approved
   if (f.status === 'pending') where.push('a.pending = 1');
   if (truthy(f.reschedule)) where.push('a.reschedule = 1'); // ★ Skal have ny dato
   if (int(f.year)) { where.push("substr(a.date, 1, 4) = ?"); params.push(String(int(f.year))); }
@@ -242,7 +250,7 @@ function toCsv(rows) {
  * @param deps { XLSX } – SheetJS, used to write .xlsx exports
  */
 export function createApi(db, { XLSX } = {}) {
-  const library = createLibrary(db, { HttpError, requireAdmin, todayIso });
+  const library = createLibrary(db, { HttpError, requireAdmin, nowStamp, isHeld });
   const nameExists = (table, name, exceptId = 0) =>
     db.get(`SELECT id FROM ${table} WHERE name = ? COLLATE NOCASE AND id <> ?`, [name, exceptId]);
 
@@ -305,12 +313,12 @@ export function createApi(db, { XLSX } = {}) {
 
   // Konsulentoverblik: held courses in the chosen year, and every coming course split into
   // Planlagt and Foreløbig, per consultant, so Kompas can see whether the work is shared fairly.
-  function consultantLoad(from, and, params, ob, obAnd, today) {
+  function consultantLoad(from, and, params, ob, obAnd, now) {
     const held = new Map(db.all(`SELECT a.consultant_id AS id, COUNT(*) AS held,
         SUM(CASE a.duration WHEN 'full' THEN 2 ELSE 1 END) AS workshops ${from}${and} ${HELD_SQL} AND a.consultant_id IS NOT NULL
-        GROUP BY a.consultant_id`, [...params, today]).map((r) => [r.id, r]));
+        GROUP BY a.consultant_id`, [...params, now]).map((r) => [r.id, r]));
     const coming = db.all(`SELECT a.consultant_id AS id, SUM(a.pending = 0) AS planned, SUM(a.pending) AS pending, MIN(a.date) AS next
-        FROM activities a${ob.sql}${obAnd} ${PLANNED_SQL} GROUP BY a.consultant_id`, [...ob.params, today]);
+        FROM activities a${ob.sql}${obAnd} ${PLANNED_SQL} GROUP BY a.consultant_id`, [...ob.params, now]);
     const byId = new Map(coming.filter((r) => r.id).map((r) => [r.id, r]));
     const unassigned = coming.find((r) => !r.id);
     const rows = db.all('SELECT id, name, initials FROM consultants ORDER BY name').map((c) => ({ ...c,
@@ -339,24 +347,24 @@ export function createApi(db, { XLSX } = {}) {
     const from = `FROM activities a JOIN apl_types t ON t.id = a.apl_type_id JOIN resellers r ON r.id = a.reseller_id
       LEFT JOIN schools s ON s.id = a.school_id LEFT JOIN municipalities m ON m.id = a.municipality_id
       LEFT JOIN consultants c ON c.id = a.consultant_id LEFT JOIN paid_by p ON p.id = a.paid_by_id${sql}`;
-    const today = todayIso();
+    const now = nowStamp();
     const and = sql ? ' AND' : ' WHERE';
     // Key figures count held courses only; planned courses are reported as the order book.
     const kpi = db.get(`SELECT COUNT(*) AS experiences, COALESCE(SUM(a.participants), 0) AS participants,
-        COALESCE(SUM(a.duration = 'half'), 0) AS half_days, COALESCE(SUM(a.duration = 'full'), 0) AS full_days ${from}${and} ${HELD_SQL}`, [...params, today]);
+        COALESCE(SUM(a.duration = 'half'), 0) AS half_days, COALESCE(SUM(a.duration = 'full'), 0) AS full_days ${from}${and} ${HELD_SQL}`, [...params, now]);
     // Kommende kurser always covers every coming course, also those in a later year than the one chosen.
     const ob = buildWhere(user, { reseller: f.reseller });
     const obAnd = ob.sql ? ' AND' : ' WHERE';
     const orderbook = db.get(`SELECT COUNT(*) AS courses, COALESCE(SUM(a.participants), 0) AS participants,
         COALESCE(SUM(a.duration = 'half'), 0) AS half_days, COALESCE(SUM(a.duration = 'full'), 0) AS full_days,
-        COALESCE(SUM(a.pending), 0) AS pending FROM activities a${ob.sql}${obAnd} ${PLANNED_SQL}`, [...ob.params, today]);
+        COALESCE(SUM(a.pending), 0) AS pending FROM activities a${ob.sql}${obAnd} ${PLANNED_SQL}`, [...ob.params, now]);
     const monthly = db.all(`SELECT substr(a.date, 1, 7) AS month, COUNT(*) AS activities,
-        SUM(${HELD_SQL}) AS held, SUM(${PLANNED_SQL}) AS planned, SUM(a.pending) AS pending ${from} GROUP BY month ORDER BY month`, [today, today, ...params]);
-    const latest = db.all(`${ACTIVITY_SELECT}${sql}${and} ${HELD_SQL} ORDER BY a.date DESC, a.start_time DESC, a.id DESC LIMIT 6`, [...params, today]).map(withStatus);
-    const upcoming = db.all(`${ACTIVITY_SELECT}${ob.sql}${obAnd} ${PLANNED_SQL} ORDER BY a.date ASC, a.start_time ASC, a.id ASC LIMIT 6`, [...ob.params, today]).map(withStatus);
+        SUM(${HELD_SQL}) AS held, SUM(${PLANNED_SQL}) AS planned, SUM(a.pending) AS pending ${from} GROUP BY month ORDER BY month`, [now, now, ...params]);
+    const latest = db.all(`${ACTIVITY_SELECT}${sql}${and} ${HELD_SQL} ORDER BY a.date DESC, a.start_time DESC, a.id DESC LIMIT 6`, [...params, now]).map(withStatus);
+    const upcoming = db.all(`${ACTIVITY_SELECT}${ob.sql}${obAnd} ${PLANNED_SQL} ORDER BY a.date ASC, a.start_time ASC, a.id ASC LIMIT 6`, [...ob.params, now]).map(withStatus);
     const result = { kpi, orderbook, monthly, latest: withNoteCounts(user, latest), upcoming: withDoubleBookings(user, withNoteCounts(user, upcoming)) };
     if (isAdmin(user)) {
-      result.consultants = consultantLoad(from, and, params, ob, obAnd, today);
+      result.consultants = consultantLoad(from, and, params, ob, obAnd, now);
       result.doubleBookings = upcomingDoubleBookings();
     }
     return result;
@@ -565,7 +573,7 @@ export function createApi(db, { XLSX } = {}) {
     const rows = listActivities({ role: 'admin' }, { ...f, status: 'held' });
     const extra = new Map(db.all(`SELECT a.id, a.apple_reported_at, c.email AS consultant_email, s.postal_code
         FROM activities a LEFT JOIN consultants c ON c.id = a.consultant_id LEFT JOIN schools s ON s.id = a.school_id
-        WHERE ${HELD_SQL}`, [todayIso()]).map((x) => [x.id, x]));
+        WHERE ${HELD_SQL}`, [nowStamp()]).map((x) => [x.id, x]));
     return rows.map((a) => ({ ...a, ...extra.get(a.id) }))
       .filter((a) => (f.sent === 'no' ? !a.apple_reported_at : f.sent === 'yes' ? Boolean(a.apple_reported_at) : true))
       .sort((x, y) => (x.consultant || '').localeCompare(y.consultant || '', 'da') || x.date.localeCompare(y.date))
@@ -1101,7 +1109,7 @@ export function createApi(db, { XLSX } = {}) {
   // The consultant ticks a held course as reported to Apple (the same mark as Til Apple › Indberettet til Apple).
   function setConsultantAppleReported(token, activityId, body) {
     const c = consultantByToken(token);
-    const a = db.get(`SELECT id FROM activities a WHERE id = ? AND consultant_id = ? AND ${HELD_SQL}`, [activityId, c.id, todayIso()]);
+    const a = db.get(`SELECT id FROM activities a WHERE id = ? AND consultant_id = ? AND ${HELD_SQL}`, [activityId, c.id, nowStamp()]);
     if (!a) throw new HttpError(404, 'Kurset findes ikke blandt dine afholdte kurser.');
     db.run('UPDATE activities SET apple_reported_at = ? WHERE id = ?', [truthy(body?.reported) ? new Date().toISOString() : null, activityId]);
     return { id: activityId, apple_reported_at: db.get('SELECT apple_reported_at FROM activities WHERE id = ?', [activityId]).apple_reported_at };
