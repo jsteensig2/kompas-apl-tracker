@@ -155,6 +155,13 @@ Modulkurser hedder **Modul N – Lærere** eller **Modul N – Pædagoger** (`co
 - I Høje-Taastrup får en titel uden målgruppe den fra tidspunktet: kl. 09:00 er pædagoger og kl. 14:00 er lærere.
 - Ved første opstart omdøbes Høje-Taastrups eksisterende modulkurser én gang, og de kobles til en kursusbeskrivelse pr. modul og målgruppe (oprettes, hvis den mangler). Kurser, der ikke kan placeres, beholder deres navn og står under Administration › Kurser som titler, der ikke er koblet.
 
+## Slettede kurser
+
+Når Kompas sletter et kursus, ligger det under **Administration › Slettede kurser** med dato, skole,
+konsulent, og hvem der slettede det og hvornår. **Genaktivér** lægger kurset tilbage med samme id,
+tilmeldinger, noter og kursets egne materialer. Er en skole, konsulent eller lignende slettet siden,
+bliver feltet tomt. **Slet endeligt** fjerner kurset for altid.
+
 ## Senere udvidelser (ikke bygget)
 
 Apple compliance-mål (fx 34 / 40 workshops) er bevidst ikke implementeret. Dashboardets tal

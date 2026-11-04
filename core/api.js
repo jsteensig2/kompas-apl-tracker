@@ -10,6 +10,7 @@
 import { parseIcs, suggestFromEvent } from './ical.js';
 import { runImport, TEMPLATE_HEADERS, parseClock } from './import.js';
 import { createLibrary, descriptionForTitle, uniformTitle } from './library.js';
+import { createTrash } from './trash.js';
 import { moduleCourse } from './course-names.js';
 
 export class HttpError extends Error {
@@ -251,6 +252,7 @@ function toCsv(rows) {
  */
 export function createApi(db, { XLSX } = {}) {
   const library = createLibrary(db, { HttpError, requireAdmin, nowStamp, isHeld });
+  const trash = createTrash(db, { HttpError, requireAdmin });
   const nameExists = (table, name, exceptId = 0) =>
     db.get(`SELECT id FROM ${table} WHERE name = ? COLLATE NOCASE AND id <> ?`, [name, exceptId]);
 
@@ -536,7 +538,16 @@ export function createApi(db, { XLSX } = {}) {
   function deleteActivity(user, id) {
     requireAdmin(user);
     getActivity(user, id);
-    db.run('DELETE FROM activities WHERE id = ?', [id]);
+    // Kept under Administration › Slettede kurser, so it can be genaktiveret.
+    db.exec('BEGIN');
+    try {
+      trash.save(user, id);
+      db.run('DELETE FROM activities WHERE id = ?', [id]);
+      db.exec('COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    }
     return { ok: true };
   }
 
@@ -1193,6 +1204,9 @@ export function createApi(db, { XLSX } = {}) {
       case 'GET /apple': return { json: appleCourses(user, query) };
       case 'GET /apple/export': return { file: exportApple(user, query) };
       case 'DELETE /activities/:id': return { json: deleteActivity(user, id) };
+      case 'GET /deleted-activities': return { json: trash.list(user) };
+      case 'POST /deleted-activities/:id/restore': return { json: trash.restore(user, int(parts[1])) };
+      case 'DELETE /deleted-activities/:id': return { json: trash.purge(user, id) };
       case 'GET /activities/:id/notes': return { json: listNotes(user, int(parts[1])) };
       case 'POST /activities/:id/notes': return { json: addNote(user, int(parts[1]), body) };
       case 'DELETE /notes/:id': return { json: deleteNote(user, id) };

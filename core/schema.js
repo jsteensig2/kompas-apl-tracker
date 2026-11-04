@@ -1,6 +1,7 @@
 // Database schema (SQLite). Shared by the Node server and the browser preview.
 // All choice lists are reference tables so Kompas can manage them without code changes.
 import { isHtk, moduleCourse } from './course-names.js';
+import { TRASH_SCHEMA } from './trash.js';
 
 export const SCHEMA = `
 PRAGMA foreign_keys = ON;
@@ -206,6 +207,7 @@ export function migrate(db) {
   }
   // Uniform course names (Jakob, 2026-10-12): a description says which module it is.
   if (!cols('course_descriptions').includes('module')) db.exec("ALTER TABLE course_descriptions ADD COLUMN module TEXT NOT NULL DEFAULT ''");
+  db.exec(TRASH_SCHEMA);
   db.exec('CREATE TABLE IF NOT EXISTS app_migrations (name TEXT PRIMARY KEY, ran_at TEXT NOT NULL DEFAULT (datetime(\'now\')))');
   once(db, 'apl-types-2026-10-04', () => resetAplTypes(db));
   once(db, 'htk-times-2026-10-06', () => setHtkTimes(db));
