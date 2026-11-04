@@ -792,7 +792,7 @@ function renderRegister(root) {
         ${a ? `<button type="button" class="btn btn-lg" id="dup">Dublér kursus</button>
           <span class="spacer"></span>
           <button type="button" class="btn btn-danger-ghost" id="del">Slet aktivitet</button>
-          <span id="del-confirm" class="del-confirm" hidden>Slet aktiviteten permanent?
+          <span id="del-confirm" class="del-confirm" hidden>Slet aktiviteten? Den kan genaktiveres under Administration › Slettede kurser.
             <button type="button" class="btn btn-danger btn-sm" id="del-yes">Slet</button>
             <button type="button" class="btn btn-sm" id="del-no">Annullér</button></span>` : ''}
       </div>
@@ -1006,7 +1006,7 @@ function renderRegister(root) {
       try {
         await api.del(`/api/activities/${a.id}`);
         state.options = await api.get('/api/options');
-        toast('Aktivitet slettet');
+        toast('Aktivitet slettet · kan genaktiveres under Administration › Slettede kurser');
         go('activities');
       } catch (ex) { toast(ex.message, 'err'); }
     };
@@ -1963,7 +1963,51 @@ async function renderCourseMaterials(box, activityId) {
 const ADMIN_TABS = [
   ['courses', 'Kurser'], ['consultants', 'Konsulenter'], ['schools', 'Skoler'], ['municipalities', 'Kommuner'],
   ['apl-types', 'APL-typer'], ['resellers', 'Resellere'], ['paid-by', 'Betalt af'], ['users', 'Brugere og adgang'],
+  ['deleted', 'Slettede kurser'],
 ];
+
+// Slettede kurser: deleted courses can be put back (with tilmeldinger, noter and materialer) or deleted for good.
+async function renderDeleted(body) {
+  const rows = await api.get('/api/deleted-activities');
+  // deleted_at is UTC (SQLite datetime('now')); show it in Danish time.
+  const when = (ts) => {
+    const [d, t] = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Copenhagen', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(`${String(ts).replace(' ', 'T')}Z`)).split(' ');
+    return `${fmtDate(d)} kl. ${t}`;
+  };
+  body.innerHTML = `
+    <p class="muted small">Kurser, der er slettet. Genaktivér et kursus, så kommer det tilbage med tilmeldinger, noter og materialer.</p>
+    <p class="form-error" id="admin-err" role="alert" hidden></p>
+    ${rows.length ? `<ul class="admin-list">${rows.map((r) => `
+      <li data-id="${r.id}">
+        <div class="admin-row"><b>${fmtDate(r.date)} · ${esc(r.title)}</b>
+          <span class="muted">${esc([r.school, r.municipality, r.consultant, r.reseller].filter(Boolean).join(' · '))}</span>
+          <span class="muted small">Slettet ${when(r.deleted_at)}${r.deleted_by ? ` af ${esc(r.deleted_by)}` : ''}</span></div>
+        <div class="admin-actions">
+          <button type="button" class="btn btn-sm btn-primary" data-restore>Genaktivér</button>
+          <button type="button" class="linkbtn danger" data-purge>Slet endeligt</button>
+        </div>
+      </li>`).join('')}</ul>
+      <p class="muted small">${rows.length} i alt</p>` : '<p class="muted">Der er ingen slettede kurser.</p>'}`;
+  const fail = (ex) => { $('#admin-err').textContent = ex.message; $('#admin-err').hidden = false; };
+  $$('[data-restore]', body).forEach((b) => {
+    b.onclick = async () => {
+      b.disabled = true;
+      try {
+        await api.post(`/api/deleted-activities/${b.closest('li').dataset.id}/restore`, {});
+        state.options = await api.get('/api/options');
+        toast('Kurset er genaktiveret');
+        await renderDeleted(body);
+      } catch (ex) { b.disabled = false; fail(ex); }
+    };
+  });
+  $$('[data-purge]', body).forEach((b) => {
+    b.onclick = async () => {
+      if (b.dataset.sure !== '1') { b.dataset.sure = '1'; b.textContent = 'Slet endeligt? Kan ikke fortrydes'; return; }
+      try { await api.del(`/api/deleted-activities/${b.closest('li').dataset.id}`); toast('Slettet endeligt'); await renderDeleted(body); } catch (ex) { fail(ex); }
+    };
+  });
+}
 
 async function renderAdmin(root) {
   const tab = state.adminTab;
@@ -1975,6 +2019,7 @@ async function renderAdmin(root) {
     <section class="card" id="admin-body"><div class="loading">Indlæser…</div></section>`;
   $$('[data-tab]').forEach((b) => { b.onclick = () => { state.adminTab = b.dataset.tab; renderAdmin(root); }; });
   if (tab === 'courses') return renderCourseList($('#admin-body'));
+  if (tab === 'deleted') return renderDeleted($('#admin-body'));
   const rows = await api.get(`/api/admin/${tab}`);
   const body = $('#admin-body');
   const o = state.options;
